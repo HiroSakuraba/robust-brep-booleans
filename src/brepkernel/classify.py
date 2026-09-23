@@ -10,10 +10,20 @@ keep/discard decision for that face is audited against the exact implicit:
   intersection: kept A-face must satisfy B_implicit <= 0; kept B-face: A <= 0
   difference:   kept A-face must satisfy B_implicit >= 0; kept B-face: A <= 0
 
-With the rigorous chordal margin m:
-  s*f >  m  -> verified (provably on the kept side)
+With the rigorous chordal margin m, evaluated at each kept face's centroid:
+  s*f >  m  -> verified (centroid provably on the kept side; the face was
+                cut from an input triangle along the mesh crossing, so the
+                mesh-world classification transfers to the true solid up to
+                the certified resolution band)
   s*f < -m  -> VIOLATION (provably on the wrong side; engine is wrong)
-  otherwise -> AMBIGUOUS (cannot verify; blocks the result)
+  otherwise -> AMBIGUOUS (centroid inside the margin band; cannot verify,
+                blocks the result)
+
+Note the honest boundary: near a surface-surface crossing the engine emits
+sliver triangles hugging the crossing curve, and their centroids can land
+inside the margin band even for clean transverse intersections. Those faces
+block (safe refusal) rather than guess. Pinning crossings tighter than the
+band is the deferred exact arrangement core's job (design Section 4).
 
 Tier A (below) detects degeneracies from defining parameters with exact
 float predicates -- no tolerance voting.

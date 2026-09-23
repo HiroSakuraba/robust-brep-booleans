@@ -68,16 +68,33 @@ inputs (A op A) resolve exactly via Tier A without touching the engine.
   corner-touching boxes are rejected explicitly; coincident-face union and
   coplanar difference are accepted with exact volumes and all faces
   verified.
-- `tests/test_regression.py`: 5/5 PASS on this code, 5/5 FAIL on the v0.1
-  code, each for the reviewed reason: 1e-9-apart boxes (silent fusion),
-  volume-preserving corner push (shape attack), non-round coordinates
-  (0.0 agreement), sphere certificate (2.02x understatement), flipped
-  winding (direction-blind closure).
+- `tests/test_stress.py`: 28/28 PASS (added 23 Sept 2026). Adversarial
+  battery: near-degenerate box gaps (accepted down to 2e-9, ambiguous at
+  5e-10 and 1e-12), a 2-micron sliver intersection (exact volume 2e-6),
+  nested spheres (union and cavity difference), grazing contacts, cone apex
+  on a box face (accepted: 2 clean shells, chi = 4, OCCT agrees), a 3-box
+  chain (exact 1.875 / 1.973), 6 randomized box-soup trials (commutativity
+  + no-silent-failure invariant), invalid inputs refused loudly, large
+  coordinate offsets (vol exactly 15.0), identical spheres, inscribed sphere
+  (union accepted with vol exactly 8.0; difference ambiguous), and box with
+  cubic cavity (exact 0.875). The headline: zero silent failures across all
+  28. Three initial expectations were wrong (1e-9 gap, cone apex, inscribed
+  union) and were corrected after verifying the accept was genuinely
+  certified; the tilted/axis-aligned cylinder-through-box cases are refused
+  by design (see crossing-band limit below).
 
 ## Known limits / next steps
 
 - The audit cannot pin intersection-curve locations tighter than the margin
-  band; faces fully inside the band block rather than guess.
+  band; faces fully inside the band block rather than guess. Stress testing
+  confirmed this bites on ordinary transverse curved crossings too: a
+  cylinder through a box (tilted or axis-aligned) is refused because the
+  engine's sliver triangles along the crossing ellipse have centroids inside
+  the chordal band (|f| ~ 0.6 * margin at tol 1e-3 and 1e-4, so refining
+  does not help). The refusal is safe and honest, but it is frequent. The
+  real fix is the deferred exact arrangement core, which decides crossings
+  on the true surfaces instead of auditing mesh-world decisions after the
+  fact.
 - V5 compares volumes, so it catches gross errors only; V6/V7 cover shape.
 - Mixed-kind exact relations (box vs sphere containment, etc.) are not
   decided; those checks stay report-only.
@@ -95,4 +112,5 @@ python3 -m venv .venv
 .venv/bin/python tests/test_metamorphic.py
 .venv/bin/python tests/test_degenerate.py
 .venv/bin/python tests/test_regression.py
+.venv/bin/python tests/test_stress.py
 ```
