@@ -1,55 +1,31 @@
-"""Stage 5: topology-invariant assembly.
+"""Stage 5: assembly with per-face audit.
 
-Takes the arrangement mesh and attaches per-face provenance from exact
-classification: which input solid(s) each surviving face belongs to.
-Invariants checked here:
-  - every surviving face is classified IN/OUT by both exact implicits
-    (no ON faces undecided -- those go to the ambiguity report);
-  - the kept/discarded decision from the engine agrees with the exact
-    classification table on a sample of faces (engine/classifier cross-check).
+Attaches the origin-aware audit from classify.py to the arrangement mesh.
+Any ambiguous or violating face blocks the result upstream -- nothing is
+silently kept or dropped.
 """
 
 import numpy as np
-from .classify import classify_faces
+from .classify import audit_faces
 
 
-class AssemblyError(Exception):
-    pass
+def assemble(arrangement, solidA, solidB, proxyA, proxyB, ledger, op,
+             skip_audit=False):
+    """Attach the per-face audit. Returns the assembled record.
 
-
-def assemble(arrangement, solidA, solidB, proxyA, proxyB, ledger, op):
-    """Attach provenance; cross-check engine vs exact classifier.
-
-    Returns {'V','F','in_a','in_b','on_faces','agreement'}.
-    Faces whose centroid is ON a surface within the margin are listed in
-    on_faces and trigger Tier A degeneracy handling upstream -- they are
-    never silently kept or dropped.
+    skip_audit: for the Tier A identical-input fast path, where there is
+    no engine decision to audit.
     """
     V, F = arrangement["V"], arrangement["F"]
-    if arrangement.get("empty"):
-        return {"V": V, "F": F, "in_a": np.array([]), "in_b": np.array([]),
-                "on_faces": np.array([], dtype=int), "agreement": 1.0,
-                "empty": True}
-    centroids = V[F].mean(axis=1)
     margin = ledger.degeneracy_margin(proxyA["chordal_error"],
                                       proxyB["chordal_error"])
-    in_a, in_b, keep_exact, on_mask = classify_faces(
-        centroids, solidA, solidB, margin, op)
-    on_faces = np.nonzero(on_mask)[0]
-
-    # Engine/classifier cross-check: the arrangement mesh should contain
-    # exactly the faces the exact table keeps, up to ON-margin faces.
-    # We check agreement on faces safely away from the margin.
-    safe = ~on_mask
-    # A face survives in the arrangement iff the engine kept it; the exact
-    # table says which (inA,inB) combos survive. Boundary faces of the
-    # result lie ON one input surface, so compare only interior-side faces:
-    # every result face must be ON A or ON B (it came from an input surface).
-    onA = np.abs(solidA.implicit(centroids)) <= margin
-    onB = np.abs(solidB.implicit(centroids)) <= margin
-    from_input = onA | onB
-    agreement = float(np.mean(from_input)) if len(F) else 1.0
-
-    return {"V": V, "F": F, "in_a": in_a, "in_b": in_b,
-            "on_faces": on_faces, "agreement": agreement, "empty": False,
-            "margin": margin}
+    if arrangement.get("empty") or len(F) == 0:
+        return {"V": V, "F": F, "empty": True, "margin": margin,
+                "audit": None}
+    origins = arrangement.get("origins")
+    if origins is None or len(origins) != len(F):
+        raise RuntimeError("arrangement lacks per-face origins")
+    audit = None if skip_audit else audit_faces(
+        F, V, origins, solidA, solidB, margin, op)
+    return {"V": V, "F": F, "empty": False, "margin": margin,
+            "audit": audit, "origins": origins}

@@ -1,63 +1,98 @@
-# brepkernel prototype v0.1 — what was built
+# brepkernel prototype v0.2: what was built
 
-A working slice of the "B-reps that don't break" design (v0.1 design doc),
-covering analytic solids (box, sphere, cylinder, cone = the design's Tier A).
+A working slice of the "B-reps that don't break" design, covering analytic
+solids (box, sphere, cylinder, cone: the design's Tier A).
+
+v0.2 reworks the prototype around a review finding: in v0.1 the mesh engine
+made every topology decision while the "exact" layer only wrote notes, and
+the final gate checked volume rather than shape. Now the engine does the
+geometry, the exact layer audits every topology decision per face, and
+anything unverifiable blocks the result.
 
 ## Architecture (maps to the design's 7 stages)
 
 | Stage | Module | What it does |
 |---|---|---|
 | 0 | `ingest.py` | Audits input parameters; `ToleranceLedger` records every epsilon in one place (design G1) |
-| 1 | `proxy.py` | `certified_proxy()`: triangle mesh with a *proven* chordal-error bound (asserted, not hoped) |
-| 2 | `arrange.py` | Proxy boolean via manifold3d. Exact CGAL/libigl core slots in behind this interface |
-| 3 | `classify.py` | **Tier A**: exact degeneracy detection from defining parameters (coincident planes, tangent cylinders) — no tolerance voting |
-| 4 | `classify.py` | Winding-style classification with margins using **exact** implicit functions; ON-margin faces are never decided by the proxy |
-| 5 | `assemble.py` | Per-face provenance + engine/classifier cross-check |
-| 6 | `verify.py` | Independent verification: closure, Euler χ, orientation, Monte-Carlo field check against exact implicits, manifold3d cross-check |
+| 1 | `proxy.py` | `certified_proxy()`: triangle mesh with a proven chordal-error bound computed from the actual mesh, not a formula (raises, never asserts) |
+| 2 | `arrange.py` | Proxy boolean in float64 (`manifold3d` Mesh64) with per-face origin tags (A: 0..nA-1, B: nA..). Exact CGAL/libigl core slots in behind this interface |
+| 3 | `classify.py` | **Tier A**: exact degeneracy detection from defining parameters (no tolerance voting). Exact helpers: `exact_op_volume`, `expected_shells`, `expected_euler` (box-box), `identical_inputs` |
+| 4 | `classify.py` | Per-face audit against the *other* solid's exact implicit, with per-operation polarity (union: kept A-face needs B_implicit >= 0, etc.). Verified / ambiguous / violation, per face |
+| 5 | `assemble.py` | Attaches provenance and the audit to the arrangement mesh |
+| 6 | `verify.py` | 8 checks: V1 directed-edge closure, V2 Euler vs exact prediction, V3 orientation, V4 exact volume (box-box) or labeled-statistical MC, V5 OCCT cross-check (independent engine and kernel), V6 vertex-on-surface, V7 sample membership (own ray caster vs exact implicits), V8 shell count vs expected |
 
 ## The core contract
 
-`brepkernel.boolean(A, B, op)` either returns a result that passed **all**
-Stage 6 checks, or raises `AmbiguousResult` carrying the partial mesh and
-the full ambiguity report. It never silently returns a broken solid.
+`brepkernel.boolean(A, B, op)` returns a result only if every kept face
+verified against the exact implicits and all Stage 6 checks passed.
+Otherwise it raises `AmbiguousResult` carrying the partial mesh and the
+full report. Ambiguities block: unverifiable faces, engine-decision
+violations, and failed checks are never returned as success. Identical
+inputs (A op A) resolve exactly via Tier A without touching the engine.
 
-## Key design decisions (and where the prototype deviates)
+## Key design decisions
 
-1. **Exact implicits as ground truth.** Every analytic solid has a closed-form
-   implicit function. Classification and the Monte-Carlo field check use it —
-   so topology decisions don't depend on the arrangement engine's numerics.
-2. **Margins, not epsilons.** A face whose centroid is within
-   `2·(chordal_A + chordal_B)` of a surface is ON — undecided, reported,
-   never voted on.
-3. **Arrangement engine is swappable.** manifold3d (robust-inexact) stands in
-   for the exact libigl/CGAL core: no pip wheel exists for pyigl on this
-   machine (conda-only) and building CGAL+swig bindings from source was out
-   of scope. `arrange()` is the seam; the J birth-triangle map plugs in there.
-4. **Verification is engine-diverse.** The field check samples the *exact*
-   implicits (no mesh involved); the cross-check rebuilds through manifold3d
-   independently. A bug in the arrangement engine can't confirm itself.
+1. **Exact implicits audit, not just observe.** Every kept face is checked
+   against the other solid's closed-form implicit. The v0.1 audit compared
+   against both implicits, which flags every face ON (every result face lies
+   on an input surface); v0.2 checks each face against the *other* solid
+   only, which is the decision that matters.
+2. **Origin tracking.** `arrange()` tags every result face with the input
+   face it came from (`face_id` round-trips through the boolean), so the
+   audit knows which implicit is "mine" and which is "other".
+3. **Margins are principled.** The degeneracy margin is the sum of the two
+   certified chordal bounds plus a 1e-9 numeric epsilon, not a tuned
+   constant. The sphere/cylinder certificates are worst-case bounds derived
+   from the actual tessellation (verified against 300k-sample brute force:
+   no understatement).
+4. **float64 end to end.** The engine runs Mesh64; Tier A reasons in float64.
+   The v0.1 float32 engine fused boxes 1e-9 apart into one solid.
+5. **Shape is checked, not just volume.** V6 requires every output vertex
+   within the margin of an input surface; V7 requires point-in-mesh to agree
+   with exact membership on samples outside the margin band. A
+   volume-preserving corner push is rejected.
+6. **Cross-check is engine-diverse.** V5 rebuilds the boolean from OCCT
+   primitives (independent geometry kernel) and compares volumes. The MC
+   field check is kept only where no closed form exists, and is labeled
+   statistical.
 
 ## Test results (23 Sept 2026)
 
-- `tests/test_metamorphic.py`: 13/13 PASS — A∪A=A, A−A=∅, disjoint identities,
-  commutativity, translation invariance, inclusion–exclusion, cyl/sphere/cone smoke.
-- `tests/test_degenerate.py`: 8/8 PASS, zero silent failures — coincident faces,
-  tangent cylinders, point/corner contacts, nested boxes. Degeneracies are
-  detected analytically (Tier A) and either resolved or explicitly reported.
+- `tests/test_metamorphic.py`: 15/15 PASS. Box cases assert exact volumes
+  (bitwise); translation uses fractional offsets (0.1, -0.3, 0.7) so float
+  rounding is exercised; curved smoke tests must be accepted with sane
+  volumes.
+- `tests/test_degenerate.py`: 8/8 PASS. Each case declares its expected
+  disposition ("accepted" with exact volume, or "ambiguous" raising
+  `AmbiguousResult`). Tangent cylinders, point-touching spheres, and
+  corner-touching boxes are rejected explicitly; coincident-face union and
+  coplanar difference are accepted with exact volumes and all faces
+  verified.
+- `tests/test_regression.py`: 5/5 PASS on this code, 5/5 FAIL on the v0.1
+  code, each for the reviewed reason: 1e-9-apart boxes (silent fusion),
+  volume-preserving corner push (shape attack), non-round coordinates
+  (0.0 agreement), sphere certificate (2.02x understatement), flipped
+  winding (direction-blind closure).
 
 ## Known limits / next steps
 
-- Freeform (NURBS) faces: not yet — needs OCCT STEP ingest + Tier B/C.
+- The audit cannot pin intersection-curve locations tighter than the margin
+  band; faces fully inside the band block rather than guess.
+- V5 compares volumes, so it catches gross errors only; V6/V7 cover shape.
+- Mixed-kind exact relations (box vs sphere containment, etc.) are not
+  decided; those checks stay report-only.
+- Freeform (NURBS) faces: not yet, needs OCCT STEP ingest + Tier B/C.
 - Exact arrangement core: needs conda or a CGAL build for pyigl.
 - Winding-number field (design Section 3): approximated here by exact
   implicits; libigl `fast_winding_number` when the wheel is available.
-- `arrange()` currently trusts manifold3d's output topology; Stage 6 is the
-  backstop (it caught nothing in tests, but it is the gate that matters).
 
 ## Reproduce
 
 ```
 cd brep-booleans
+python3 -m venv .venv
+.venv/bin/pip install manifold3d cadquery-ocp
 .venv/bin/python tests/test_metamorphic.py
 .venv/bin/python tests/test_degenerate.py
+.venv/bin/python tests/test_regression.py
 ```

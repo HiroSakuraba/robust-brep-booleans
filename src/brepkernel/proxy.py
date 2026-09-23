@@ -7,23 +7,22 @@ through the exact implicit (Tier A) or an explicit degeneracy analysis.
 """
 
 import numpy as np
-from . import solids
 
 
 def certified_proxy(solid, tol):
     """Build a proxy mesh with chordal error certified <= tol.
 
     Returns dict with V (n,3), F (m,3), chordal_error, solid, tol.
+    Raises (never asserts: python -O strips asserts) if the certificate
+    fails.
     """
     V, F, chordal = solid.tessellate(tol)
-    assert chordal <= tol * (1 + 1e-9), \
-        f"certificate violated: {chordal} > {tol}"
-    # sanity: all vertices lie on/near the true surface
-    dev = np.abs(solid.implicit(V))
+    if not chordal <= tol:
+        raise RuntimeError(
+            f"certificate violated: chordal bound {chordal} > tol {tol}")
     return {
         "V": V, "F": F,
         "chordal_error": float(chordal),
-        "max_vertex_deviation": float(np.max(dev)),
         "solid": solid,
         "tol": float(tol),
         "n_vertices": len(V), "n_faces": len(F),

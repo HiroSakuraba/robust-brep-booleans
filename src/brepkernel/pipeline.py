@@ -2,24 +2,23 @@
 
   Stage 0  ingest audit + tolerance ledger
   Stage 1  certified proxies (chordal-error-bounded tessellation)
-  Stage 2  arrangement (proxy boolean; exact CGAL core slots in here)
-  Stage 3  degeneracy tiers: Tier A analytic detection (this slice);
-           Tier B/C reserved for freeform surfaces
-  Stage 4  winding-number classification with margins (exact implicits)
-  Stage 5  topology-invariant assembly + engine/classifier cross-check
-  Stage 6  independent verification (closure, Euler, orientation, field,
-           manifold cross-check)
+  Stage 2  arrangement (proxy boolean in float64; exact CGAL core slots in)
+  Stage 3  Tier A: exact degeneracy analysis of defining parameters
+  Stage 4  per-face audit of the engine against the exact implicits
+  Stage 5  assembly (provenance + audit attached)
+  Stage 6  independent verification (8 checks)
 
-Contract: never silently return a broken solid. If verification fails,
-or an undecided degeneracy remains, the result carries an explicit
-ambiguity report (or raises) -- it is never presented as clean.
+Contract: never silently return a broken solid. Ambiguities BLOCK: any
+unverifiable face, any engine-decision violation, or any failed check
+raises AmbiguousResult carrying the partial mesh and the full report.
+Tier A identical inputs (A op A) resolve exactly without the engine.
 """
 
 import numpy as np
 from .ingest import audit_solid, ToleranceLedger, IngestError
 from .proxy import certified_proxy
 from .arrange import arrange, ArrangementError
-from .classify import tierA_degeneracy
+from .classify import tierA_degeneracy, identical_inputs
 from .assemble import assemble
 from .verify import verify
 
@@ -61,18 +60,35 @@ def boolean(solidA, solidB, op, proxy_tol=1e-3):
         "A": {k: proxyA[k] for k in ("chordal_error", "n_vertices", "n_faces")},
         "B": {k: proxyB[k] for k in ("chordal_error", "n_vertices", "n_faces")},
     }
-
-    # Stage 3 (Tier A) -- run BEFORE arrangement so degeneracies are known
-    # before any geometric decisions are made.
     margin = ledger.degeneracy_margin(proxyA["chordal_error"],
                                       proxyB["chordal_error"])
+
+    # Stage 3 (Tier A), before any geometric decisions
     degeneracies = tierA_degeneracy(solidA, solidB, margin)
     report["stages"]["degeneracy"] = {"tier": "A (analytic)",
                                       "findings": degeneracies,
                                       "margin": margin}
 
+    # Tier A exact resolution: identical inputs need no engine.
+    fast_path = identical_inputs(solidA, solidB)
+    if fast_path:
+        report["stages"]["tierA_resolution"] = {
+            "identical_inputs": True,
+            "resolution": {"union": "A", "intersection": "A",
+                           "difference": "empty"}[op],
+        }
+
     # Stage 2
-    arrangement = arrange(proxyA, proxyB, op)
+    if fast_path:
+        if op == "difference":
+            arrangement = {"V": np.zeros((0, 3)), "F": np.zeros((0, 3), int),
+                           "engine": "tierA-exact", "empty": True}
+        else:
+            arrangement = {"V": proxyA["V"], "F": proxyA["F"],
+                           "origins": np.array(["A"] * len(proxyA["F"])),
+                           "engine": "tierA-exact", "empty": False}
+    else:
+        arrangement = arrange(proxyA, proxyB, op)
     report["stages"]["arrangement"] = {
         "engine": arrangement["engine"],
         "n_faces": len(arrangement["F"]),
@@ -81,35 +97,57 @@ def boolean(solidA, solidB, op, proxy_tol=1e-3):
 
     # Stages 4+5
     assembled = assemble(arrangement, solidA, solidB, proxyA, proxyB,
-                         ledger, op)
-    report["stages"]["assembly"] = {
-        "n_on_margin_faces": len(assembled["on_faces"]),
-        "engine_classifier_agreement": assembled["agreement"],
-        "empty": assembled.get("empty", False),
-    }
+                         ledger, op, skip_audit=fast_path)
+    audit = assembled["audit"]
+    if audit is not None:
+        report["stages"]["assembly"] = {
+            "n_faces": len(assembled["F"]),
+            "n_verified": int(np.sum(audit["verified"])),
+            "n_ambiguous": int(np.sum(audit["ambiguous"])),
+            "n_violation": int(np.sum(audit["violation"])),
+            "empty": False,
+        }
+    else:
+        report["stages"]["assembly"] = {
+            "audit": "skipped (Tier A exact resolution)",
+            "empty": assembled.get("empty", False),
+        }
 
     # Stage 6
-    accepted, vreport = verify(assembled, solidA, solidB, op)
+    accepted, vreport = verify(assembled, solidA, solidB, op,
+                               proxyA, proxyB)
     report["stages"]["verification"] = vreport
-    report["accepted"] = accepted
 
     mesh = {"V": assembled["V"], "F": assembled["F"],
             "empty": assembled.get("empty", False)}
 
+    # Ambiguities BLOCK. Findings alone are notes; unverifiable faces,
+    # engine violations, and failed checks raise.
     ambiguities = []
-    if degeneracies:
-        ambiguities.append({"type": "degeneracy",
-                            "findings": degeneracies})
-    if len(assembled["on_faces"]) > 0:
-        ambiguities.append({"type": "on_margin_faces",
-                            "count": len(assembled["on_faces"])})
-    if assembled["agreement"] < 1.0 - 1e-9:
-        ambiguities.append({"type": "engine_classifier_disagreement",
-                            "agreement": assembled["agreement"]})
+    if audit is not None:
+        n_amb = int(np.sum(audit["ambiguous"]))
+        n_vio = int(np.sum(audit["violation"]))
+        if n_amb:
+            ambiguities.append({"type": "unverifiable_faces",
+                                "count": n_amb,
+                                "faces": [int(i) for i in
+                                          np.nonzero(audit["ambiguous"])[0][:25]]})
+        if n_vio:
+            ambiguities.append({"type": "engine_decision_violation",
+                                "count": n_vio,
+                                "faces": [int(i) for i in
+                                          np.nonzero(audit["violation"])[0][:25]]})
+    failed_checks = [k for k, c in vreport["checks"].items()
+                     if not c["pass"]]
+    for k in failed_checks:
+        ambiguities.append({"type": "verification_failed", "check": k,
+                            "info": vreport["checks"][k].get("info")})
     report["ambiguities"] = ambiguities
+    report["degeneracy_findings"] = degeneracies  # informational
+    report["accepted"] = accepted and not ambiguities
 
-    if not accepted:
+    if ambiguities or not accepted:
         raise AmbiguousResult(
-            "Stage 6 verification FAILED -- result rejected, not returned "
-            "as a valid solid.", mesh, report)
+            f"result not certified ({len(ambiguities)} blocking issue(s)); "
+            "see report['ambiguities']", mesh, report)
     return mesh, report

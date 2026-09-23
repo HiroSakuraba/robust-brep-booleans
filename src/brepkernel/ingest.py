@@ -1,9 +1,4 @@
-"""Stage 0: ingest audit + tolerance ledger.
-
-Every input is audited *before* any geometry is built. The tolerance
-ledger records every epsilon the pipeline will use, so a result can
-always be traced back to the tolerances that produced it (design G1).
-"""
+"""Stage 0: ingest + audit. Margin conventions live here."""
 
 import numpy as np
 
@@ -28,26 +23,27 @@ def audit_solid(solid):
 
 
 class ToleranceLedger:
-    """Every epsilon used by the pipeline, in one place."""
+    """Every epsilon used by the pipeline, in one place.
 
-    def __init__(self, proxy_tol, degeneracy_margin_scale=2.0):
+    margin: a face centroid (or vertex) whose |implicit| against the other
+    solid is <= margin cannot be classified reliably, because the proxy
+    surface can deviate from the true surface by up to the chordal bound.
+    The chordal bounds are rigorous (certified in solids.py), so
+    margin = chordal_A + chordal_B + numeric_eps is principled, not tuned.
+    """
+
+    def __init__(self, proxy_tol, numeric_eps=1e-9):
         if not proxy_tol > 0:
             raise IngestError("proxy_tol must be positive")
         self.entries = {
-            "proxy_tol": float(proxy_tol),          # certified chordal bound
-            "degeneracy_margin_scale": float(degeneracy_margin_scale),
+            "proxy_tol": float(proxy_tol),   # certified chordal bound
+            "numeric_eps": float(numeric_eps),
         }
 
     def degeneracy_margin(self, chordal_a, chordal_b):
-        """Margin below which a query point counts as ON a surface.
-
-        A proxy face can deviate from the true surface by up to its
-        chordal error, so a point closer than chordal_a + chordal_b to
-        both surfaces cannot be classified by the proxy alone -- it
-        needs Tier A exact analysis (design Stage 3).
-        """
-        return (self.entries["degeneracy_margin_scale"]
-                * (chordal_a + chordal_b) + 1e-12)
+        m = chordal_a + chordal_b + self.entries["numeric_eps"]
+        self.entries["degeneracy_margin"] = float(m)
+        return m
 
     def record(self, key, value):
         self.entries[key] = value
