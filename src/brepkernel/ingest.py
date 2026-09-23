@@ -29,19 +29,25 @@ class ToleranceLedger:
     solid is <= margin cannot be classified reliably, because the proxy
     surface can deviate from the true surface by up to the chordal bound.
     The chordal bounds are rigorous (certified in solids.py), so
-    margin = chordal_A + chordal_B + numeric_eps is principled, not tuned.
+    margin = chordal_A + chordal_B + eps64*coord_scale is principled, not
+    tuned: vertex coordinates round at ~eps64*coord_scale, and that
+    rounding feeds the implicit evaluations the audit is built on.
     """
 
-    def __init__(self, proxy_tol, numeric_eps=1e-9):
+    def __init__(self, proxy_tol, numeric_eps=1e-9, coord_scale=1.0):
         if not proxy_tol > 0:
             raise IngestError("proxy_tol must be positive")
+        if not coord_scale > 0:
+            raise IngestError("coord_scale must be positive")
         self.entries = {
             "proxy_tol": float(proxy_tol),   # certified chordal bound
             "numeric_eps": float(numeric_eps),
+            "coord_scale": float(coord_scale),
         }
 
     def degeneracy_margin(self, chordal_a, chordal_b):
-        m = chordal_a + chordal_b + self.entries["numeric_eps"]
+        m = (chordal_a + chordal_b
+             + self.entries["numeric_eps"] * self.entries["coord_scale"])
         self.entries["degeneracy_margin"] = float(m)
         return m
 

@@ -49,7 +49,7 @@ def expect(name, A, B, op, want, exact_vol=None, vol_tol=1e-9, **kw):
                      f"accepted={r['accepted']} but wanted {want}")
     n_amb = len(r.get("ambiguities", []))
     bad_checks = [k for k, c in r["stages"]["verification"]["checks"].items()
-                  if not c["pass"]]
+                  if c["status"] == "fail"]
     detail = f"vol={vol(m):.6g} ambiguities={n_amb}"
     ok = n_amb == 0 and not bad_checks
     if exact_vol is not None:
@@ -64,10 +64,11 @@ def main():
     ok = True
 
     # A. tiny-offset boxes: above the margin -> accepted; below -> ambiguous.
-    # The audit margin for boxes is exactly 1e-9, so the boundary cases use
-    # comfortable clearance (2e-9 / 5e-10), not the knife-edge itself.
+    # The audit margin here is 1e-9 * coord_scale = 2e-9 (max coordinate
+    # is 2, boxes have no chordal error), so the boundary cases use
+    # comfortable clearance (1e-8 / 5e-10), not the knife-edge itself.
     for eps, want in [(1e-3, "accepted"), (1e-6, "accepted"),
-                      (2e-9, "accepted"),
+                      (1e-8, "accepted"),
                       (5e-10, "ambiguous"), (1e-12, "ambiguous")]:
         ok &= expect(f"gap boxes eps={eps:g}",
                      Box([0, 0, 0], [1, 1, 1]),
@@ -172,23 +173,23 @@ def main():
                  Box([E + 1, 1, 1], [E + 3, 3, 3]),
                  "union", "accepted", exact_vol=15.0, vol_tol=1e-6)
 
-    # J. cylinder through box: transverse crossings, yet the audit REFUSES.
-    # This is the prototype's known crossing-band limitation, and the refusal
-    # is the safe, designed behavior: along the wall/plane crossing ellipse
-    # the engine emits sliver triangles hugging the true wall, and their
-    # centroids land inside the chordal margin band (verified: |f| ~ 0.6 *
-    # margin at tol 1e-3 AND 1e-4, so refining does not help). Inside the band
-    # the mesh-world classification genuinely may not transfer to the true
-    # solid, so the pipeline blocks rather than guesses. Pinning crossings
-    # tighter than the band is the deferred exact arrangement core's job.
-    ok &= expect("tilted cylinder n box (band refusal)",
-                 Box([0, 0, 0], [2, 2, 2]),
-                 Cylinder([0.5, 0.5, -1.0], [0.3, 0.0, 1.0], 0.4, 4.0),
-                 "intersection", "ambiguous")
-    ok &= expect("axis-aligned cylinder n box (band refusal)",
+    # J. cylinder through box: transverse crossings. ACCEPTED via patch-level
+    # classification: the sliver triangles hugging the crossing ellipse have
+    # centroids inside the chordal margin band (verified: |f| ~ 0.6 * margin
+    # at tol 1e-3 AND 1e-4, so refining does not help), but they belong to
+    # patches that touch an A/B crossing and contain decisively verified
+    # faces, so the patch verdict rescues them. The residual error is
+    # geometric, bounded by the margin, and cannot change topology. (A whole
+    # patch stuck in the band with no decisive face -- the tangency case --
+    # is still refused; see the tangent-cylinder/sphere probes.)
+    ok &= expect("axis-aligned cylinder n box (patch rescue)",
                  Box([0, 0, 0], [2, 2, 2]),
                  Cylinder([1.0, 1.0, -1.0], [0.0, 0.0, 1.0], 0.4, 4.0),
-                 "intersection", "ambiguous")
+                 "intersection", "accepted")
+    ok &= expect("tilted cylinder n box (patch rescue)",
+                 Box([0, 0, 0], [2, 2, 2]),
+                 Cylinder([0.5, 0.5, -1.0], [0.3, 0.0, 1.0], 0.4, 4.0),
+                 "intersection", "accepted")
 
     # K. identical spheres (fast path)
     ok &= expect("identical spheres union",

@@ -74,20 +74,24 @@ def analytic_certificate(V, F, solid):
         u, v = _perp_basis(solid.axis)
         rel = V - solid.base
         axial = rel @ solid.axis
+        # cap detection eps scales with coordinate magnitude (item 4):
+        # axial = (V - base) @ axis rounds at ~eps64 * max|V|.
+        coord_scale = max(1.0, float(np.max(np.abs(V)))) if n else 1.0
+        cap_eps = 1e-12 * coord_scale
         q = np.stack([rel @ u, rel @ v], axis=1)
         q0, q1, q2 = q[F[:, 0]], q[F[:, 1]], q[F[:, 2]]
         dtheta = _max_pair_angle(q0, q1, q2)
         gap = 1.0 - np.sqrt(np.maximum(np.cos(dtheta), 0.0))
         a0, a1, a2 = axial[F[:, 0]], axial[F[:, 1]], axial[F[:, 2]]
         if kind == "cylinder":
-            cap = ((np.abs(a0) < 1e-12) & (np.abs(a1) < 1e-12) & (np.abs(a2) < 1e-12)) | \
-                  ((np.abs(a0 - solid.h) < 1e-12) & (np.abs(a1 - solid.h) < 1e-12) & (np.abs(a2 - solid.h) < 1e-12))
-            tri_bound = np.where(~cap, solid.r * gap, 0.0)
+            cap = ((np.abs(a0) < cap_eps) & (np.abs(a1) < cap_eps) & (np.abs(a2) < cap_eps)) | \
+                  ((np.abs(a0 - solid.h) < cap_eps) & (np.abs(a1 - solid.h) < cap_eps) & (np.abs(a2 - solid.h) < cap_eps))
+            tri_bound = np.where(~cap & (solid.h > 4 * cap_eps), solid.r * gap, 0.0)
         else:
             t_min = np.minimum.reduce([a0, a1, a2])
-            cap = (np.abs(a0) < 1e-12) & (np.abs(a1) < 1e-12) & (np.abs(a2) < 1e-12)
+            cap = (np.abs(a0) < cap_eps) & (np.abs(a1) < cap_eps) & (np.abs(a2) < cap_eps)
             r_at = solid.r * (1.0 - t_min / solid.h)
-            tri_bound = np.where(~cap, r_at * gap, 0.0)
+            tri_bound = np.where(~cap & (solid.h > 4 * cap_eps), r_at * gap, 0.0)
     elif kind == "box":
         pass  # planar: vertex deviation only
     else:
@@ -312,6 +316,7 @@ class Cylinder(AnalyticSolid):
         if not (np.isfinite(r) and r > 0 and np.isfinite(h) and h > 0):
             raise ValueError("cylinder radius and height must be positive")
         self.base = base_center
+        self.raw_axis = axis  # as given, unnormalized: exact Tier A tests
         self.axis = axis / n
         self.r = float(r)
         self.h = float(h)
@@ -383,7 +388,9 @@ def _cone_mesh(base, axis, r, h, tol, k):
 
 class Cone(AnalyticSolid):
     kind = "cone"
-    # implicit = max(radial - r(1-t/h), -t, t-h); Lipschitz = 1 + r/h.
+    # implicit = max(radial - r(1-t/h), -t, t-h). The first term has
+    # gradient radial_unit + (r/h)*axis, of norm sqrt(1+(r/h)^2), which
+    # dominates the other two (norm 1): that is the Lipschitz constant.
     # Set per-instance in __init__.
 
     def __init__(self, base_center, axis, r, h):
@@ -395,10 +402,11 @@ class Cone(AnalyticSolid):
         if not (np.isfinite(r) and r > 0 and np.isfinite(h) and h > 0):
             raise ValueError("cone radius and height must be positive")
         self.base = base_center
+        self.raw_axis = axis  # as given, unnormalized: exact Tier A tests
         self.axis = axis / n
         self.r = float(r)
         self.h = float(h)
-        self.lipschitz = 1.0 + self.r / self.h
+        self.lipschitz = math.sqrt(1.0 + (self.r / self.h) ** 2)
 
     def implicit(self, p):
         """Exact implicit for a right circular cone (base disc at t=0, apex t=h)."""

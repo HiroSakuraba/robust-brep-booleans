@@ -57,6 +57,7 @@ python3 -m venv .venv
 .venv/bin/python tests/test_metamorphic.py
 .venv/bin/python tests/test_degenerate.py
 .venv/bin/python tests/test_regression.py
+.venv/bin/python tests/test_stress.py
 ```
 
 `cadquery-ocp` is needed for the OCCT cross-check (check V5); without it that
@@ -70,17 +71,37 @@ STEP/freeform slice.
 - `tests/test_degenerate.py`: 8/8 pass. Each case declares its expected
   disposition: certifiable cases must return exact volumes, degenerate cases
   (tangent cylinders/spheres, point contacts) must raise `AmbiguousResult`.
-- `tests/test_regression.py`: 5/5 pass, and 5/5 fail on the pre-fix code.
-  Covers the 1e-9-apart boxes that used to fuse silently, a volume-preserving
-  corner-push shape attack, non-round coordinates, the sphere certificate
-  bound, and flipped triangle winding.
+- `tests/test_regression.py`: 10/10 pass (5 original + t6-t10 added 23 Sept
+  2026), and the original 5 fail on the pre-fix code. Covers the 1e-9-apart
+  boxes that used to fuse silently, a volume-preserving corner-push shape
+  attack, non-round coordinates, the sphere certificate bound, flipped
+  triangle winding, plus: an inside-out shell attack (caught by winding
+  number + per-shell orientation), a sphere bump poking through a box face
+  (caught by the per-face Lipschitz bound), slab-split and tunnel box
+  differences (exact grid-based shell/Euler predictors), and a 1e8-offset
+  union (local-origin volume, scale-aware tolerances).
+- `tests/test_stress.py`: 28/28 pass, zero silent failures. Adversarial
+  battery: near-degenerate box gaps (accepted at 1e-8, ambiguous at 5e-10
+  and 1e-12), a 2-micron sliver intersection, nested spheres, grazing
+  contacts, cone apex on a box face (accepted), cylinder through a box
+  (tilted and axis-aligned, accepted via patch-level classification),
+  6 randomized box-soup trials, invalid inputs refused loudly, and large
+  coordinate offsets.
 
 ## Honest limits
 
 - The mesh engine does the geometric work (intersection curves, face
   splitting); the exact layer audits its topology decisions and blocks what
   it cannot verify. The engine is not exact, and the audit cannot pin cut
-  locations tighter than the margin band.
+  locations tighter than the margin band. Faces fully inside the band block;
+  patches (edge-connected face groups split where A-faces meet B-faces) are
+  rescued only if some face verifies decisively and none violate, so a
+  transverse cylinder through a box is accepted while a true tangency is
+  still refused.
+- The per-face audit rule: a face is verified if its rigorous whole-face
+  lower bound clears the margin, or (failing that) its centroid is decisive
+  and an audit-only subdivision cannot prove a violation. A centroid inside
+  the band with a provable wrong-side dip is a violation and blocks.
 - The OCCT cross-check is engine-diverse (independent kernel, independent
   geometry) but compares volumes, so it catches gross errors, not small
   shape deviations. Small deviations are caught by the vertex-on-surface

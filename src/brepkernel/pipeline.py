@@ -35,18 +35,30 @@ class AmbiguousResult(Exception):
         self.report = report
 
 
-def boolean(solidA, solidB, op, proxy_tol=1e-3):
+def boolean(solidA, solidB, op, proxy_tol=1e-3, allow_skips=True):
     """Run the full pipeline. Returns (result_mesh_dict, full_report).
 
     Raises IngestError / ArrangementError / AmbiguousResult on failure.
+    allow_skips: when False, a verification check that could not run
+    (status 'skip', e.g. no exact Euler prediction for non-box inputs)
+    blocks certification instead of being reported as
+    'certified with skipped checks: ...'.
     """
     if op not in ("union", "intersection", "difference"):
         raise ValueError(f"unknown op {op!r}")
     report = {"op": op, "stages": {}}
 
     # Stage 0
-    ledger = ToleranceLedger(proxy_tol=proxy_tol)
     audits = [audit_solid(solidA), audit_solid(solidB)]
+    # coordinate scale for scale-aware tolerances (item 4): rounding of
+    # vertex coordinates happens at ~eps64 * max|coord|
+    coord_scale = 1.0
+    for a_solid in (solidA, solidB):
+        lo, hi = a_solid.bbox()
+        coord_scale = max(coord_scale,
+                          float(np.max(np.abs(lo))),
+                          float(np.max(np.abs(hi))))
+    ledger = ToleranceLedger(proxy_tol=proxy_tol, coord_scale=coord_scale)
     report["stages"]["ingest"] = {"audits": audits,
                                   "ledger": ledger.as_dict()}
     for a in audits:
@@ -115,7 +127,7 @@ def boolean(solidA, solidB, op, proxy_tol=1e-3):
 
     # Stage 6
     accepted, vreport = verify(assembled, solidA, solidB, op,
-                               proxyA, proxyB)
+                               proxyA, proxyB, allow_skips=allow_skips)
     report["stages"]["verification"] = vreport
 
     mesh = {"V": assembled["V"], "F": assembled["F"],
@@ -138,7 +150,7 @@ def boolean(solidA, solidB, op, proxy_tol=1e-3):
                                 "faces": [int(i) for i in
                                           np.nonzero(audit["violation"])[0][:25]]})
     failed_checks = [k for k, c in vreport["checks"].items()
-                     if not c["pass"]]
+                     if c["status"] == "fail"]
     for k in failed_checks:
         ambiguities.append({"type": "verification_failed", "check": k,
                             "info": vreport["checks"][k].get("info")})

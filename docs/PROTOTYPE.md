@@ -69,8 +69,9 @@ inputs (A op A) resolve exactly via Tier A without touching the engine.
   coplanar difference are accepted with exact volumes and all faces
   verified.
 - `tests/test_stress.py`: 28/28 PASS (added 23 Sept 2026). Adversarial
-  battery: near-degenerate box gaps (accepted down to 2e-9, ambiguous at
-  5e-10 and 1e-12), a 2-micron sliver intersection (exact volume 2e-6),
+  battery: near-degenerate box gaps (accepted at 1e-8, ambiguous at 5e-10
+  and 1e-12; the margin is 1e-9 * coord_scale, so 2e-9 sits below it and is
+  correctly refused), a 2-micron sliver intersection (exact volume 2e-6),
   nested spheres (union and cavity difference), grazing contacts, cone apex
   on a box face (accepted: 2 clean shells, chi = 4, OCCT agrees), a 3-box
   chain (exact 1.875 / 1.973), 6 randomized box-soup trials (commutativity
@@ -78,23 +79,29 @@ inputs (A op A) resolve exactly via Tier A without touching the engine.
   coordinate offsets (vol exactly 15.0), identical spheres, inscribed sphere
   (union accepted with vol exactly 8.0; difference ambiguous), and box with
   cubic cavity (exact 0.875). The headline: zero silent failures across all
-  28. Three initial expectations were wrong (1e-9 gap, cone apex, inscribed
-  union) and were corrected after verifying the accept was genuinely
-  certified; the tilted/axis-aligned cylinder-through-box cases are refused
-  by design (see crossing-band limit below).
+  28. The tilted/axis-aligned cylinder-through-box cases are ACCEPTED via
+  patch-level classification (see below); true tangencies (tangent
+  cylinder/sphere probes) are still refused.
 
 ## Known limits / next steps
 
 - The audit cannot pin intersection-curve locations tighter than the margin
-  band; faces fully inside the band block rather than guess. Stress testing
-  confirmed this bites on ordinary transverse curved crossings too: a
-  cylinder through a box (tilted or axis-aligned) is refused because the
-  engine's sliver triangles along the crossing ellipse have centroids inside
-  the chordal band (|f| ~ 0.6 * margin at tol 1e-3 and 1e-4, so refining
-  does not help). The refusal is safe and honest, but it is frequent. The
-  real fix is the deferred exact arrangement core, which decides crossings
-  on the true surfaces instead of auditing mesh-world decisions after the
-  fact.
+  band; faces fully inside the band block rather than guess. Patch-level
+  classification recovers the important transverse cases: a cylinder through
+  a box (tilted or axis-aligned) is now ACCEPTED, because the sliver
+  triangles hugging the crossing ellipse belong to patches that touch an
+  A/B crossing and contain decisively verified faces (|f| ~ 0.6 * margin at
+  tol 1e-3 and 1e-4, so refining does not help; the residual error is
+  geometric, bounded by the margin, and cannot change topology). A whole
+  patch stuck in the band with no decisive face -- the tangency case -- is
+  still refused.
+- The audit itself is fast: each face gets a rigorous whole-face lower
+  bound from the solid's analytic form (box: max of per-axis pieces;
+  sphere/cylinder/cone: point-triangle distance), which verifies most faces
+  in microseconds. The audit-only subdivision runs solely as a
+  violation-prover on faces whose bound dips below -margin. The tilted
+  cylinder-through-box audit runs in 0.03 s (was minutes with subdivision
+  alone).
 - V5 compares volumes, so it catches gross errors only; V6/V7 cover shape.
 - Mixed-kind exact relations (box vs sphere containment, etc.) are not
   decided; those checks stay report-only.
