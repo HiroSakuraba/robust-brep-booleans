@@ -28,6 +28,13 @@ topology). A patch with no crossing gets no such transfer: every face
 must verify on its own, so tangencies (tangent cylinders/spheres, point
 or edge box contacts) with undecidable faces still block.
 
+Thin-feature veto: a rescued face sitting within 2*margin of a
+nearly-anti-parallel result surface is a sub-margin wall or bridge --
+the true surface could lie on either side of the gap, so the rescue is
+withheld and the face goes back to ambiguous (the exclusion-radius
+idea). This is what stops a hairline proxy bridge from being certified
+as a real wall, even where no oracle exists.
+
 Tier A (below) detects degeneracies from defining parameters with exact
 rational predicates -- no tolerance voting.
 """
@@ -192,6 +199,88 @@ def _face_has_violation(tri, implicit_other, s, L, margin, budget=20000):
     return False
 
 
+def _proxy_straddles_plane(PV, tri, n_j, c_j, vic, tick):
+    """Does the proxy vertex set PV cross tri's plane inside vicinity?
+
+    vic = (tri_lo, tri_hi, expand): the box tested. Straddle = proxy
+    vertices on both sides of the plane beyond the fp-noise floor tick.
+    A straddling proxy genuinely punctures the face plane near the pair
+    (a puncture lip); a one-sided proxy dead-ends at it (a sub-margin
+    wall/bridge).
+    """
+    lo, hi, expand = vic
+    m = np.all((PV >= lo - expand) & (PV <= hi + expand), axis=1)
+    if not np.any(m):
+        return False
+    s = PV[m] @ n_j - n_j @ c_j
+    return bool(np.any(s < -tick) and np.any(s > tick))
+
+
+def _thin_bridge_faces(F, V, rescued, margin, origins=None,
+                       planar=None, proxies=None):
+    """Indices of rescued faces that form a sub-margin wall or bridge.
+
+    A rescued face whose centroid lies within 2*margin of a
+    nearly-anti-parallel (dot < -0.9) result face is a thin-feature
+    candidate. It is reported -- the patch rescue is withheld -- UNLESS
+    the intruding proxy surface demonstrably punctures the opposite
+    face's plane nearby: a puncture lip shares the local signature
+    (nearly parallel, opposite, close) but is legitimate, while a
+    dead-ending wall is a sub-margin feature the audit cannot resolve.
+    The puncture test needs the proxy vertices (the kept result faces
+    alone cannot show a crossing); without them every candidate is
+    reported. It is applied only against planar opposite faces, where
+    the triangle's plane is the true face plane; against curved faces
+    the candidate is reported.
+    Only rescued faces are tested: a face verified decisively on its own
+    already cleared the margin against the other solid.
+
+    origins: per-face "A"/"B"; planar: per-face bool (face is planar);
+    proxies: {"A": proxyA_vertices, "B": proxyB_vertices}.
+    """
+    R = np.nonzero(rescued)[0]
+    if len(R) == 0:
+        return []
+    T = V[F]
+    c = T.mean(axis=1)
+    e1 = T[:, 1] - T[:, 0]
+    n = np.cross(e1, T[:, 2] - T[:, 0])
+    n = n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-300)
+    rad = np.max(np.linalg.norm(T - c[:, None, :], axis=2), axis=1)
+    scale = max(1.0, float(np.max(np.abs(V)))) if len(V) else 1.0
+    tick = 1e-7 * scale  # fp-noise floor for the straddle test
+    out = []
+    for i in R:
+        i = int(i)
+        cand = np.nonzero((n @ n[i]) < -0.9)[0]
+        cand = cand[cand != i]
+        if len(cand) == 0:
+            continue
+        # bounding-sphere prefilter (sound): a triangle within 2*margin
+        # of c[i] has its centroid within 2*margin + its radius
+        d2c = np.linalg.norm(c[cand] - c[i], axis=1)
+        cand = cand[d2c < 2 * margin + rad[cand]]
+        if len(cand) == 0:
+            continue
+        P = np.tile(c[i], (len(cand), 1))
+        dist = _point_triangle_dist_lb(P, T[cand])
+        if np.all(dist >= 2 * margin):
+            continue
+        j = int(cand[np.argmin(dist)])
+        # Candidate thin pair (i, j). Puncture or dead-end?
+        puncture = False
+        if (proxies is not None and origins is not None
+                and planar is not None and planar[j]
+                and origins[i] in proxies):
+            E = 4 * margin + rad[i] + rad[j]
+            vic = (T[j].min(axis=0), T[j].max(axis=0), E)
+            puncture = _proxy_straddles_plane(proxies[origins[i]], T[j],
+                                              n[j], c[j], vic, tick)
+        if not puncture:
+            out.append(i)
+    return out
+
+
 def _patches(F, origins):
     """Group faces into patches: edge-adjacent and same origin.
 
@@ -244,11 +333,14 @@ def _patches(F, origins):
     return pid, pt[pid]
 
 
-def audit_faces(F, V, origins, solidA, solidB, margin, op):
+def audit_faces(F, V, origins, solidA, solidB, margin, op, proxies=None):
     """Audit the engine's keep decision per face against exact implicits.
 
     Returns dict with boolean masks: verified, ambiguous, violation, plus
     the raw other-solid implicit values and the patch count.
+    proxies: optional {"A": proxyA_vertices, "B": proxyB_vertices} for
+    the thin-feature puncture test (without them every thin candidate
+    is reported).
     """
     F = np.asarray(F)
     n = len(F)
@@ -323,12 +415,29 @@ def audit_faces(F, V, origins, solidA, solidB, margin, op):
     pv[ok & p_touch & p_has_ok] = 1       # crossing patch: slivers rescued
     pv[ok & ~p_touch & p_all_ok] = 1      # no crossing: every face verified
     pv[p_viol] = 2
+    perface_verified = verified  # before the patch override, for rescue bookkeeping
     verified = pv[pid] == 1
     violation = pv[pid] == 2
+    # Thin-feature veto: a rescued face (patch-verified but not
+    # individually verifiable) sitting within 2*margin of a
+    # nearly-anti-parallel result surface is a sub-margin wall or
+    # bridge. The true surface could lie on either side of the gap, so
+    # the rescue is withheld and the face goes back to ambiguous.
+    rescued = verified & ~perface_verified
+    planar = np.array([(solidA.kind == "box") if o == "A"
+                       else (solidB.kind == "box") for o in origins])
+    thin_features = _thin_bridge_faces(F, V, rescued, margin,
+                                       origins=origins, planar=planar,
+                                       proxies=proxies)
+    if thin_features:
+        verified = verified.copy()
+        verified[thin_features] = False
     ambiguous = ~(verified | violation)
     return {"verified": verified, "ambiguous": ambiguous,
             "violation": violation, "f_other": f_other, "origins": origins,
-            "n_patches": n_patches}
+            "n_patches": n_patches,
+            "thin_features": [int(i) for i in thin_features],
+            "n_rescued": int(np.sum(rescued))}
 
 
 def identical_inputs(solidA, solidB):

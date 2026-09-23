@@ -71,16 +71,19 @@ STEP/freeform slice.
 - `tests/test_degenerate.py`: 8/8 pass. Each case declares its expected
   disposition: certifiable cases must return exact volumes, degenerate cases
   (tangent cylinders/spheres, point contacts) must raise `AmbiguousResult`.
-- `tests/test_regression.py`: 10/10 pass (5 original + t6-t10 added 23 Sept
+- `tests/test_regression.py`: 11/11 pass (5 original + t6-t11 added 23 Sept
   2026), and the original 5 fail on the pre-fix code. Covers the 1e-9-apart
   boxes that used to fuse silently, a volume-preserving corner-push shape
   attack, non-round coordinates, the sphere certificate bound, flipped
   triangle winding, plus: an inside-out shell attack (caught by winding
   number + per-shell orientation), a sphere bump poking through a box face
   (caught by the per-face Lipschitz bound), slab-split and tunnel box
-  differences (exact grid-based shell/Euler predictors), and a 1e8-offset
-  union (local-origin volume, scale-aware tolerances).
-- `tests/test_stress.py`: 28/28 pass, zero silent failures. Adversarial
+  differences (exact grid-based shell/Euler predictors), a 1e8-offset
+  union (local-origin volume, scale-aware tolerances), and the thin-bridge
+  probe (t11: hairline bridge refused via sub_margin_thin_feature +
+  OCCT topology oracle; clean config accepted with 2 shells, chi=4).
+- `tests/test_stress.py`: 28/28 pass, zero silent failures found by this
+  battery. Adversarial
   battery: near-degenerate box gaps (accepted at 1e-8, ambiguous at 5e-10
   and 1e-12), a 2-micron sliver intersection, nested spheres, grazing
   contacts, cone apex on a box face (accepted), cylinder through a box

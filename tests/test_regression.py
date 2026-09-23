@@ -12,6 +12,8 @@ Second-review findings (23 Sept 2026):
   8. Slab-split difference: predictor said 1 shell / chi=2 (answer: 2, 4).
   9. Tunnel difference: predictor said chi=2 (answer: chi=0).
   10. Boxes at 1e8 offset refused by the absolute 1e-9 margin.
+Third-review probe (23 Sept 2026):
+  11. Hairline bridge silently accepted as 1 shell at proxy_tol=3e-3.
 """
 
 import sys
@@ -285,6 +287,46 @@ def t5_flipped_winding():
     return check("flipped winding rejected", not ok, f"info={info}")
 
 
+def t11_thin_bridge():
+    """Hairline bridge refused; puncture lips still accepted.
+
+    Third-review probe: a bar (1.0 thick in x) minus a y-axis cylinder of
+    radius 0.5+delta, delta below the proxy chordal error. The true surface
+    pierces both x faces (2 pieces); at proxy_tol=3e-3 and delta=0.25*chordal
+    the inscribed proxy falls short, leaving hairline bridges. The bridge
+    config must raise AmbiguousResult (sub_margin_thin_feature) -- v0.3
+    silently accepted 1 shell. A larger delta (0.9*chordal) has no bridge
+    and must accept with 2 shells, chi=4.
+    """
+    from brepkernel.proxy import certified_proxy
+    from brepkernel.verify import euler_chi
+    A = Box([1.5, 0, -2], [2.5, 1, 3])
+    tol = 3e-3
+    chordal = certified_proxy(
+        Cylinder([2, -1, 0.5], [0, 1, 0], 0.5, 3.0), tol)["chordal_error"]
+    ok = True
+    B = Cylinder([2, -1, 0.5], [0, 1, 0], 0.5 + 0.25 * chordal, 3.0)
+    try:
+        m, r = boolean(A, B, "difference", proxy_tol=tol)
+        ok &= check("bridge refused", False,
+                    f"silently accepted {connected_shells(m['F'])} shells")
+    except AmbiguousResult as e:
+        types = [a.get("check", a["type"]) for a in e.report["ambiguities"]]
+        ok &= check("bridge refused", "sub_margin_thin_feature" in types,
+                    f"ambiguities={types[:4]}")
+    B2 = Cylinder([2, -1, 0.5], [0, 1, 0], 0.5 + 0.9 * chordal, 3.0)
+    try:
+        m, r = boolean(A, B2, "difference", proxy_tol=tol)
+    except AmbiguousResult as e:
+        return ok & check("no-bridge accepted", False, f"rejected: {e}")
+    nsh = connected_shells(m["F"])
+    chi = euler_chi(m["V"], m["F"])
+    ok &= check("no-bridge accepted",
+                r["accepted"] and nsh == 2 and chi == 4,
+                f"shells={nsh} chi={chi}")
+    return ok
+
+
 def main():
     ok = True
     ok &= t1_gap_boxes()
@@ -297,6 +339,7 @@ def main():
     ok &= t8_slab_split_difference()
     ok &= t9_tunnel_difference()
     ok &= t10_large_offset_union()
+    ok &= t11_thin_bridge()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 

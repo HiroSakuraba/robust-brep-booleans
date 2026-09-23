@@ -26,6 +26,7 @@ def assemble(arrangement, solidA, solidB, proxyA, proxyB, ledger, op,
     if origins is None or len(origins) != len(F):
         raise RuntimeError("arrangement lacks per-face origins")
     audit = None if skip_audit else audit_faces(
-        F, V, origins, solidA, solidB, margin, op)
+        F, V, origins, solidA, solidB, margin, op,
+        proxies={"A": proxyA["V"], "B": proxyB["V"]})
     return {"V": V, "F": F, "empty": False, "margin": margin,
             "audit": audit, "origins": origins}

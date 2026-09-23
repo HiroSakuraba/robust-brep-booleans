@@ -78,8 +78,8 @@ inputs (A op A) resolve exactly via Tier A without touching the engine.
   + no-silent-failure invariant), invalid inputs refused loudly, large
   coordinate offsets (vol exactly 15.0), identical spheres, inscribed sphere
   (union accepted with vol exactly 8.0; difference ambiguous), and box with
-  cubic cavity (exact 0.875). The headline: zero silent failures across all
-  28. The tilted/axis-aligned cylinder-through-box cases are ACCEPTED via
+  cubic cavity (exact 0.875). The headline: zero silent failures found by
+  this battery. The tilted/axis-aligned cylinder-through-box cases are ACCEPTED via
   patch-level classification (see below); true tangencies (tangent
   cylinder/sphere probes) are still refused.
 

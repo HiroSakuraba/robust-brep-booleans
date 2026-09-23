@@ -13,8 +13,10 @@ A result is accepted only if every applicable check passes:
                    Monte-Carlo check against the exact implicits, honestly
                    labeled statistical
   V5 occ-xcheck  - rebuild the boolean in OCCT (independent engine,
-                   independent geometry kernel) and compare volumes;
-                   SKIPPED if OCCT errors or does not finish
+                   independent geometry kernel) and compare volumes,
+                   solid/shell counts, and chi from an OCCT tessellation.
+                   A hairline bridge can keep the volume right while the
+                   solid count is wrong; SKIPPED if OCCT errors or bails
   V6 verts       - every output vertex lies within the margin of an input
                    surface (catches shape errors that preserve volume)
   V7 samples     - generalized winding number (solid-angle sum) vs exact
@@ -113,6 +115,32 @@ def shell_face_labels(F):
     roots = np.array([find(int(t)) for t in F[:, 0]])
     _, labels = np.unique(roots, return_inverse=True)
     return labels
+
+
+def _min_outer_shell_gap(V, F):
+    """Lower bound on the separation between positive-volume shells.
+
+    AABB-based: the AABB gap never exceeds the true surface gap, so a
+    sub-resolution AABB gap proves the true gap is sub-resolution too.
+    Returns inf with fewer than two outer shells.
+    """
+    labels = shell_face_labels(F)
+    boxes = []
+    for k in np.unique(labels):
+        m = labels == k
+        if signed_volume(V, F[m]) > 0:
+            P = V[F[m]].reshape(-1, 3)
+            boxes.append((P.min(axis=0), P.max(axis=0)))
+    if len(boxes) < 2:
+        return float("inf")
+    gap = float("inf")
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            lo = np.maximum(boxes[i][0], boxes[j][0])
+            hi = np.minimum(boxes[i][1], boxes[j][1])
+            sep = np.maximum(lo - hi, 0.0)
+            gap = min(gap, float(np.linalg.norm(sep)))
+    return gap
 
 
 def connected_shells(F):
@@ -249,10 +277,100 @@ def _occt_shape(solid):
     raise ValueError(f"no OCCT builder for {k}")
 
 
+def _occt_topology(shape, deflection):
+    """Solid/shell counts and chi from an OCCT tessellation.
+
+    BRepMesh_IncrementalMesh triangulates the (analytic) OCCT result;
+    vertices are welded at 1e-9 relative and degenerate triangles
+    (repeated vertices, exact duplicates) dropped before chi = V-E+F.
+    Returns (n_solids, n_shells, chi) or None if meshing yields nothing.
+    """
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopAbs import TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.BRep import BRep_Tool
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.TopoDS import TopoDS
+
+    def count(t):
+        e = TopExp_Explorer(shape, t)
+        n = 0
+        while e.More():
+            n += 1
+            e.Next()
+        return n
+
+    n_solids = count(TopAbs_SOLID)
+    n_shells = count(TopAbs_SHELL)
+    BRepMesh_IncrementalMesh(shape, deflection)
+    raw = []  # raw (x, y, z) triples; welded below with scale-aware keys
+    ef = TopExp_Explorer(shape, TopAbs_FACE)
+    while ef.More():
+        face = TopoDS.Face(ef.Current())
+        loc = TopLoc_Location()
+        tri = BRep_Tool.Triangulation_s(face, loc)
+        if tri is not None:
+            trsf = loc.Transformation()
+            for ti in range(1, tri.NbTriangles() + 1):
+                n1, n2, n3 = tri.Triangle(ti).Get()
+                if len({n1, n2, n3}) < 3:
+                    continue  # degenerate node triple
+                pts = []
+                for n_ in (n1, n2, n3):
+                    p = tri.Node(n_)
+                    p.Transform(trsf)
+                    pts.append((p.X(), p.Y(), p.Z()))
+                raw.append(pts)
+        ef.Next()
+    if not raw:
+        return n_solids, n_shells, None
+    scale = max(1.0, max(abs(c) for t in raw for p in t for c in p))
+    q = scale * 1e-9  # well below any real mesh edge, above fp noise
+    verts = {}
+    V = []
+
+    def vid(p):
+        key = (round(p[0] / q), round(p[1] / q), round(p[2] / q))
+        i = verts.get(key)
+        if i is None:
+            i = len(V)
+            verts[key] = i
+            V.append(p)
+        return i
+
+    seen = set()
+    F = []
+    for pts in raw:
+        t = (vid(pts[0]), vid(pts[1]), vid(pts[2]))
+        if len(set(t)) < 3:
+            continue  # welded degenerate
+        key = tuple(sorted(t))
+        if key in seen:
+            continue  # exact duplicate triangle
+        seen.add(key)
+        F.append(t)
+    F = np.array(F, dtype=np.int64)
+    e = np.concatenate([F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]])
+    e = np.sort(e, axis=1)
+    chi = len(V) - len(np.unique(e, axis=0)) + len(F)
+    return n_solids, n_shells, chi
+
+
 def occt_crosscheck(V, F, solidA, solidB, op):
     """Independent engine AND independent geometry kernel (OCCT).
 
-    Builds the same boolean from OCCT primitives and compares volumes.
+    Builds the same boolean from OCCT primitives and compares three
+    independent quantities:
+      * volume (2% tolerance for curved solids, exact-ish for box-box),
+      * topology: OCCT solid/shell counts vs the mesh's shell count and
+        number of positive-volume (outer) shells,
+      * Euler characteristic from an OCCT tessellation vs the mesh's chi.
+    A volume that is right while the solid count is wrong (e.g. a
+    hairline bridge turning two pieces into one holed piece) fails here.
+    Adjudication limit: OCCT cannot resolve features finer than its own
+    ~1e-7 confusion, so when it reports fewer solids than our outer
+    shells and our shells are closer than 1e-6*scale, the topology leg is
+    skipped (reported, never silently passed).
     Returns status 'skip' (never a silent pass) if OCCT errors or bails.
     """
     if len(F) == 0:
@@ -266,20 +384,72 @@ def occt_crosscheck(V, F, solidA, solidB, op):
         algo = {"union": BRepAlgoAPI_Fuse, "intersection": BRepAlgoAPI_Common,
                 "difference": BRepAlgoAPI_Cut}[op]
         res = algo(sA, sB)
+        # The oracle must resolve features at least as finely as our audit:
+        # OCCT's default fuzzy value (1e-7) glues gaps our margin keeps
+        # separate (e.g. two boxes 1e-8 apart, which we correctly keep as
+        # 2 shells). Our margin is >= 1e-9 * coord_scale, so a fuzzy value
+        # of half that keeps the oracle strictly finer; exactly-coincident
+        # faces (distance 0) still glue.
+        coord_scale = _coord_scale(V)
+        res.SetFuzzyValue(0.5e-9 * coord_scale)
         if not res.IsDone():
             return "skip", {"note": "OCCT did not finish"}
+        shape = res.Shape()
         props = GProp_GProps()
-        BRepGProp.VolumeProperties_s(res.Shape(), props)
+        BRepGProp.VolumeProperties_s(shape, props)
         ovol = float(props.Mass())
         mvol = abs(signed_volume(V, F))
         if solidA.kind == "box" and solidB.kind == "box":
             tol = 1e-6 * max(1.0, mvol)
         else:
             tol = 0.02 * max(1.0, mvol) + 1e-9
-        ok = abs(ovol - mvol) <= tol
-        return ("pass" if ok else "fail",
-                {"occt_vol": ovol, "mesh_vol": mvol,
-                 "diff": abs(ovol - mvol), "tol": tol})
+        vol_ok = abs(ovol - mvol) <= tol
+        info = {"occt_vol": ovol, "mesh_vol": mvol,
+                "diff": abs(ovol - mvol), "tol": tol, "vol_ok": vol_ok}
+        # Topology oracle: solid/shell counts and chi from an OCCT
+        # tessellation. A hairline bridge can leave the volume right to
+        # 2% while the solid count is wrong -- this catches that.
+        topo = _occt_topology(shape, 1e-3 * coord_scale)
+        n_solids, n_shells_occt, chi_occt = topo
+        n_shells_mesh = connected_shells(F)
+        chi_mesh = euler_chi(V, F)
+        # outer shells = positive signed volume; one per OCCT solid
+        n_outer = sum(1 for v in shell_signed_volumes(V, F).values()
+                      if v > 0)
+        info.update({"occt_solids": n_solids,
+                     "occt_shells": n_shells_occt,
+                     "mesh_shells": n_shells_mesh,
+                     "mesh_outer_shells": n_outer,
+                     "occt_chi": chi_occt, "mesh_chi": chi_mesh})
+        # Adjudication limit: OCCT cannot resolve features finer than its
+        # own confusion (~1e-7 on shape tolerances), no matter the fuzzy
+        # value. If OCCT reports FEWER solids than our outer shells and
+        # our shells sit closer than that resolution, the oracle is blind
+        # there: skip the topology leg (the mesh already passed closure,
+        # winding, and orientation, which cover a spurious split). If OCCT
+        # reports MORE solids than our outer shells, that is the dangerous
+        # direction (a bridge on our side): fail.
+        occt_res = 1e-6 * coord_scale
+        topo_skip = False
+        if n_solids < n_outer:
+            gap = _min_outer_shell_gap(V, F)
+            info["min_outer_shell_gap"] = gap
+            info["occt_resolution"] = occt_res
+            if gap < occt_res:
+                topo_skip = True
+                info["topology_skipped"] = (
+                    "outer shells closer than OCCT resolution")
+        topo_ok = (topo_skip
+                   or (n_shells_occt == n_shells_mesh
+                       and n_solids == n_outer
+                       and (chi_occt is None or chi_occt == chi_mesh)))
+        if not topo_ok:
+            info["topology_mismatch"] = True
+        if not vol_ok or not topo_ok:
+            return "fail", info
+        if topo_skip:
+            return "skip", info
+        return "pass", info
     except Exception as e:
         return "skip", {"note": f"OCCT unavailable ({e})"}
 
