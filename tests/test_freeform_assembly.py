@@ -93,9 +93,15 @@ def t1_overlap_spheres_all_ops():
             f"err={oerr:.3e}")
         ok &= check(
             f"t1 {op} provenance decisions",
-            len(r.decisions) == 4
+            len(r.decisions) >= 4
+            and r.selected_faces == sum(int(d.keep) for d in r.decisions)
+            and any(d.operand == "A" and d.keep for d in r.decisions)
+            and any(d.operand == "B" and d.keep for d in r.decisions)
             and all(d.classification in ("inside", "outside")
-                    for d in r.decisions),
+                    for d in r.decisions)
+            and (op != "difference"
+                 or any(d.operand == "B" and d.keep
+                        and d.reverse_for_difference for d in r.decisions)),
             f"decisions={[(d.operand,d.classification,d.keep) for d in r.decisions]}")
     return ok
 
