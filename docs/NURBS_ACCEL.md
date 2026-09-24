@@ -247,9 +247,10 @@ The dedicated Freeform NURBS CI currently runs:
 3. local face-split regressions;
 4. global B-rep assembly regressions;
 5. true NURBS end-to-end Boolean regression;
-6. existing multi-shell semantic regressions.
+6. public one-call B-rep pipeline regressions;
+7. existing multi-shell semantic regressions.
 
-The latest strict run passes all six groups with current
+The latest strict run passes all seven groups with current
 `cadquery-ocp 8.0.1.0.0`.
 
 ### Numerical checks
@@ -299,6 +300,46 @@ result solids: 1
 The assembled union is B-rep valid, preserves selected-face provenance from
 both operands, and matches the independent OCCT NURBS Boolean volume.
 
+
+## Public Tier B/C API
+
+The new path is exposed without changing the existing mesh/proxy
+`boolean()` contract:
+
+```python
+from brepkernel import boolean_brep, BRepAmbiguousResult
+
+try:
+    result_shape, report = boolean_brep(shape_a, shape_b, "union")
+except BRepAmbiguousResult as exc:
+    report = exc.report
+    # inspect report["refusal"] instead of accepting guessed topology
+```
+
+`boolean_brep()` accepts OCCT shapes or already indexed `BRepModel` objects
+and runs ingestion, conservative candidate selection, verified intersection,
+local splitting, exact patch classification, global assembly and final B-rep
+validity checks.
+
+Its report includes:
+
+- solid/shell/face counts and accelerator/patch counts;
+- candidate face pairs and expensive Section-call count;
+- verified section-edge/contact counts;
+- affected-face/split-call counts;
+- unresolved contacts;
+- per-patch material decisions and input provenance;
+- selected faces, shells, solids, free/multiple edges and volume;
+- final validity/closed/manifold status.
+
+An exact `TopoDS_Shape.IsSame()` identity fast path handles A op A without
+running intersection: union/intersection return A and A-A returns an empty
+compound. This rule is intentionally narrow; independently constructed but
+geometrically coincident B-reps are not assumed identical.
+
+Refusals are surfaced as `BRepAmbiguousResult` with the partial stage report
+and underlying typed cause attached.
+
 ## Performance boundary
 
 The work funnel is now:
@@ -337,8 +378,9 @@ The main remaining work is:
   mixed analytic/freeform surfaces;
 - explicit result-level p-curve/edge lineage after sewing, beyond the current
   selected/sewed face provenance;
-- integration of the exact patch classifier/assembler into the main Stage 6
-  operation path rather than keeping it as a parallel Tier B/C module;
+- deciding whether/when the legacy mesh/proxy `boolean()` and the new
+  `boolean_brep()` should share a common dispatch surface; they are currently
+  separate public routes so the stable Tier A contract is not silently changed;
 - a canonical `SolidComplex` result representation;
 - certified local tessellation error bounds if tessellation is used for later
   acceleration or downstream consumers;
