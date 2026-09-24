@@ -19,9 +19,20 @@ from brepkernel.freeform import (FreeformFaceAccel, NurbsPatchIndex,
                                  nurbs_from_occt_face)
 from brepkernel.step_ingest import index_shape, candidate_face_pairs
 
-from OCP.TColgp import TColgp_Array2OfPnt
-from OCP.TColStd import (TColStd_Array1OfReal, TColStd_Array1OfInteger,
-                         TColStd_Array2OfReal)
+try:
+    # OCP <= 7.x bindings
+    from OCP.TColgp import TColgp_Array2OfPnt
+    from OCP.TColStd import (TColStd_Array1OfReal,
+                             TColStd_Array1OfInteger,
+                             TColStd_Array2OfReal)
+except ImportError:
+    # OCP 8.x moved generated collection types into OCP.collections.
+    from OCP.collections import (
+        Array2_gp_Pnt as TColgp_Array2OfPnt,
+        Array1_double as TColStd_Array1OfReal,
+        Array1_int as TColStd_Array1OfInteger,
+        Array2_double as TColStd_Array2OfReal,
+    )
 from OCP.gp import gp_Pnt, gp_Vec
 from OCP.Geom import Geom_BSplineSurface
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
