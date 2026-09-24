@@ -1,0 +1,4368 @@
+{
+ "meta": {
+  "date": "2026-09-24",
+  "kernel": "/home/hatch/workspace/brep-booleans (v0.6 mesh machinery)",
+  "protocol": "NIST/Thingi10K replication on ABC dataset (pilot + chunk-27 scale-up)",
+  "rounds": [
+   {
+    "name": "pilot",
+    "chunk": null,
+    "source": "gh-pages sample STEP (only reachable ABC file)",
+    "sampling": "uniform random pool of 80 ids from meta chunks 0/33/66/99; per-file STEP URLs 404 for all 80 (0% hit rate); gh-pages hosts exactly 1 sample STEP; archive.nyu.edu chunk 7z files (~1GB) do not support HTTP ranges; whole-chunk download declined per task constraints. Pilot runs on the single available ABC STEP model.",
+    "hit_rate": "0/80 per-file URLs; 1/1 gh-pages sample",
+    "n_models": 1
+   },
+   {
+    "name": "chunk27",
+    "chunk": "abc_0027_step_v00.7z",
+    "source": "archive.nyu.edu abc_0027_step_v00.7z (597,802,299 bytes, md5 525d4847fa658c313400bcb418250620), 10,000 STEP files extracted",
+    "sampling": "uniform random pool of 300 (seed 20260924), tessellated; 40 worst-case + 10 clean controls (is_clean required shells==1), >200k-tris skipped; 299 ok, 0 import failures",
+    "n_models": 50
+   },
+   {
+    "name": "closed_multishell",
+    "chunk": "abc_0027_step_v00.7z",
+    "source": "same chunk; targeted follow-up scan (scan_closed_multishell.py, seed 20260925): 70 files scanned, first 8 with directed_closed + 0 bnd + 0 nm + shells>1 kept",
+    "sampling": "targeted: clean closed multi-shell only (the pilot failure class); shells 2,2,2,2,4,4,6,13",
+    "n_models": 8
+   }
+  ]
+ },
+ "models": [
+  {
+   "id": "00000050_80d90bfdd2e74e709956122a",
+   "step": "/tmp/abc_stress/step/00000050_80d90bfdd2e74e709956122a.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 43,
+    "n_raw_tris": 1892,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.12,
+    "diag": 134.93377706328067,
+    "n_verts": 934,
+    "n_tris": 1892,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 2838",
+    "chi": -12,
+    "shells": 3,
+    "shell_signed_volumes": {
+     "0": 7364.154892335607,
+     "1": 39.19115716588406,
+     "2": 9724.332377798022
+    },
+    "total_abs_volume": 17127.678427299514,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 4920,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 7380",
+     "signed_volume": 30118.264450529707,
+     "volume": 30118.264450529707,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.24236154556274414
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 2342,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 3513",
+     "signed_volume": 4166.518972734624,
+     "volume": 4166.518972734624,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.20157384872436523
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 3280,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 4920",
+     "signed_volume": 12971.97388948338,
+     "volume": 12971.97388948338,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.19809269905090332
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 25434.844284990468,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": -6,
+    "occt_time_s": 0.36,
+    "kernel_union_volume": 30118.264450529707,
+    "union_vol_err_pct": 18.413402154394177,
+    "kernel_union_shells": 3,
+    "kernel_union_chi": -52,
+    "shell_count_agrees": false,
+    "chi_agrees": false,
+    "arbiter_triggered": true,
+    "arbiter": {
+     "n_points": 800,
+     "n_exact_on_surface_undecided": 0,
+     "n_ray_undecided": 0,
+     "n_decided": 800,
+     "n_agree": 758,
+     "agreement_vs_fused": 0.9475,
+     "truth_or": {
+      "n_decided": 800,
+      "n_agree": 758,
+      "agreement": 0.9475,
+      "kernel_in_truth_out": 0,
+      "kernel_out_truth_in": 42
+     }
+    },
+    "inclusion_exclusion": {
+     "U_resid": 29.426568665301602,
+     "U_resid_rel": 0.0009770340091686145,
+     "D_resid": 10.814434918491315,
+     "D_resid_rel": 0.0008336768953303844
+    }
+   },
+   "chunk": null,
+   "round": "pilot"
+  },
+  {
+   "id": "00270179_94a61850bab24bb0843876bf_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00270179_94a61850bab24bb0843876bf_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 34,
+    "n_raw_tris": 8312,
+    "n_zero_area_dropped": 2,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 7,
+    "tess_time_s": 2.74,
+    "diag": 150.40046695714778,
+    "n_verts": 4159,
+    "n_tris": 8303,
+    "boundary_edges": 10,
+    "nonmanifold_edges": 3,
+    "directed_closed": false,
+    "closure_info": "10 bad undirected edges of 12453",
+    "chi": 4,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": 6664.749514423608,
+     "1": 10447.64224115661
+    },
+    "total_abs_volume": 17112.391755580218,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14918255805969238
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15439248085021973
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.165299654006958
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00270376_57f273fd3cd74c10f43b0f04_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00270376_57f273fd3cd74c10f43b0f04_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 477,
+    "n_raw_tris": 14300,
+    "n_zero_area_dropped": 8,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 129,
+    "tess_time_s": 1.3,
+    "diag": 437.1122348680683,
+    "n_verts": 6974,
+    "n_tris": 14163,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 180,
+    "directed_closed": false,
+    "closure_info": "180 bad undirected edges of 21134",
+    "chi": 3,
+    "shells": 5,
+    "shell_signed_volumes": {
+     "0": 3925.602787988742,
+     "1": 27628.414189417963,
+     "2": 50695.818876163896,
+     "3": 92631.77044584614,
+     "4": 772386.9728939369
+    },
+    "total_abs_volume": 947268.5791933537,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.18323850631713867
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.18175983428955078
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16879034042358398
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00270936_57f29f7093832a10909adcbd_step_018",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00270936_57f29f7093832a10909adcbd_step_018.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 68,
+    "n_raw_tris": 8748,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.5,
+    "diag": 21.94818311190155,
+    "n_verts": 4376,
+    "n_tris": 8748,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 13122",
+    "chi": 2,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 332.80139849598334
+    },
+    "total_abs_volume": 332.80139849598334,
+    "verify_exceptions": 0
+   },
+   "clean": true,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 17114,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 25671",
+     "signed_volume": 653.5973720922442,
+     "volume": 653.5973720922442,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.3139643669128418
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 934,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1401",
+     "signed_volume": 12.005424899723451,
+     "volume": 12.005424899723451,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.24644923210144043
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 9022,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 13533",
+     "signed_volume": 320.79597359626024,
+     "volume": 320.79597359626024,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.2182023525238037
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 653.0890017963779,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": 2,
+    "occt_time_s": 1.0,
+    "kernel_union_volume": 653.5973720922442,
+    "union_vol_err_pct": 0.07784089067002208,
+    "kernel_union_shells": 1,
+    "kernel_union_chi": 2,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 1.0231815394945443e-12,
+     "U_resid_rel": 1.5654615259838278e-15,
+     "D_resid": 3.410605131648481e-13,
+     "D_resid_rel": 1.0631695570908005e-15
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00270985_57f2a10088246d10b7cf1d79_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00270985_57f2a10088246d10b7cf1d79_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 477,
+    "n_raw_tris": 14300,
+    "n_zero_area_dropped": 8,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 129,
+    "tess_time_s": 1.47,
+    "diag": 437.1122348680683,
+    "n_verts": 6974,
+    "n_tris": 14163,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 180,
+    "directed_closed": false,
+    "closure_info": "180 bad undirected edges of 21134",
+    "chi": 3,
+    "shells": 5,
+    "shell_signed_volumes": {
+     "0": 3925.602787988742,
+     "1": 27628.414189417963,
+     "2": 50695.818876163896,
+     "3": 92631.77044584614,
+     "4": 772386.9728939369
+    },
+    "total_abs_volume": 947268.5791933537,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.18634462356567383
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.33188438415527344
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.17285370826721191
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00271486_edea447db67acfc8dd1c8c6f_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00271486_edea447db67acfc8dd1c8c6f_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 450,
+    "n_raw_tris": 15282,
+    "n_zero_area_dropped": 2,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 611,
+    "tess_time_s": 1.36,
+    "diag": 188.43315058817885,
+    "n_verts": 7174,
+    "n_tris": 14669,
+    "boundary_edges": 4,
+    "nonmanifold_edges": 220,
+    "directed_closed": false,
+    "closure_info": "223 bad undirected edges of 21854",
+    "chi": -13,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 21154.758731468934
+    },
+    "total_abs_volume": 21154.758731468934,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15748381614685059
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14913439750671387
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15503478050231934
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00271532_1fdd4e5f46a0e54190ebdf64_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00271532_1fdd4e5f46a0e54190ebdf64_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 93,
+    "n_raw_tris": 1153,
+    "n_zero_area_dropped": 34,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.16,
+    "diag": 68.25686811742834,
+    "n_verts": 573,
+    "n_tris": 1119,
+    "boundary_edges": 81,
+    "nonmanifold_edges": 0,
+    "directed_closed": false,
+    "closure_info": "42 bad undirected edges of 1678",
+    "chi": -27,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": 5031.489227415402,
+     "1": 4516.827754030405
+    },
+    "total_abs_volume": 9548.316981445807,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.3382740020751953
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.29776835441589355
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15509605407714844
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00271572_57f2eb0c4a367710b500f769_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00271572_57f2eb0c4a367710b500f769_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 477,
+    "n_raw_tris": 14300,
+    "n_zero_area_dropped": 8,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 129,
+    "tess_time_s": 1.42,
+    "diag": 437.1122348680683,
+    "n_verts": 6974,
+    "n_tris": 14163,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 180,
+    "directed_closed": false,
+    "closure_info": "180 bad undirected edges of 21134",
+    "chi": 3,
+    "shells": 5,
+    "shell_signed_volumes": {
+     "0": 3925.602787988742,
+     "1": 27628.414189417963,
+     "2": 50695.818876163896,
+     "3": 92631.77044584614,
+     "4": 772386.9728939369
+    },
+    "total_abs_volume": 947268.5791933537,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1755356788635254
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.17542266845703125
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14806389808654785
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00272176_e603437b240b79ff8f7c869a_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00272176_e603437b240b79ff8f7c869a_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 32,
+    "n_raw_tris": 910,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.06,
+    "diag": 125.49954685635684,
+    "n_verts": 466,
+    "n_tris": 910,
+    "boundary_edges": 12,
+    "nonmanifold_edges": 0,
+    "directed_closed": false,
+    "closure_info": "9 bad undirected edges of 1365",
+    "chi": 5,
+    "shells": 4,
+    "shell_signed_volumes": {
+     "0": -21166.624332240863,
+     "1": -11607.50366612043,
+     "2": 19118.241333333335,
+     "3": 52542.41109586286
+    },
+    "total_abs_volume": 104434.78042755749,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.140763521194458
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1547074317932129
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15948772430419922
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00272263_57f3c54c277d8c10daea51c2_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00272263_57f3c54c277d8c10daea51c2_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 149,
+    "n_raw_tris": 20945,
+    "n_zero_area_dropped": 9,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 62,
+    "tess_time_s": 8.65,
+    "diag": 178.02308400311662,
+    "n_verts": 10440,
+    "n_tris": 20874,
+    "boundary_edges": 263,
+    "nonmanifold_edges": 146,
+    "directed_closed": false,
+    "closure_info": "293 bad undirected edges of 31185",
+    "chi": -11,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": -288953.71832689596
+    },
+    "total_abs_volume": 288953.71832689596,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.22052359580993652
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.17129874229431152
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15252137184143066
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00272379_8995a520d17d8fc7e529d434_step_002",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00272379_8995a520d17d8fc7e529d434_step_002.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 118,
+    "n_raw_tris": 460,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.16,
+    "diag": 210.11901419909623,
+    "n_verts": 232,
+    "n_tris": 460,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 690",
+    "chi": 2,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 533250.0
+    },
+    "total_abs_volume": 533250.0,
+    "verify_exceptions": 0
+   },
+   "clean": true,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 1088,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1632",
+     "signed_volume": 809031.2061363138,
+     "volume": 809031.2061363138,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.16724801063537598
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 580,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 870",
+     "signed_volume": 257468.79386368618,
+     "volume": 257468.79386368618,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1713719367980957
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 580,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 870",
+     "signed_volume": 275781.2061363138,
+     "volume": 275781.2061363138,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.18256878852844238
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 809031.2061363148,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": 2,
+    "occt_time_s": 0.26,
+    "kernel_union_volume": 809031.2061363138,
+    "union_vol_err_pct": 1.1511577891577134e-13,
+    "kernel_union_shells": 1,
+    "kernel_union_chi": 2,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 0.0,
+     "U_resid_rel": 0.0,
+     "D_resid": 5.820766091346741e-11,
+     "D_resid_rel": 2.1106463971550109e-16
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00273108_57f4121b8faa3110d3ada5d3_step_005",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00273108_57f4121b8faa3110d3ada5d3_step_005.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 837,
+    "n_raw_tris": 10555,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 1.5,
+    "diag": 73.03479639703954,
+    "n_verts": 5228,
+    "n_tris": 10555,
+    "boundary_edges": 3,
+    "nonmanifold_edges": 0,
+    "directed_closed": false,
+    "closure_info": "1 bad undirected edges of 15832",
+    "chi": -51,
+    "shells": 3,
+    "shell_signed_volumes": {
+     "0": 3783.443367231559,
+     "1": 148.33269713274203,
+     "2": 3293.5436744761955
+    },
+    "total_abs_volume": 7225.319738840497,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15760231018066406
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.160750150680542
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.18111371994018555
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00273280_9ac30aee2df065ecc14a505f_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00273280_9ac30aee2df065ecc14a505f_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 196,
+    "n_raw_tris": 9078,
+    "n_zero_area_dropped": 2,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 10,
+    "tess_time_s": 1.36,
+    "diag": 217.75897375279362,
+    "n_verts": 4520,
+    "n_tris": 9066,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 4,
+    "directed_closed": false,
+    "closure_info": "4 bad undirected edges of 13597",
+    "chi": -11,
+    "shells": 4,
+    "shell_signed_volumes": {
+     "0": 11997.643084509933,
+     "1": 8551.898842760978,
+     "2": 94677.72419817619,
+     "3": 164842.979277854
+    },
+    "total_abs_volume": 280070.2454033011,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1720120906829834
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14655017852783203
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1465005874633789
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00273928_57f5043442bdfa10a9cb75e1_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00273928_57f5043442bdfa10a9cb75e1_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 477,
+    "n_raw_tris": 14300,
+    "n_zero_area_dropped": 8,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 129,
+    "tess_time_s": 1.32,
+    "diag": 437.1122348680683,
+    "n_verts": 6974,
+    "n_tris": 14163,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 180,
+    "directed_closed": false,
+    "closure_info": "180 bad undirected edges of 21134",
+    "chi": 3,
+    "shells": 5,
+    "shell_signed_volumes": {
+     "0": 3925.602787988742,
+     "1": 27628.414189417963,
+     "2": 50695.818876163896,
+     "3": 92631.77044584614,
+     "4": 772386.9728939369
+    },
+    "total_abs_volume": 947268.5791933537,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14759159088134766
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1461772918701172
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.23586010932922363
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00274179_1a403c9f51cc56bc2d6c2e40_step_001",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00274179_1a403c9f51cc56bc2d6c2e40_step_001.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 67,
+    "n_raw_tris": 3398,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 28,
+    "tess_time_s": 0.2,
+    "diag": 350.2351732447529,
+    "n_verts": 1647,
+    "n_tris": 3370,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 69,
+    "directed_closed": false,
+    "closure_info": "69 bad undirected edges of 5005",
+    "chi": 12,
+    "shells": 4,
+    "shell_signed_volumes": {
+     "0": 416.5757148514465,
+     "1": 30.865086078402726,
+     "2": 203.26083958498953,
+     "3": 2936.765304165085
+    },
+    "total_abs_volume": 3587.466944679924,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16634750366210938
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.144242525100708
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1548595428466797
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00274556_57f54e68744ea710bc581f05_step_003",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00274556_57f54e68744ea710bc581f05_step_003.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 16,
+    "n_raw_tris": 44,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.02,
+    "diag": 451.9955754252469,
+    "n_verts": 24,
+    "n_tris": 44,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 66",
+    "chi": 2,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 400200.0
+    },
+    "total_abs_volume": 400200.0,
+    "verify_exceptions": 0
+   },
+   "clean": true,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 88,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 132",
+     "signed_volume": 800400.0000000003,
+     "volume": 800400.0000000003,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.2762718200683594
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 0,
+     "closed": true,
+     "closure_info": "empty mesh is vacuously closed",
+     "signed_volume": 0.0,
+     "volume": 0.0,
+     "finite": true,
+     "nonempty": false,
+     "sane": false,
+     "time_s": 0.15082955360412598
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 44,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 66",
+     "signed_volume": 400200.0,
+     "volume": 400200.0,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1523277759552002
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 800399.9999999999,
+    "occt_n_solids": 2,
+    "occt_n_shells": 2,
+    "occt_chi": 4,
+    "occt_time_s": 0.02,
+    "kernel_union_volume": 800400.0000000003,
+    "union_vol_err_pct": 5.817857162765359e-14,
+    "kernel_union_shells": 2,
+    "kernel_union_chi": 4,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 3.4924596548080444e-10,
+     "U_resid_rel": 4.3633928720740167e-16,
+     "D_resid": 0.0,
+     "D_resid_rel": 0.0
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00274934_f9c459c96449dfc409e1133a_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00274934_f9c459c96449dfc409e1133a_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 6,
+    "n_raw_tris": 184,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.13,
+    "diag": 142.48368541410406,
+    "n_verts": 162,
+    "n_tris": 184,
+    "boundary_edges": 138,
+    "nonmanifold_edges": 0,
+    "directed_closed": false,
+    "closure_info": "55 bad undirected edges of 276",
+    "chi": 1,
+    "shells": 3,
+    "shell_signed_volumes": {
+     "0": 357.5873543528257,
+     "1": -4.335088593786594,
+     "2": -1.7185132767954492e-13
+    },
+    "total_abs_volume": 361.9224429466125,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15550732612609863
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14075207710266113
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14820241928100586
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00275294_bff5130ff4207104a953a43f_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00275294_bff5130ff4207104a953a43f_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 220,
+    "n_raw_tris": 11996,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.7,
+    "diag": 58.81782918601544,
+    "n_verts": 6775,
+    "n_tris": 11996,
+    "boundary_edges": 1686,
+    "nonmanifold_edges": 0,
+    "directed_closed": false,
+    "closure_info": "869 bad undirected edges of 17994",
+    "chi": -66,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": -7799.292536188553
+    },
+    "total_abs_volume": 7799.292536188553,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.2823810577392578
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.23691344261169434
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.27718567848205566
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00275655_57f65416027b01109e7d4c1f_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00275655_57f65416027b01109e7d4c1f_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 29,
+    "n_raw_tris": 116,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.04,
+    "diag": 1143.4596629265066,
+    "n_verts": 56,
+    "n_tris": 116,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 174",
+    "chi": -2,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 15349489.059168795
+    },
+    "total_abs_volume": 15349489.059168795,
+    "verify_exceptions": 0
+   },
+   "clean": true,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 380,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 570",
+     "signed_volume": 28498533.895084333,
+     "volume": 28498533.895084333,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1573328971862793
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 256,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 384",
+     "signed_volume": 2200444.2232532823,
+     "volume": 2200444.2232532823,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.14250588417053223
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 276,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 414",
+     "signed_volume": 13149044.835915543,
+     "volume": 13149044.835915543,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.14432692527770996
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 28498533.895084433,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": -6,
+    "occt_time_s": 0.08,
+    "kernel_union_volume": 28498533.895084333,
+    "union_vol_err_pct": 3.529403948594728e-13,
+    "kernel_union_shells": 1,
+    "kernel_union_chi": -6,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 2.60770320892334e-08,
+     "U_resid_rel": 9.15030653339377e-16,
+     "D_resid": 2.9802322387695312e-08,
+     "D_resid_rel": 2.266500932926527e-15
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00276024_d07a6cc66c3a07a6247930c5_step_009",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00276024_d07a6cc66c3a07a6247930c5_step_009.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 6,
+    "n_raw_tris": 8,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.01,
+    "diag": 148.75455715149053,
+    "n_verts": 6,
+    "n_tris": 8,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 12",
+    "chi": 2,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 102877.4938071372
+    },
+    "total_abs_volume": 102877.4938071372,
+    "verify_exceptions": 0
+   },
+   "clean": true,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 32,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 48",
+     "signed_volume": 188710.22892295112,
+     "volume": 188710.22892295112,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1906282901763916
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 18,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 27",
+     "signed_volume": 17044.758691323284,
+     "volume": 17044.758691323284,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.19935011863708496
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 26,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 39",
+     "signed_volume": 85832.7351158139,
+     "volume": 85832.7351158139,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.15356993675231934
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 188710.2289229511,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": 2,
+    "occt_time_s": 0.01,
+    "kernel_union_volume": 188710.22892295112,
+    "union_vol_err_pct": 1.5422497562978723e-14,
+    "kernel_union_shells": 1,
+    "kernel_union_chi": 2,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 0.0,
+     "U_resid_rel": 0.0,
+     "D_resid": 1.4551915228366852e-11,
+     "D_resid_rel": 1.6953805804664138e-16
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00276117_57f69205ee844b10e8c18f4a_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00276117_57f69205ee844b10e8c18f4a_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 588,
+    "n_raw_tris": 19846,
+    "n_zero_area_dropped": 4,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 88,
+    "tess_time_s": 5.23,
+    "diag": 1198.0229866357015,
+    "n_verts": 9441,
+    "n_tris": 19754,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 420,
+    "directed_closed": false,
+    "closure_info": "420 bad undirected edges of 29265",
+    "chi": -70,
+    "shells": 38,
+    "shell_signed_volumes": {
+     "0": 91882.50421073039,
+     "1": 72410.02668856164,
+     "2": 440668.3475191348,
+     "3": 246483.63463636985,
+     "4": 11611.612203014412,
+     "5": 780972.7185445613,
+     "6": 227934.24663024754,
+     "7": 227934.2466302365,
+     "8": 227934.2466302188,
+     "9": 227934.24663022984,
+     "10": 227934.2466302331,
+     "11": 227934.24663023045,
+     "12": 227934.2343265369,
+     "13": 227934.24663022798,
+     "14": 227934.24663023403,
+     "15": 227934.24663022472,
+     "16": 227934.2466302337,
+     "17": 227934.24663024116,
+     "18": 227934.24663022533,
+     "19": 41475.14074953172,
+     "20": 41475.14074953566,
+     "21": 41475.14074953431,
+     "22": 41475.14074953477,
+     "23": 41475.14074953398,
+     "24": 41475.1407495338,
+     "25": 41475.140749533835,
+     "26": 41475.14074953457,
+     "27": 41475.14074954122,
+     "28": 41475.140749537306,
+     "29": 41475.14074953106,
+     "30": 41475.140749538645,
+     "31": 1001188.2069838131,
+     "32": 187036.446539262,
+     "33": 187036.44653926173,
+     "34": 342901.36109759,
+     "35": 34681529.20653197,
+     "36": -15230107.940208495,
+     "37": -11281455.307732984
+    },
+    "total_abs_volume": 68016130.64231949,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.17653298377990723
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.17313075065612793
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.21270346641540527
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00276223_57f69bf2ee844b10e8c1d204_step_023",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00276223_57f69bf2ee844b10e8c1d204_step_023.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 134,
+    "n_raw_tris": 24736,
+    "n_zero_area_dropped": 4,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 136,
+    "tess_time_s": 2.28,
+    "diag": 69.18161192344083,
+    "n_verts": 12171,
+    "n_tris": 24596,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 174,
+    "directed_closed": false,
+    "closure_info": "174 bad undirected edges of 36793",
+    "chi": -26,
+    "shells": 4,
+    "shell_signed_volumes": {
+     "0": 1.8137906246379625,
+     "1": 358.85040320396547,
+     "2": 29.56701314414941,
+     "3": 12.991968782842894
+    },
+    "total_abs_volume": 403.2231757555957,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.18379855155944824
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1820991039276123
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.18840813636779785
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00276360_57f6c766e66cea10b9c3b712_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00276360_57f6c766e66cea10b9c3b712_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 84,
+    "n_raw_tris": 4325,
+    "n_zero_area_dropped": 3,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 2,
+    "tess_time_s": 0.3,
+    "diag": 235.14330448623275,
+    "n_verts": 2165,
+    "n_tris": 4320,
+    "boundary_edges": 4,
+    "nonmanifold_edges": 2,
+    "directed_closed": false,
+    "closure_info": "4 bad undirected edges of 6479",
+    "chi": 4,
+    "shells": 5,
+    "shell_signed_volumes": {
+     "0": 373.33243628858935,
+     "1": 1285.0199179348924,
+     "2": 599.1467085159128,
+     "3": 55241.2793869444,
+     "4": 93673.73646769684
+    },
+    "total_abs_volume": 151172.51491738064,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15123915672302246
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15734052658081055
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14076447486877441
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00276657_57f729d1e66cea10b9c426d0_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00276657_57f729d1e66cea10b9c426d0_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 52,
+    "n_raw_tris": 18994,
+    "n_zero_area_dropped": 4,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 9.53,
+    "diag": 858.2092879421034,
+    "n_verts": 9524,
+    "n_tris": 18990,
+    "boundary_edges": 56,
+    "nonmanifold_edges": 0,
+    "directed_closed": false,
+    "closure_info": "35 bad undirected edges of 28485",
+    "chi": 1,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": 22510701.285726175,
+     "1": 1082459.513189959
+    },
+    "total_abs_volume": 23593160.798916135,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16358017921447754
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.21028518676757812
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16197538375854492
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00276709_57f737c12c914910f87ea970_step_016",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00276709_57f737c12c914910f87ea970_step_016.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 135,
+    "n_raw_tris": 6202,
+    "n_zero_area_dropped": 2,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.73,
+    "diag": 175.60151166830556,
+    "n_verts": 3089,
+    "n_tris": 6200,
+    "boundary_edges": 4,
+    "nonmanifold_edges": 0,
+    "directed_closed": false,
+    "closure_info": "3 bad undirected edges of 9300",
+    "chi": -13,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": 19654.32194736978,
+     "1": 236526.8334931512
+    },
+    "total_abs_volume": 256181.155440521,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1709439754486084
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1582486629486084
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.18557047843933105
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00276990_57f796dc4abdaf10d9502edf_step_074",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00276990_57f796dc4abdaf10d9502edf_step_074.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 51,
+    "n_raw_tris": 400,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.09,
+    "diag": 28.30194368593155,
+    "n_verts": 200,
+    "n_tris": 400,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 600",
+    "chi": 0,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 207.57073006102655
+    },
+    "total_abs_volume": 207.57073006102655,
+    "verify_exceptions": 0
+   },
+   "clean": true,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 996,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1494",
+     "signed_volume": 372.06640231432783,
+     "volume": 372.06640231432783,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1587204933166504
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 258,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 387",
+     "signed_volume": 43.075057807725265,
+     "volume": 43.075057807725265,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1801760196685791
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 602,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 903",
+     "signed_volume": 164.49567225330134,
+     "volume": 164.49567225330134,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1758439540863037
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 372.03365933835505,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": -16,
+    "occt_time_s": 0.14,
+    "kernel_union_volume": 372.06640231432783,
+    "union_vol_err_pct": 0.0088010789214644,
+    "kernel_union_shells": 1,
+    "kernel_union_chi": -16,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 0.0,
+     "U_resid_rel": 0.0,
+     "D_resid": 5.684341886080802e-14,
+     "D_resid_rel": 3.4556178945107293e-16
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00277076_a252d4bab07c29f987a7681e_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00277076_a252d4bab07c29f987a7681e_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 138,
+    "n_raw_tris": 3768,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.47,
+    "diag": 1070.1777892406478,
+    "n_verts": 1870,
+    "n_tris": 3768,
+    "boundary_edges": 4,
+    "nonmanifold_edges": 16,
+    "directed_closed": false,
+    "closure_info": "18 bad undirected edges of 5638",
+    "chi": -2,
+    "shells": 8,
+    "shell_signed_volumes": {
+     "0": 2394.0590623605435,
+     "1": 6345.0,
+     "2": 7547.922377255057,
+     "3": 7547.922377252918,
+     "4": -74060.0,
+     "5": 15879.227439750082,
+     "6": 52110.73701032429,
+     "7": 1463519.1418880902
+    },
+    "total_abs_volume": 1629404.010155033,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14297747611999512
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15430617332458496
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.19710421562194824
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00277233_57f7cdd242bdfa10a9ce7b32_step_001",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00277233_57f7cdd242bdfa10a9ce7b32_step_001.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 282,
+    "n_raw_tris": 12986,
+    "n_zero_area_dropped": 3004,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 1.03,
+    "diag": 166.23253016002246,
+    "n_verts": 6043,
+    "n_tris": 9982,
+    "boundary_edges": 2856,
+    "nonmanifold_edges": 0,
+    "directed_closed": false,
+    "closure_info": "1287 bad undirected edges of 14973",
+    "chi": -376,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": 18920.967618464045,
+     "1": 41795.52486281261
+    },
+    "total_abs_volume": 60716.492481276655,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16456127166748047
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1476764678955078
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1675105094909668
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00277257_3bbac2f7b6892ff26885272b_step_001",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00277257_3bbac2f7b6892ff26885272b_step_001.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 2605,
+    "n_raw_tris": 61242,
+    "n_zero_area_dropped": 2,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 9,
+    "tess_time_s": 5.5,
+    "diag": 880.0394055612933,
+    "n_verts": 30525,
+    "n_tris": 61231,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 50,
+    "directed_closed": false,
+    "closure_info": "50 bad undirected edges of 91810",
+    "chi": -54,
+    "shells": 70,
+    "shell_signed_volumes": {
+     "0": 1173895.3182663198,
+     "1": 155866.6654829282,
+     "2": 171302.5508972026,
+     "3": 152041.98585295107,
+     "4": 50987.90818767017,
+     "5": 7199.9999999987385,
+     "6": 152041.98585295593,
+     "7": 7199.999999999335,
+     "8": 50987.908187692985,
+     "9": 4897.809002190296,
+     "10": 50987.908187696536,
+     "11": 12908.30847974359,
+     "12": 121582.36065390555,
+     "13": 406917.5152718709,
+     "14": 1914.1530113290985,
+     "15": 36694.40454153949,
+     "16": 42763.99891874023,
+     "17": 121582.36065390643,
+     "18": 17529.600660691234,
+     "19": 6955.0842814132675,
+     "20": 5130.020531740142,
+     "21": 403762.61536821537,
+     "22": 23009.88418794268,
+     "23": 17543.62626847398,
+     "24": 41071.22398412956,
+     "25": 22358.551851022832,
+     "26": 41071.22398412662,
+     "27": 50987.90818768265,
+     "28": 7199.999999999963,
+     "29": 7199.9999999998445,
+     "30": 17529.600660679163,
+     "31": 105.91187856874785,
+     "32": 107999.99999999435,
+     "33": 121582.3606538903,
+     "34": 270245.0618049481,
+     "35": 2999.999999997468,
+     "36": 6367.997604765175,
+     "37": 3542.440323404941,
+     "38": 17543.626268466644,
+     "39": 121582.3606539055,
+     "40": 274099.1583859157,
+     "41": 7689.066421534163,
+     "42": 17457.056932665248,
+     "43": 3000.000000001168,
+     "44": 22358.55185101811,
+     "45": 1773.6029697762544,
+     "46": 10475.246782822762,
+     "47": 41071.22398412931,
+     "48": 270514.5185852377,
+     "49": 12343.093264792173,
+     "50": 171302.55089719626,
+     "51": 1773.602969775943,
+     "52": 41071.22398413167,
+     "53": 299682.9822438585,
+     "54": 133949.28388058222,
+     "55": 1914.1530113343713,
+     "56": 12465.66344948891,
+     "57": 3787.3929700535687,
+     "58": 36694.404541531374,
+     "59": 155866.6654829328,
+     "60": 409.39181930649494,
+     "61": 409.39181970581603,
+     "62": 4897.809002188143,
+     "63": 406917.5152718623,
+     "64": 12908.308479756504,
+     "65": 42763.9989187393,
+     "66": 133949.28388063735,
+     "67": 5130.020531731192,
+     "68": 2117055.4096320276,
+     "69": 272640.38170525903
+    },
+    "total_abs_volume": 8551463.194272691,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.224090576171875
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.20025992393493652
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.19155550003051758
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00277391_8fcbed3f4b36febfe3086c87_step_001",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00277391_8fcbed3f4b36febfe3086c87_step_001.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 59,
+    "n_raw_tris": 1680,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.1,
+    "diag": 150.00000033333336,
+    "n_verts": 857,
+    "n_tris": 1680,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 2,
+    "directed_closed": false,
+    "closure_info": "2 bad undirected edges of 2518",
+    "chi": 19,
+    "shells": 9,
+    "shell_signed_volumes": {
+     "0": 15.680934544007073,
+     "1": 15.680934544007101,
+     "2": 15.680934544007114,
+     "3": 15.680934544006988,
+     "4": 15.68093454401397,
+     "5": 15.680934544003359,
+     "6": 15.680934544001294,
+     "7": 15.680934543991611,
+     "8": 294561.346389129
+    },
+    "total_abs_volume": 294686.79386548104,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 2844,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 4266",
+     "signed_volume": 454888.69176160515,
+     "volume": 454888.69176160515,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.18317246437072754
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 2368,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 3552",
+     "signed_volume": 133768.03325986056,
+     "volume": 133768.03325986056,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.18019795417785645
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 2416,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 3624",
+     "signed_volume": 160918.76060558046,
+     "volume": 160918.76060558046,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.17948317527770996
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00277716_62d013dd960df930a8d6d70d_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00277716_62d013dd960df930a8d6d70d_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 750,
+    "n_raw_tris": 20798,
+    "n_zero_area_dropped": 52,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 3.07,
+    "diag": 98.38988835430398,
+    "n_verts": 10648,
+    "n_tris": 20746,
+    "boundary_edges": 778,
+    "nonmanifold_edges": 52,
+    "directed_closed": false,
+    "closure_info": "137 bad undirected edges of 31093",
+    "chi": -88,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 9167.191073282725
+    },
+    "total_abs_volume": 9167.191073282725,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.17517614364624023
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1794590950012207
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.17156529426574707
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00277771_5e7edeb3cb7202d77c2aa5c5_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00277771_5e7edeb3cb7202d77c2aa5c5_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 1267,
+    "n_raw_tris": 36908,
+    "n_zero_area_dropped": 6,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 20,
+    "tess_time_s": 6.15,
+    "diag": 530.4090047846881,
+    "n_verts": 18085,
+    "n_tris": 36882,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 187,
+    "directed_closed": false,
+    "closure_info": "187 bad undirected edges of 55148",
+    "chi": -181,
+    "shells": 16,
+    "shell_signed_volumes": {
+     "0": 1329.0169245835968,
+     "1": 5965.9733987657455,
+     "2": 6341.065862298722,
+     "3": 11207.515447521628,
+     "4": 71161.92598167244,
+     "5": 16302.469882827461,
+     "6": 7958.5844728222755,
+     "7": 54428.31357263894,
+     "8": 6352.65740677928,
+     "9": 52622.2610070319,
+     "10": 6352.657406777063,
+     "11": 85521.71688052942,
+     "12": 9453.785489018015,
+     "13": 34765.04193453093,
+     "14": 9453.785489017884,
+     "15": 34765.04193452908
+    },
+    "total_abs_volume": 413981.8130913444,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.18603134155273438
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.2249312400817871
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.22884654998779297
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00278255_bd5114e3f994a482c469fd97_step_010",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00278255_bd5114e3f994a482c469fd97_step_010.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 16,
+    "n_raw_tris": 1178,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.05,
+    "diag": 98.91777258111165,
+    "n_verts": 592,
+    "n_tris": 1178,
+    "boundary_edges": 4,
+    "nonmanifold_edges": 0,
+    "directed_closed": false,
+    "closure_info": "3 bad undirected edges of 1767",
+    "chi": 1,
+    "shells": 4,
+    "shell_signed_volumes": {
+     "0": 6365.25151237212,
+     "1": 6365.251512372114,
+     "2": 6365.251512372114,
+     "3": 726.7109632283313
+    },
+    "total_abs_volume": 19822.46550034468,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1530628204345703
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1361253261566162
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.13531160354614258
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00278358_57f9e29ce66cea10b9c6b55f_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00278358_57f9e29ce66cea10b9c6b55f_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 477,
+    "n_raw_tris": 14300,
+    "n_zero_area_dropped": 8,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 129,
+    "tess_time_s": 1.37,
+    "diag": 437.1122348680683,
+    "n_verts": 6974,
+    "n_tris": 14163,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 180,
+    "directed_closed": false,
+    "closure_info": "180 bad undirected edges of 21134",
+    "chi": 3,
+    "shells": 5,
+    "shell_signed_volumes": {
+     "0": 3925.602787988742,
+     "1": 27628.414189417963,
+     "2": 50695.818876163896,
+     "3": 92631.77044584614,
+     "4": 772386.9728939369
+    },
+    "total_abs_volume": 947268.5791933537,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1760246753692627
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.17607688903808594
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15315985679626465
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00278454_57fa33a23e172d110f4455c7_step_001",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00278454_57fa33a23e172d110f4455c7_step_001.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 565,
+    "n_raw_tris": 15935,
+    "n_zero_area_dropped": 67,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 69,
+    "tess_time_s": 1.37,
+    "diag": 487.7529277988088,
+    "n_verts": 7680,
+    "n_tris": 15799,
+    "boundary_edges": 76,
+    "nonmanifold_edges": 245,
+    "directed_closed": false,
+    "closure_info": "286 bad undirected edges of 23493",
+    "chi": -52,
+    "shells": 14,
+    "shell_signed_volumes": {
+     "0": -14934.088147312583,
+     "1": -38095.555192876454,
+     "2": 128.39811344970622,
+     "3": 684.4094546580891,
+     "4": 186.2244414282868,
+     "5": 7046.6489855596255,
+     "6": 52558.997357671324,
+     "7": 5026.9379335275125,
+     "8": 4983.268631953077,
+     "9": 132.99968042892158,
+     "10": 19.268732367413293,
+     "11": 574417.7254900889,
+     "12": 8479.39662513783,
+     "13": 56123.42042080829
+    },
+    "total_abs_volume": 762817.3392072681,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16535496711730957
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16724872589111328
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14556050300598145
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00278456_57fa33a23e172d110f4455c7_step_003",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00278456_57fa33a23e172d110f4455c7_step_003.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 480,
+    "n_raw_tris": 25750,
+    "n_zero_area_dropped": 4,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 1.78,
+    "diag": 817.8464623908679,
+    "n_verts": 12539,
+    "n_tris": 25746,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 28,
+    "directed_closed": false,
+    "closure_info": "28 bad undirected edges of 38591",
+    "chi": -306,
+    "shells": 8,
+    "shell_signed_volumes": {
+     "0": 4831495.923369316,
+     "1": -4514677.145837997,
+     "2": 769010.9574243532,
+     "3": 130720.27458042344,
+     "4": 91643.10770490016,
+     "5": 434168.5824942705,
+     "6": 319105.8789770329,
+     "7": 375249.13265701197
+    },
+    "total_abs_volume": 11466071.003045306,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 51698,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 77547",
+     "signed_volume": 4844572.269435327,
+     "volume": 4844572.269435327,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.39291954040527344
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 1138,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1707",
+     "signed_volume": 28861.153303440777,
+     "volume": 28861.153303440777,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.2954833507537842
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 26232,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 39348",
+     "signed_volume": 2407855.558065982,
+     "volume": 2407855.558065982,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.336655855178833
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00278458_57fa33a23e172d110f4455c7_step_005",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00278458_57fa33a23e172d110f4455c7_step_005.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 296,
+    "n_raw_tris": 23024,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 1087,
+    "tess_time_s": 1.15,
+    "diag": 603.5123541460222,
+    "n_verts": 9648,
+    "n_tris": 21937,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 1705,
+    "directed_closed": false,
+    "closure_info": "1705 bad undirected edges of 31776",
+    "chi": -191,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 739660.7411332015
+    },
+    "total_abs_volume": 739660.7411332015,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.18003296852111816
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1787722110748291
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.22202539443969727
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00278692_57fa808b03533510d98e42db_step_014",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00278692_57fa808b03533510d98e42db_step_014.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 348,
+    "n_raw_tris": 8539,
+    "n_zero_area_dropped": 1,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 1.09,
+    "diag": 111.64974732187164,
+    "n_verts": 4238,
+    "n_tris": 8538,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 26,
+    "directed_closed": false,
+    "closure_info": "26 bad undirected edges of 12781",
+    "chi": -5,
+    "shells": 9,
+    "shell_signed_volumes": {
+     "0": 6270.31740383942,
+     "1": 123.83456990890375,
+     "2": 245.67988955393744,
+     "3": 2829.539857008815,
+     "4": 2829.5398570088305,
+     "5": 2829.5398570088346,
+     "6": 2829.539857008834,
+     "7": 2829.539857008817,
+     "8": 49436.58679077369
+    },
+    "total_abs_volume": 70224.11793912009,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 20510,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 30765",
+     "signed_volume": 133352.67361972624,
+     "volume": 133352.67361972624,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.2907407283782959
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 6020,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 9030",
+     "signed_volume": 7095.261731618592,
+     "volume": 7095.261731618592,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.255812406539917
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 13220,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 19830",
+     "signed_volume": 63128.562057315015,
+     "volume": 63128.562057315015,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.3334634304046631
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00278828_a6bbca2d11e4b13d593c861a_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00278828_a6bbca2d11e4b13d593c861a_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 119,
+    "n_raw_tris": 4600,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.45,
+    "diag": 93.79751350035862,
+    "n_verts": 2292,
+    "n_tris": 4600,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 6900",
+    "chi": -8,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 34030.63900220804
+    },
+    "total_abs_volume": 34030.63900220804,
+    "verify_exceptions": 0
+   },
+   "clean": true,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 8672,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 13008",
+     "signed_volume": 58059.82490488966,
+     "volume": 58059.82490488966,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.24929499626159668
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 3648,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 5472",
+     "signed_volume": 10001.453099526429,
+     "volume": 10001.453099526429,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.19927525520324707
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 6084,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 9126",
+     "signed_volume": 24029.18590268161,
+     "volume": 24029.18590268161,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.22738194465637207
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 58135.55918603925,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": -14,
+    "occt_time_s": 2.65,
+    "kernel_union_volume": 58059.82490488966,
+    "union_vol_err_pct": 0.1302718718284521,
+    "kernel_union_shells": 1,
+    "kernel_union_chi": -14,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 1.4551915228366852e-11,
+     "U_resid_rel": 2.5063656757844136e-16,
+     "D_resid": 0.0,
+     "D_resid_rel": 0.0
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00278855_393cd12d89e9f4d2294b80ad_step_001",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00278855_393cd12d89e9f4d2294b80ad_step_001.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 5,
+    "n_raw_tris": 8,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.01,
+    "diag": 191.46499069644844,
+    "n_verts": 6,
+    "n_tris": 8,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 12",
+    "chi": 2,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 45322.62612659315
+    },
+    "total_abs_volume": 45322.62612659315,
+    "verify_exceptions": 0
+   },
+   "clean": true,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 16,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 24",
+     "signed_volume": 90645.25225318629,
+     "volume": 90645.25225318629,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.15820956230163574
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 0,
+     "closed": true,
+     "closure_info": "empty mesh is vacuously closed",
+     "signed_volume": 0.0,
+     "volume": 0.0,
+     "finite": true,
+     "nonempty": false,
+     "sane": false,
+     "time_s": 0.15037941932678223
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 8,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 12",
+     "signed_volume": 45322.62612659316,
+     "volume": 45322.62612659316,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.14187121391296387
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 90645.25225318637,
+    "occt_n_solids": 2,
+    "occt_n_shells": 2,
+    "occt_chi": 4,
+    "occt_time_s": 0.01,
+    "kernel_union_volume": 90645.25225318629,
+    "union_vol_err_pct": 8.026849099454805e-14,
+    "kernel_union_shells": 2,
+    "kernel_union_chi": 4,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 1.4551915228366852e-11,
+     "U_resid_rel": 1.6053698198909622e-16,
+     "D_resid": 7.275957614183426e-12,
+     "D_resid_rel": 1.6053698198909617e-16
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00278952_57faa36d2134e51114afe992_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00278952_57faa36d2134e51114afe992_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 477,
+    "n_raw_tris": 14300,
+    "n_zero_area_dropped": 8,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 129,
+    "tess_time_s": 1.48,
+    "diag": 437.1122348680683,
+    "n_verts": 6974,
+    "n_tris": 14163,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 180,
+    "directed_closed": false,
+    "closure_info": "180 bad undirected edges of 21134",
+    "chi": 3,
+    "shells": 5,
+    "shell_signed_volumes": {
+     "0": 3925.602787988742,
+     "1": 27628.414189417963,
+     "2": 50695.818876163896,
+     "3": 92631.77044584614,
+     "4": 772386.9728939369
+    },
+    "total_abs_volume": 947268.5791933537,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14675617218017578
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14952778816223145
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15010690689086914
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00279153_f875278f662261fb7c258fe6_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00279153_f875278f662261fb7c258fe6_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 10,
+    "n_raw_tris": 28,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.01,
+    "diag": 186.08907896956578,
+    "n_verts": 16,
+    "n_tris": 28,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 42",
+    "chi": 2,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 903536.9776561884
+    },
+    "total_abs_volume": 903536.9776561884,
+    "verify_exceptions": 0
+   },
+   "clean": true,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 68,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 102",
+     "signed_volume": 1482753.7827294644,
+     "volume": 1482753.7827294644,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1403031349182129
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 44,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 66",
+     "signed_volume": 324320.17258291243,
+     "volume": 324320.17258291243,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.15872907638549805
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 46,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 69",
+     "signed_volume": 579216.805073276,
+     "volume": 579216.805073276,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.15056633949279785
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 1482753.7827294644,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": 2,
+    "occt_time_s": 0.02,
+    "kernel_union_volume": 1482753.7827294644,
+    "union_vol_err_pct": 0.0,
+    "kernel_union_shells": 1,
+    "kernel_union_chi": 2,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 0.0,
+     "U_resid_rel": 0.0,
+     "D_resid": 1.1641532182693481e-10,
+     "D_resid_rel": 2.0098747275160161e-16
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00279264_57fb11ca027b01109e822beb_step_002",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00279264_57fb11ca027b01109e822beb_step_002.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 264,
+    "n_raw_tris": 10538,
+    "n_zero_area_dropped": 4,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 6,
+    "tess_time_s": 5.2,
+    "diag": 177.94104205903025,
+    "n_verts": 5251,
+    "n_tris": 10528,
+    "boundary_edges": 8,
+    "nonmanifold_edges": 2,
+    "directed_closed": false,
+    "closure_info": "4 bad undirected edges of 15791",
+    "chi": -16,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": 30749.03243984225,
+     "1": 30751.1234223159
+    },
+    "total_abs_volume": 61500.15586215815,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1456315517425537
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16878008842468262
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16855192184448242
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00279316_57fb207d0084fc110e8424cc_step_007",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00279316_57fb207d0084fc110e8424cc_step_007.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 208,
+    "n_raw_tris": 1220,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.32,
+    "diag": 41.43091875534148,
+    "n_verts": 608,
+    "n_tris": 1220,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 1830",
+    "chi": -2,
+    "shells": 1,
+    "shell_signed_volumes": {
+     "0": 2481.6579113488747
+    },
+    "total_abs_volume": 2481.6579113488747,
+    "verify_exceptions": 0
+   },
+   "clean": true,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 2802,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 4203",
+     "signed_volume": 4798.572077892387,
+     "volume": 4798.572077892387,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.16079092025756836
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 532,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 798",
+     "signed_volume": 164.7437448053701,
+     "volume": 164.7437448053701,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.21274733543395996
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 1672,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 2508",
+     "signed_volume": 2316.914166543515,
+     "volume": 2316.914166543515,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.18699264526367188
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 4807.122736652181,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": -8,
+    "occt_time_s": 0.33,
+    "kernel_union_volume": 4798.572077892387,
+    "union_vol_err_pct": 0.17787477516641756,
+    "kernel_union_shells": 1,
+    "kernel_union_chi": -8,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 7.275957614183426e-12,
+     "U_resid_rel": 1.51627557033157e-15,
+     "D_resid": 1.0459189070388675e-11,
+     "D_resid_rel": 4.514275591828333e-15
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00279380_57fb39f92134e51114afed53_step_001",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00279380_57fb39f92134e51114afed53_step_001.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 87,
+    "n_raw_tris": 15050,
+    "n_zero_area_dropped": 1,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.6,
+    "diag": 65.91577568174642,
+    "n_verts": 7539,
+    "n_tris": 15049,
+    "boundary_edges": 55,
+    "nonmanifold_edges": 0,
+    "directed_closed": false,
+    "closure_info": "2 bad undirected edges of 22573",
+    "chi": -13,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": -1478.7539646952646,
+     "1": 12474.20321091508
+    },
+    "total_abs_volume": 13952.957175610345,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.22243809700012207
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16249799728393555
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1573784351348877
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00279421_57fb4d2e674ab710a56f9f3a_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00279421_57fb4d2e674ab710a56f9f3a_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 133,
+    "n_raw_tris": 4574,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.25,
+    "diag": 63.927772038762626,
+    "n_verts": 2231,
+    "n_tris": 4574,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 52,
+    "directed_closed": false,
+    "closure_info": "52 bad undirected edges of 6809",
+    "chi": -4,
+    "shells": 4,
+    "shell_signed_volumes": {
+     "0": 445.046749274894,
+     "1": 159.1547329420071,
+     "2": 847.174972316383,
+     "3": 3530.0356559160887
+    },
+    "total_abs_volume": 4981.412110449372,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 9888,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 14832",
+     "signed_volume": 9773.038203321683,
+     "volume": 9773.038203321683,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.24899864196777344
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 1110,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1665",
+     "signed_volume": 189.78601757703805,
+     "volume": 189.78601757703805,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.26613903045654297
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 5366,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 8049",
+     "signed_volume": 4791.626092872331,
+     "volume": 4791.626092872331,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1818854808807373
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00279464_fbdfaa40ee3389e2da3794fe_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00279464_fbdfaa40ee3389e2da3794fe_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 72,
+    "n_raw_tris": 1944,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.15,
+    "diag": 203.98695042201294,
+    "n_verts": 974,
+    "n_tris": 1944,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 4,
+    "directed_closed": false,
+    "closure_info": "4 bad undirected edges of 2912",
+    "chi": 6,
+    "shells": 3,
+    "shell_signed_volumes": {
+     "0": 10830.204885665766,
+     "1": 66427.36595618127,
+     "2": 10433.889971593782
+    },
+    "total_abs_volume": 87691.46081344082,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 4644,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 6966",
+     "signed_volume": 174183.81115236852,
+     "volume": 174183.81115236852,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.18363595008850098
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 714,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1071",
+     "signed_volume": 1202.5510792556006,
+     "volume": 1202.5510792556006,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.2456827163696289
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 2642,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 3963",
+     "signed_volume": 86497.0430421749,
+     "volume": 86497.0430421749,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1630542278289795
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00279578_57fb8a3f027b01109e829728_step_004",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00279578_57fb8a3f027b01109e829728_step_004.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 128,
+    "n_raw_tris": 6914,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 108,
+    "tess_time_s": 3.3,
+    "diag": 700.0380476277998,
+    "n_verts": 3227,
+    "n_tris": 6806,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 196,
+    "directed_closed": false,
+    "closure_info": "196 bad undirected edges of 10067",
+    "chi": -34,
+    "shells": 3,
+    "shell_signed_volumes": {
+     "0": 9032.218297347996,
+     "1": 11345.342205595336,
+     "2": 778772.8742818857
+    },
+    "total_abs_volume": 799150.434784829,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.14579105377197266
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15069293975830078
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16071343421936035
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00279783_4db9bb350a1c0dc80e646703_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00279783_4db9bb350a1c0dc80e646703_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 44,
+    "n_raw_tris": 3992,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 16,
+    "tess_time_s": 0.17,
+    "diag": 231.30360028127708,
+    "n_verts": 1944,
+    "n_tris": 3976,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 83,
+    "directed_closed": false,
+    "closure_info": "83 bad undirected edges of 5902",
+    "chi": 18,
+    "shells": 6,
+    "shell_signed_volumes": {
+     "0": 3982.957374177697,
+     "1": 3982.957374177739,
+     "2": 40027.38857499039,
+     "3": 49379.55925587635,
+     "4": 49322.86203566467,
+     "5": 40027.38857499041
+    },
+    "total_abs_volume": 186723.11318987727,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16915583610534668
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1824193000793457
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16710925102233887
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00279924_57fbc6bf674ab710a57036aa_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00279924_57fbc6bf674ab710a57036aa_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 327,
+    "n_raw_tris": 9779,
+    "n_zero_area_dropped": 11,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 115,
+    "tess_time_s": 2.09,
+    "diag": 1323.2994085491177,
+    "n_verts": 4680,
+    "n_tris": 9653,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 186,
+    "directed_closed": false,
+    "closure_info": "186 bad undirected edges of 14359",
+    "chi": -26,
+    "shells": 3,
+    "shell_signed_volumes": {
+     "0": 67165.21343754347,
+     "1": 59804.36505769889,
+     "2": 88513.63633791493
+    },
+    "total_abs_volume": 215483.21483315728,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1533677577972412
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.23920631408691406
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.1507573127746582
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00279957_57fbcb671d998310d4b2fca6_step_003",
+   "step": "/home/hatch/workspace/abc_chunk_27/selected/00279957_57fbcb671d998310d4b2fca6_step_003.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 598,
+    "n_raw_tris": 17054,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 1224,
+    "tess_time_s": 1.55,
+    "diag": 3139.9574521558607,
+    "n_verts": 7301,
+    "n_tris": 15830,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 1224,
+    "directed_closed": false,
+    "closure_info": "1224 bad undirected edges of 23133",
+    "chi": -2,
+    "shells": 19,
+    "shell_signed_volumes": {
+     "0": 320669.7818329905,
+     "1": 719996.1709083378,
+     "2": 209419.43047211473,
+     "3": 146726.37296591327,
+     "4": 272110.728045887,
+     "5": 146726.37296591792,
+     "6": 320669.64257660595,
+     "7": 719994.2395864809,
+     "8": 209443.2812004923,
+     "9": 219686.26747879013,
+     "10": 306791.5071106429,
+     "11": 306791.50711060007,
+     "12": 546646.2732255682,
+     "13": 1743149.7450634183,
+     "14": 546646.2732255632,
+     "15": 908191.0829304638,
+     "16": 768776.2205954745,
+     "17": 2939360.195560655,
+     "18": 3135146.749158177
+    },
+    "total_abs_volume": 14486941.842014093,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": false,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.22978806495666504
+    },
+    "intersection": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.16942191123962402
+    },
+    "difference": {
+     "verdict": "refused",
+     "detail": "engine returned error status Error.NotManifold",
+     "time_s": 0.15999460220336914
+    }
+   },
+   "oracle": {
+    "eligible": false,
+    "reason": "input defective (Stage 1) -> no ground truth; arranged results screened structurally only"
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "chunk27"
+  },
+  {
+   "id": "00270341_2058dc41244bffd824aee26d_step_010",
+   "step": "/home/hatch/workspace/abc_chunk_27/closed_multishell/00270341_2058dc41244bffd824aee26d_step_010.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 62,
+    "n_raw_tris": 5064,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.26,
+    "diag": 142.34820580799013,
+    "n_verts": 2538,
+    "n_tris": 5064,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 7596",
+    "chi": 6,
+    "shells": 4,
+    "shell_signed_volumes": {
+     "0": 269.38751672555554,
+     "1": 523.3416067326198,
+     "2": 8767.769018704026,
+     "3": 106758.00015141194
+    },
+    "total_abs_volume": 116318.49829357414,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 10128,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 15192",
+     "signed_volume": 232636.99658714817,
+     "volume": 232636.99658714817,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.19220232963562012
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 0,
+     "closed": true,
+     "closure_info": "empty mesh is vacuously closed",
+     "signed_volume": 0.0,
+     "volume": 0.0,
+     "finite": true,
+     "nonempty": false,
+     "sane": false,
+     "time_s": 0.15362119674682617
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 5064,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 7596",
+     "signed_volume": 116318.49829357413,
+     "volume": 116318.49829357413,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.27316761016845703
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 233577.471903808,
+    "occt_n_solids": 8,
+    "occt_n_shells": 8,
+    "occt_chi": 12,
+    "occt_time_s": 1.65,
+    "kernel_union_volume": 232636.99658714817,
+    "union_vol_err_pct": 0.4026395649350745,
+    "kernel_union_shells": 8,
+    "kernel_union_chi": 12,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 1.1641532182693481e-10,
+     "U_resid_rel": 5.0041620006611655e-16,
+     "D_resid": 1.4551915228366852e-11,
+     "D_resid_rel": 1.251040500165291e-16
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "closed_multishell"
+  },
+  {
+   "id": "00272103_327e000f7118f87754cdf9c9_step_001",
+   "step": "/home/hatch/workspace/abc_chunk_27/closed_multishell/00272103_327e000f7118f87754cdf9c9_step_001.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 23,
+    "n_raw_tris": 676,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.04,
+    "diag": 386.4973510821173,
+    "n_verts": 340,
+    "n_tris": 676,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 1014",
+    "chi": 2,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": 87003.6408300625,
+     "1": 12848.450548181563
+    },
+    "total_abs_volume": 99852.09137824406,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 1456,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 2184",
+     "signed_volume": 161313.53365817628,
+     "volume": 161313.53365817628,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1610555648803711
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 446,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 669",
+     "signed_volume": 38390.28842181222,
+     "volume": 38390.28842181222,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.16589832305908203
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 816,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1224",
+     "signed_volume": 61461.8029564322,
+     "volume": 61461.8029564322,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1530594825744629
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 161659.50473567907,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": -14,
+    "occt_time_s": 0.52,
+    "kernel_union_volume": 161313.53365817628,
+    "union_vol_err_pct": 0.21401220922238473,
+    "kernel_union_shells": 2,
+    "kernel_union_chi": -4,
+    "shell_count_agrees": false,
+    "chi_agrees": false,
+    "arbiter_triggered": true,
+    "arbiter": {
+     "n_points": 800,
+     "n_exact_on_surface_undecided": 0,
+     "n_ray_undecided": 0,
+     "n_decided": 800,
+     "n_agree": 800,
+     "agreement_vs_fused": 1.0,
+     "truth_or": {
+      "n_decided": 800,
+      "n_agree": 800,
+      "agreement": 1.0,
+      "kernel_in_truth_out": 0,
+      "kernel_out_truth_in": 0
+     }
+    },
+    "inclusion_exclusion": {
+     "U_resid": 0.36067649963661097,
+     "U_resid_rel": 2.2358725362800943e-06,
+     "D_resid": 3.5652192309498787e-10,
+     "D_resid_rel": 5.8007072026134986e-15
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "closed_multishell"
+  },
+  {
+   "id": "00273581_b5e213618b746c2c6eff9376_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/closed_multishell/00273581_b5e213618b746c2c6eff9376_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 36,
+    "n_raw_tris": 1400,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.07,
+    "diag": 77.71814490812297,
+    "n_verts": 696,
+    "n_tris": 1400,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 2100",
+    "chi": -4,
+    "shells": 6,
+    "shell_signed_volumes": {
+     "0": 323.55477811677474,
+     "1": 323.5547781167784,
+     "2": 323.5547781167782,
+     "3": 323.55477811677815,
+     "4": 2220.222,
+     "5": 3770.530005933379
+    },
+    "total_abs_volume": 7284.971118400489,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 3592,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 5388",
+     "signed_volume": 12320.768959257382,
+     "volume": 12320.768959257382,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.26851606369018555
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 1274,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1911",
+     "signed_volume": 2203.732204585623,
+     "volume": 2203.732204585623,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1809227466583252
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 1942,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 2913",
+     "signed_volume": 5080.716879966177,
+     "volume": 5080.716879966177,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.21002602577209473
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 12391.213971721287,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": -6,
+    "occt_time_s": 0.26,
+    "kernel_union_volume": 12320.768959257382,
+    "union_vol_err_pct": 0.5685077557749463,
+    "kernel_union_shells": 6,
+    "kernel_union_chi": -30,
+    "shell_count_agrees": false,
+    "chi_agrees": false,
+    "arbiter_triggered": true,
+    "arbiter": {
+     "n_points": 800,
+     "n_exact_on_surface_undecided": 0,
+     "n_ray_undecided": 0,
+     "n_decided": 800,
+     "n_agree": 796,
+     "agreement_vs_fused": 0.995,
+     "truth_or": {
+      "n_decided": 800,
+      "n_agree": 796,
+      "agreement": 0.995,
+      "kernel_in_truth_out": 1,
+      "kernel_out_truth_in": 3
+     }
+    },
+    "inclusion_exclusion": {
+     "U_resid": 45.44107295797221,
+     "U_resid_rel": 0.00368816858008115,
+     "D_resid": 0.5220338486897163,
+     "D_resid_rel": 0.00010274806902706052
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "closed_multishell"
+  },
+  {
+   "id": "00276289_bac679d3b1093419f4d82f65_step_010",
+   "step": "/home/hatch/workspace/abc_chunk_27/closed_multishell/00276289_bac679d3b1093419f4d82f65_step_010.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 131,
+    "n_raw_tris": 932,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.2,
+    "diag": 1007.4710768482637,
+    "n_verts": 484,
+    "n_tris": 932,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 1398",
+    "chi": 18,
+    "shells": 13,
+    "shell_signed_volumes": {
+     "0": 185517.22869393168,
+     "1": 323976.75260649744,
+     "2": 216616.50224999958,
+     "3": 19718246.853750005,
+     "4": 52233.766500000704,
+     "5": 52233.76650000175,
+     "6": 325683.092075554,
+     "7": 5192650.905000006,
+     "8": 185517.22869393518,
+     "9": 71181.30924999985,
+     "10": 71181.30924999983,
+     "11": 2669299.096875003,
+     "12": 2669299.096875002
+    },
+    "total_abs_volume": 31733636.908319935,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 2506,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 3759",
+     "signed_volume": 52268516.408760756,
+     "volume": 52268516.408760756,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.15563297271728516
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 662,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 993",
+     "signed_volume": 11180692.791136893,
+     "volume": 11180692.791136893,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.14499664306640625
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 1428,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 2142",
+     "signed_volume": 19841636.11245794,
+     "volume": 19841636.11245794,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1726522445678711
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 52283337.64298791,
+    "occt_n_solids": 1,
+    "occt_n_shells": 1,
+    "occt_chi": -14,
+    "occt_time_s": 1.26,
+    "kernel_union_volume": 52268516.408760756,
+    "union_vol_err_pct": 0.02834791139073054,
+    "kernel_union_shells": 7,
+    "kernel_union_chi": -16,
+    "shell_count_agrees": false,
+    "chi_agrees": false,
+    "arbiter_triggered": true,
+    "arbiter": {
+     "n_points": 800,
+     "n_exact_on_surface_undecided": 0,
+     "n_ray_undecided": 0,
+     "n_decided": 800,
+     "n_agree": 800,
+     "agreement_vs_fused": 1.0,
+     "truth_or": {
+      "n_decided": 800,
+      "n_agree": 800,
+      "agreement": 1.0,
+      "kernel_in_truth_out": 0,
+      "kernel_out_truth_in": 0
+     }
+    },
+    "inclusion_exclusion": {
+     "U_resid": 18064.6167422235,
+     "U_resid_rel": 0.00034561181344714196,
+     "D_resid": 711308.0047251061,
+     "D_resid_rel": 0.03584926165834168
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "closed_multishell"
+  },
+  {
+   "id": "00276650_6de06c3c7b479b5f4e79eb20_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/closed_multishell/00276650_6de06c3c7b479b5f4e79eb20_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 18,
+    "n_raw_tris": 224,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.02,
+    "diag": 345.1928002978041,
+    "n_verts": 120,
+    "n_tris": 224,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 336",
+    "chi": 8,
+    "shells": 4,
+    "shell_signed_volumes": {
+     "0": 30637.295864817115,
+     "1": 32252.75281258715,
+     "2": 6343.156270622391,
+     "3": 585.1880622163226
+    },
+    "total_abs_volume": 69818.39301024297,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 448,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 672",
+     "signed_volume": 139636.78602048577,
+     "volume": 139636.78602048577,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.14459943771362305
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 0,
+     "closed": true,
+     "closure_info": "empty mesh is vacuously closed",
+     "signed_volume": 0.0,
+     "volume": 0.0,
+     "finite": true,
+     "nonempty": false,
+     "sane": false,
+     "time_s": 0.15557241439819336
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 224,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 336",
+     "signed_volume": 69818.39301024309,
+     "volume": 69818.39301024309,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.14194250106811523
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 140869.43915309838,
+    "occt_n_solids": 8,
+    "occt_n_shells": 8,
+    "occt_chi": 16,
+    "occt_time_s": 0.04,
+    "kernel_union_volume": 139636.78602048577,
+    "union_vol_err_pct": 0.8750323278230369,
+    "kernel_union_shells": 8,
+    "kernel_union_chi": 16,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 1.7462298274040222e-10,
+     "U_resid_rel": 1.2505514321618926e-15,
+     "D_resid": 1.1641532182693481e-10,
+     "D_resid_rel": 1.6674019095491852e-15
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "closed_multishell"
+  },
+  {
+   "id": "00277962_57f92b31b54dff10aa5fb4ad_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/closed_multishell/00277962_57f92b31b54dff10aa5fb4ad_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 278,
+    "n_raw_tris": 26960,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 1.41,
+    "diag": 317.1387082760123,
+    "n_verts": 12992,
+    "n_tris": 26960,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 40440",
+    "chi": -488,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": 19793.534844529637,
+     "1": 19793.534844529873
+    },
+    "total_abs_volume": 39587.06968905951,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 53920,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 80880",
+     "signed_volume": 79174.13937811508,
+     "volume": 79174.13937811508,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.4369356632232666
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 0,
+     "closed": true,
+     "closure_info": "empty mesh is vacuously closed",
+     "signed_volume": 0.0,
+     "volume": 0.0,
+     "finite": true,
+     "nonempty": false,
+     "sane": false,
+     "time_s": 0.26392054557800293
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 26960,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 40440",
+     "signed_volume": 39587.06968905995,
+     "volume": 39587.06968905995,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.3139965534210205
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 78028.46587261008,
+    "occt_n_solids": 2,
+    "occt_n_shells": 2,
+    "occt_chi": -980,
+    "occt_time_s": 2.51,
+    "kernel_union_volume": 79174.13937811508,
+    "union_vol_err_pct": 1.468276343373769,
+    "kernel_union_shells": 4,
+    "kernel_union_chi": -976,
+    "shell_count_agrees": false,
+    "chi_agrees": false,
+    "arbiter_triggered": true,
+    "arbiter": {
+     "n_points": 800,
+     "n_exact_on_surface_undecided": 0,
+     "n_ray_undecided": 0,
+     "n_decided": 800,
+     "n_agree": 798,
+     "agreement_vs_fused": 0.9975,
+     "truth_or": {
+      "n_decided": 800,
+      "n_agree": 798,
+      "agreement": 0.9975,
+      "kernel_in_truth_out": 0,
+      "kernel_out_truth_in": 2
+     }
+    },
+    "inclusion_exclusion": {
+     "U_resid": 3.943569026887417e-09,
+     "U_resid_rel": 4.980880193788981e-14,
+     "D_resid": 4.3655745685100555e-10,
+     "D_resid_rel": 1.1027779026838402e-14
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "closed_multishell"
+  },
+  {
+   "id": "00278332_1d71af805df00c248acabc0c_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/closed_multishell/00278332_1d71af805df00c248acabc0c_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 8,
+    "n_raw_tris": 192,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.02,
+    "diag": 284.06259882854016,
+    "n_verts": 100,
+    "n_tris": 192,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 288",
+    "chi": 4,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": 159229.83305105797,
+     "1": 159229.83305105794
+    },
+    "total_abs_volume": 318459.6661021159,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 416,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 624",
+     "signed_volume": 600532.5884012942,
+     "volume": 600532.5884012942,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.162492036819458
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 150,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 225",
+     "signed_volume": 36386.743802937395,
+     "volume": 36386.743802937395,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.22131752967834473
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 254,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 381",
+     "signed_volume": 282072.9222991784,
+     "volume": 282072.9222991784,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.14810919761657715
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 601973.6648840392,
+    "occt_n_solids": 2,
+    "occt_n_shells": 2,
+    "occt_chi": 4,
+    "occt_time_s": 0.06,
+    "kernel_union_volume": 600532.5884012942,
+    "union_vol_err_pct": 0.2393919479887222,
+    "kernel_union_shells": 2,
+    "kernel_union_chi": 4,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 1.1641532182693481e-10,
+     "U_resid_rel": 1.9385346286843396e-16,
+     "D_resid": 1.1641532182693481e-10,
+     "D_resid_rel": 4.1271356668351117e-16
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "closed_multishell"
+  },
+  {
+   "id": "00279442_ce9068c9d41bd71fe260b294_step_000",
+   "step": "/home/hatch/workspace/abc_chunk_27/closed_multishell/00279442_ce9068c9d41bd71fe260b294_step_000.step",
+   "stage1": {
+    "verdict": "ok",
+    "n_brep_faces": 18,
+    "n_raw_tris": 306,
+    "n_zero_area_dropped": 0,
+    "n_weld_degenerate_dropped": 0,
+    "n_duplicate_dropped": 0,
+    "tess_time_s": 0.03,
+    "diag": 73.6545996527033,
+    "n_verts": 155,
+    "n_tris": 306,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "directed_closed": true,
+    "closure_info": "0 bad undirected edges of 459",
+    "chi": 2,
+    "shells": 2,
+    "shell_signed_volumes": {
+     "0": 33466.45075205524,
+     "1": 8779.064490725772
+    },
+    "total_abs_volume": 42245.51524278102,
+    "verify_exceptions": 0
+   },
+   "clean": false,
+   "oracle_eligible": true,
+   "selected": true,
+   "stage2": {
+    "union": {
+     "verdict": "arranged",
+     "n_tris": 1042,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1563",
+     "signed_volume": 75343.59311071946,
+     "volume": 75343.59311071946,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.1649172306060791
+    },
+    "intersection": {
+     "verdict": "arranged",
+     "n_tris": 866,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1299",
+     "signed_volume": 9147.43737484257,
+     "volume": 9147.43737484257,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.16669440269470215
+    },
+    "difference": {
+     "verdict": "arranged",
+     "n_tris": 904,
+     "closed": true,
+     "closure_info": "0 bad undirected edges of 1356",
+     "signed_volume": 33098.07786793846,
+     "volume": 33098.07786793846,
+     "finite": true,
+     "nonempty": true,
+     "sane": true,
+     "time_s": 0.18928265571594238
+    }
+   },
+   "oracle": {
+    "eligible": true,
+    "occt_volume": 75376.76031124665,
+    "occt_n_solids": 2,
+    "occt_n_shells": 2,
+    "occt_chi": 2,
+    "occt_time_s": 0.06,
+    "kernel_union_volume": 75343.59311071946,
+    "union_vol_err_pct": 0.04400189181682604,
+    "kernel_union_shells": 2,
+    "kernel_union_chi": 2,
+    "shell_count_agrees": true,
+    "chi_agrees": true,
+    "arbiter_triggered": false,
+    "inclusion_exclusion": {
+     "U_resid": 0.0,
+     "U_resid_rel": 0.0,
+     "D_resid": 1.4551915228366852e-11,
+     "D_resid_rel": 4.396604324404905e-16
+    }
+   },
+   "chunk": "abc_0027_step_v00.7z",
+   "round": "closed_multishell"
+  }
+ ],
+ "summary": {
+  "n_models": 59,
+  "n_stage1_ok": 59,
+  "n_stage1_failed": 0,
+  "n_verify_exceptions": 0,
+  "stage2": {
+   "union": {
+    "arranged": 24,
+    "refused": 35
+   },
+   "intersection": {
+    "arranged": 24,
+    "refused": 35
+   },
+   "difference": {
+    "arranged": 24,
+    "refused": 35
+   }
+  },
+  "oracle_compared": 19,
+  "arbiters_run": 5,
+  "per_round": {
+   "pilot": 1,
+   "chunk27": 50,
+   "closed_multishell": 8
+  }
+ }
+}

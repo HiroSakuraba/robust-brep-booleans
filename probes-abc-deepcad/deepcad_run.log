@@ -1,0 +1,69 @@
+zip entries: 212550, STEP files: 212549
+  pool 10/80
+  pool 20/80
+  pool 30/80
+  pool 40/80
+  pool 50/80
+  pool 60/80
+  pool 70/80
+  pool 80/80
+pool ok: 80/80
+selected 45 (2 worst + 5 controls)
+  model 1/45 00651489.step ops=['arranged', 'arranged', 'arranged'] 1.9s
+  model 2/45 00022250.step ops=['arranged', 'arranged', 'arranged'] 1.1s
+  model 3/45 00820320.step ops=['arranged', 'arranged', 'arranged'] 10.7s
+  model 4/45 00981221.step ops=['arranged', 'arranged', 'arranged'] 2.1s
+  model 5/45 00645276.step ops=['arranged', 'arranged', 'arranged'] 1.6s
+  model 6/45 00022637.step ops=['arranged', 'arranged', 'arranged'] 1.7s
+  model 7/45 00864720.step ops=['arranged', 'arranged', 'arranged'] 1.4s
+  model 8/45 00124859.step ops=['arranged', 'arranged', 'arranged'] 1.9s
+  model 9/45 00663704.step ops=['arranged', 'arranged', 'arranged'] 1.4s
+  model 10/45 00892289.step ops=['arranged', 'arranged', 'arranged'] 1.1s
+  model 11/45 00460815.step ops=['arranged', 'arranged', 'arranged'] 1.2s
+  model 12/45 00622271.step ops=['arranged', 'arranged', 'arranged'] 1.4s
+  model 13/45 00770387.step ops=['arranged', 'arranged', 'arranged'] 1.5s
+  model 14/45 00301561.step ops=['arranged', 'arranged', 'arranged'] 1.2s
+  model 15/45 00669242.step ops=['arranged', 'arranged', 'arranged'] 1.2s
+  model 16/45 00104579.step ops=['arranged', 'arranged', 'arranged'] 1.2s
+  model 17/45 00696050.step ops=['arranged', 'arranged', 'arranged'] 1.3s
+  model 18/45 00175604.step ops=['arranged', 'arranged', 'arranged'] 1.3s
+  model 19/45 00898689.step ops=['arranged', 'arranged', 'arranged'] 1.1s
+  model 20/45 00975820.step ops=['arranged', 'arranged', 'arranged'] 1.0s
+  model 21/45 00722109.step ops=['arranged', 'arranged', 'arranged'] 1.2s
+  model 22/45 00433254.step ops=['arranged', 'arranged', 'arranged'] 1.2s
+  model 23/45 00221192.step ops=['arranged', 'arranged', 'arranged'] 1.1s
+  model 24/45 00928763.step ops=['arranged', 'arranged', 'arranged'] 1.3s
+  model 25/45 00635531.step ops=['arranged', 'arranged', 'arranged'] 1.0s
+  model 26/45 00980522.step ops=['arranged', 'arranged', 'arranged'] 1.0s
+  model 27/45 00486316.step ops=['arranged', 'arranged', 'arranged'] 1.2s
+  model 28/45 00327878.step ops=['arranged', 'arranged', 'arranged'] 1.1s
+  model 29/45 00966979.step ops=['arranged', 'arranged', 'arranged'] 1.1s
+  model 30/45 00912378.step ops=['arranged', 'arranged', 'arranged'] 1.2s
+  model 31/45 00259477.step ops=['arranged', 'arranged', 'arranged'] 1.0s
+  model 32/45 00716772.step ops=['arranged', 'arranged', 'arranged'] 1.1s
+  model 33/45 00928490.step ops=['arranged', 'arranged', 'arranged'] 0.9s
+  model 34/45 00446301.step ops=['arranged', 'arranged', 'arranged'] 1.3s
+  model 35/45 00990733.step ops=['arranged', 'arranged', 'arranged'] 1.1s
+  model 36/45 00717581.step ops=['arranged', 'arranged', 'arranged'] 1.0s
+  model 37/45 00349030.step ops=['arranged', 'arranged', 'arranged'] 1.0s
+  model 38/45 00464122.step ops=['arranged', 'arranged', 'arranged'] 1.2s
+  model 39/45 00097530.step ops=['arranged', 'arranged', 'arranged'] 1.1s
+  model 40/45 00267677.step ops=['arranged', 'arranged', 'arranged'] 1.1s
+  model 41/45 00700678.step ops=['arranged', 'arranged', 'arranged'] 0.9s
+  model 42/45 00730848.step ops=['arranged', 'arranged', 'arranged'] 1.0s
+  model 43/45 00465757.step ops=['arranged', 'arranged', 'arranged'] 1.0s
+  model 44/45 00174921.step ops=['arranged', 'arranged', 'arranged'] 1.0s
+  model 45/45 00356356.step ops=['arranged', 'arranged', 'arranged'] 0.9s
+wrote /home/hatch/workspace/brep-booleans/probes-abc-deepcad/results_deepcad.json
+{
+ "arranged": 135,
+ "arranged_not_closed": 0,
+ "arranged_bad_volume": 1,
+ "refused": 0,
+ "exception": 0,
+ "timeout": 0,
+ "worker_death": 0,
+ "oracle_fail": 0,
+ "arbiter_runs": 1
+}
+EXIT=0
