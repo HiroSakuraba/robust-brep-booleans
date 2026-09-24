@@ -38,7 +38,7 @@ class FaceSameDomainEvidence:
     perimeter_rel_error: float
     edge_count: int
     wire_count: int
-    reverse_normals: bool
+    reverse_normals: Optional[bool]
 
 
 @dataclass
@@ -173,8 +173,14 @@ def _face_candidate(fa, fb, ida: int, idb: int, context, *,
     # faces can use different support-surface parameter frames even when their
     # enclosing closed solids represent the same material. Global material
     # orientation is checked from the signed closed-solid volume instead.
-    reverse = bool(BOPTools_AlgoTools.IsSplitToReverse_s(
-        fa, fb, context))
+    try:
+        # OCP 8 currently requires the nominally optional error argument.
+        reverse = bool(BOPTools_AlgoTools.IsSplitToReverse_s(
+            fa, fb, context, 0))
+    except (TypeError, RuntimeError):
+        # Diagnostic only. Closed-solid signed-volume orientation below is the
+        # actual material-side invariant.
+        reverse = None
 
     return FaceSameDomainEvidence(
         face_a=ida,
