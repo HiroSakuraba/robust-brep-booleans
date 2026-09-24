@@ -16,6 +16,7 @@ from brepkernel import boolean_brep
 from brepkernel.step_ingest import index_shape
 
 from OCP.BRep import BRep_Tool
+from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
 from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.BRepCheck import BRepCheck_Analyzer
@@ -25,7 +26,7 @@ from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.GProp import GProp_GProps
 from OCP.IFSelect import IFSelect_RetDone
 from OCP.STEPControl import STEPControl_AsIs, STEPControl_Reader, STEPControl_Writer
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_VERTEX
+from OCP.TopAbs import TopAbs_EDGE
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
 from OCP.gp import gp_Pnt
@@ -49,14 +50,12 @@ def vertical_edges(shape):
     ee = TopExp_Explorer(shape, TopAbs_EDGE)
     while ee.More():
         e = TopoDS.Edge(ee.Current())
-        pts = []
-        ev = TopExp_Explorer(e, TopAbs_VERTEX)
-        while ev.More():
-            v = TopoDS.Vertex(ev.Current())
-            p = BRep_Tool.Pnt_s(v)
-            pts.append((p.X(), p.Y(), p.Z()))
-            ev.Next()
-        if len(pts) >= 2 and abs(pts[0][2] - pts[-1][2]) > 0.9:
+        curve = BRepAdaptor_Curve(e)
+        t0 = float(curve.FirstParameter())
+        t1 = float(curve.LastParameter())
+        p0 = curve.Value(t0)
+        p1 = curve.Value(t1)
+        if abs(p0.Z() - p1.Z()) > 0.9:
             out.append(e)
         ee.Next()
     return out
