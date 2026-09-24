@@ -67,6 +67,18 @@ class SolidAssemblyRecord:
 
 
 @dataclass
+class EdgeLineageRecord:
+    result_edge_index: int
+    piece_refs: tuple[tuple[str, int, int], ...]
+    parent_faces: tuple[tuple[str, int], ...]
+    operands: tuple[str, ...]
+    intersection_refs: tuple[tuple[int, int, int], ...]
+    source_boundary_refs: tuple[tuple[str, int], ...]
+    provenance_kind: str
+    verified_pcurves: bool
+
+
+@dataclass
 class BooleanAssemblyResult:
     operation: str
     decisions: list[PatchDecision]
@@ -78,6 +90,7 @@ class BooleanAssemblyResult:
     volume: float
     free_edges: int
     multiple_edges: int
+    edge_lineage: list[EdgeLineageRecord] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -546,6 +559,154 @@ def _build_nested_solids(records: list[ShellAssemblyRecord]
     return out
 
 
+def _unique_edges(shape) -> list[object]:
+    from OCP.TopAbs import TopAbs_EDGE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    out = []
+    ex = TopExp_Explorer(shape, TopAbs_EDGE)
+    while ex.More():
+        e = TopoDS.Edge(ex.Current())
+        if not any(e.IsSame(x) for x in out):
+            out.append(e)
+        ex.Next()
+    return out
+
+
+def _shape_has_edge(shape, edge) -> bool:
+    from OCP.TopAbs import TopAbs_EDGE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    ex = TopExp_Explorer(shape, TopAbs_EDGE)
+    while ex.More():
+        if TopoDS.Edge(ex.Current()).IsSame(edge):
+            return True
+        ex.Next()
+    return False
+
+
+def _edge_length(edge) -> float:
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    g = GProp_GProps()
+    BRepGProp.LinearProperties_s(edge, g, False, False)
+    return float(g.Mass())
+
+
+def _point_edge_distance(point: np.ndarray, edge) -> float:
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    from OCP.gp import gp_Pnt
+
+    v = BRepBuilderAPI_MakeVertex(
+        gp_Pnt(float(point[0]), float(point[1]), float(point[2]))).Vertex()
+    d = BRepExtrema_DistShapeShape(v, edge)
+    if not d.IsDone():
+        d.Perform()
+    if not d.IsDone():
+        return float("inf")
+    return float(d.Value())
+
+
+def _edge_matches_section(edge, sec, base_tol: float) -> bool:
+    """Recognize a result edge as lying on a verified section edge.
+
+    Splitter/sewing may preserve the edge, copy it, or keep only a sub-edge.
+    Therefore TShape identity is tried first, then a conservative geometric
+    sub-edge check: the result edge may not exceed the section length and
+    several points along it must lie on the verified section curve.
+    """
+    if edge.IsSame(sec.edge):
+        return True
+
+    from OCP.BRepAdaptor import BRepAdaptor_Curve
+
+    le = _edge_length(edge)
+    ls = _edge_length(sec.edge)
+    tol = max(float(base_tol), float(sec.verify_tolerance),
+              float(sec.edge_tolerance))
+    len_tol = max(16.0 * tol, 1e-8 * max(le, ls, 1.0))
+    if le > ls + len_tol:
+        return False
+
+    ce = BRepAdaptor_Curve(edge)
+    t0 = float(ce.FirstParameter())
+    t1 = float(ce.LastParameter())
+    if not (np.isfinite(t0) and np.isfinite(t1) and t1 >= t0):
+        return False
+    match_tol = max(8.0 * tol, 1e-9 * max(le, ls, 1.0))
+    for q in (0.0, 0.125, 0.25, 0.5, 0.75, 0.875, 1.0):
+        t = t0 + (t1 - t0) * q
+        p = ce.Value(float(t))
+        x = np.array([p.X(), p.Y(), p.Z()], dtype=np.float64)
+        if _point_edge_distance(x, sec.edge) > match_tol:
+            return False
+    return True
+
+
+def _build_edge_lineage(result_shape, selected: list[PatchDecision],
+                        split: ModelSplitResult,
+                        model_a: BRepModel, model_b: BRepModel,
+                        base_tol: float) -> list[EdgeLineageRecord]:
+    """Attach final result edges to selected patches and section evidence."""
+    original = {
+        "A": {f.face_id: f.face for f in model_a.faces},
+        "B": {f.face_id: f.face for f in model_b.faces},
+    }
+    out = []
+    for i, edge in enumerate(_unique_edges(result_shape)):
+        refs = []
+        parents = []
+        operands = []
+        source_boundary = []
+        for d in selected:
+            sf = d.sewed_face if d.sewed_face is not None else d.selected_face
+            if sf is not None and _shape_has_edge(sf, edge):
+                ref = (d.operand, d.parent_face_id, d.piece_index)
+                if ref not in refs:
+                    refs.append(ref)
+                pf = (d.operand, d.parent_face_id)
+                if pf not in parents:
+                    parents.append(pf)
+                if d.operand not in operands:
+                    operands.append(d.operand)
+                parent_face = original[d.operand].get(d.parent_face_id)
+                if parent_face is not None and _shape_has_edge(parent_face, edge):
+                    if pf not in source_boundary:
+                        source_boundary.append(pf)
+
+        intersections = []
+        for sec in split.section_edges:
+            if _edge_matches_section(edge, sec, float(base_tol)):
+                key = (sec.face_a, sec.face_b, sec.edge_index)
+                if key not in intersections:
+                    intersections.append(key)
+
+        if intersections:
+            kind = "boolean_section"
+        elif source_boundary:
+            kind = "source_boundary"
+        elif refs:
+            kind = "split_or_sewn_boundary"
+        else:
+            kind = "unattributed"
+
+        out.append(EdgeLineageRecord(
+            result_edge_index=i,
+            piece_refs=tuple(sorted(refs)),
+            parent_faces=tuple(sorted(parents)),
+            operands=tuple(sorted(operands)),
+            intersection_refs=tuple(sorted(intersections)),
+            source_boundary_refs=tuple(sorted(source_boundary)),
+            provenance_kind=kind,
+            verified_pcurves=bool(intersections),
+        ))
+    return out
+
+
 def _compound_solids(solids: list[SolidAssemblyRecord]):
     from OCP.BRep import BRep_Builder
     from OCP.TopoDS import TopoDS_Compound
@@ -583,6 +744,7 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
             operation=operation, decisions=decisions, selected_faces=0,
             sewed_shape=empty, shells=[], solids=[], shape=empty,
             volume=0.0, free_edges=0, multiple_edges=0,
+            edge_lineage=[],
             notes=["empty material result"])
 
     if sew_tol is None:
@@ -646,6 +808,8 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         raise AssemblyError("final assembled result is B-rep invalid",
                             kind="SolidInvalid")
     volume = float(sum(s.volume for s in solids))
+    edge_lineage = _build_edge_lineage(
+        result_shape, selected, split, model_a, model_b, float(base_tol))
 
     return BooleanAssemblyResult(
         operation=operation,
@@ -658,4 +822,5 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         volume=volume,
         free_edges=free,
         multiple_edges=multi,
+        edge_lineage=edge_lineage,
     )
