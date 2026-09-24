@@ -73,9 +73,13 @@ def _shape_bbox(shape) -> tuple[np.ndarray, np.ndarray]:
     if b.IsVoid():
         z = np.zeros(3, dtype=np.float64)
         return z, z
-    x0, y0, z0, x1, y1, z1 = b.Get()
-    return (np.array([x0, y0, z0], dtype=np.float64),
-            np.array([x1, y1, z1], dtype=np.float64))
+    # OCCT 8 changed Bnd_Box.Get() to return Bnd_Box::Limits, which the
+    # Python binding does not currently convert. CornerMin/CornerMax are
+    # stable gp_Pnt accessors in both OCP 7.x and 8.x.
+    p0 = b.CornerMin()
+    p1 = b.CornerMax()
+    return (np.array([p0.X(), p0.Y(), p0.Z()], dtype=np.float64),
+            np.array([p1.X(), p1.Y(), p1.Z()], dtype=np.float64))
 
 
 def _surface_type_name(face) -> str:
