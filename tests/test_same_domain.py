@@ -105,6 +105,36 @@ def t5_different_face_decomposition_matches_after_canonicalization():
         f"canonicalized={r.canonicalized} "
         f"canonB={canon}")
 
+
+def t6_same_bbox_volume_different_material_rejected():
+    # A: cubes on the SW and NE corners of a 2x2x1 bounding box.
+    a0 = BRepPrimAPI_MakeBox(
+        gp_Pnt(0, 0, 0), gp_Pnt(1, 1, 1)).Shape()
+    a1 = BRepPrimAPI_MakeBox(
+        gp_Pnt(1, 1, 0), gp_Pnt(2, 2, 1)).Shape()
+    fa = BRepAlgoAPI_Fuse(a0, a1)
+    fa.Build()
+    assert fa.IsDone()
+    a = fa.Shape()
+
+    # B: same total volume and same global bbox, but cubes occupy the other
+    # two corners. Bbox/volume agreement must not be mistaken for equivalence.
+    b0 = BRepPrimAPI_MakeBox(
+        gp_Pnt(0, 1, 0), gp_Pnt(1, 2, 1)).Shape()
+    b1 = BRepPrimAPI_MakeBox(
+        gp_Pnt(1, 0, 0), gp_Pnt(2, 1, 1)).Shape()
+    fb = BRepAlgoAPI_Fuse(b0, b1)
+    fb.Build()
+    assert fb.IsDone()
+    b = fb.Shape()
+
+    r = same_domain_shapes(a, b)
+    return check(
+        "sd6 same bbox+volume different material rejected",
+        not r.equivalent,
+        f"reason={r.reason} canonicalized={r.canonicalized} "
+        f"candidate_counts={r.candidate_counts}")
+
 def main():
     ok = True
     ok &= t1_independent_boxes_match()
@@ -112,6 +142,7 @@ def main():
     ok &= t3_reversed_same_tshape_rejected()
     ok &= t4_independent_nurbs_spheres_match()
     ok &= t5_different_face_decomposition_matches_after_canonicalization()
+    ok &= t6_same_bbox_volume_different_material_rejected()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
