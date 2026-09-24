@@ -71,11 +71,22 @@ class ModelSplitResult:
 
 
 def _face_area(face) -> float:
+    """High-accuracy area for split-conservation checks.
+
+    OCCT's no-Eps SurfaceProperties overload uses a non-adaptive path that can
+    be materially inaccurate on rational B-spline faces (a NURBS sphere was
+    off by about 0.35%).  The Eps overload uses adaptive 2D Gauss integration,
+    so conservation is checked against the actual trimmed surface rather than
+    against a loose integration estimate.
+    """
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
 
     g = GProp_GProps()
-    BRepGProp.SurfaceProperties_s(face, g)
+    err = BRepGProp.SurfaceProperties_s(face, g, 1e-9, False)
+    if float(err) < 0.0:
+        raise SplitError("adaptive face-area integration failed",
+                         kind="FaceAreaIntegrationFailed")
     return float(g.Mass())
 
 
