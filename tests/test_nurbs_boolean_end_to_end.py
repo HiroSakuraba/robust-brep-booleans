@@ -1,0 +1,112 @@
+"""True NURBS end-to-end Boolean regression.
+
+Analytic spheres are converted by OCCT into B-spline/NURBS B-reps before they
+enter this kernel.  The result must still traverse the same verified pipeline
+and reproduce the analytic/OCCT volume without falling back to a mesh-defined
+answer.
+"""
+import math
+import sys
+
+sys.path.insert(0, "src")
+
+from brepkernel.assembly import assemble_boolean
+from brepkernel.intersection import intersect_models
+from brepkernel.split import split_models
+from brepkernel.step_ingest import index_shape
+
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
+from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
+from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.BRepGProp import BRepGProp
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
+from OCP.GProp import GProp_GProps
+from OCP.gp import gp_Pnt
+
+
+def check(name, cond, detail=""):
+    print(f"[{'PASS' if cond else 'FAIL'}] {name} {detail}")
+    return bool(cond)
+
+
+def volume(shape):
+    p = GProp_GProps()
+    BRepGProp.VolumeProperties_s(shape, p)
+    return float(p.Mass())
+
+
+def to_nurbs(shape):
+    c = BRepBuilderAPI_NurbsConvert(shape, True)
+    assert c.IsDone()
+    return c.Shape()
+
+
+def main():
+    analytic_a = BRepPrimAPI_MakeSphere(gp_Pnt(0, 0, 0), 1.0).Shape()
+    analytic_b = BRepPrimAPI_MakeSphere(gp_Pnt(1, 0, 0), 1.0).Shape()
+    a = to_nurbs(analytic_a)
+    b = to_nurbs(analytic_b)
+
+    ma = index_shape(a)
+    mb = index_shape(b)
+
+    ok = check(
+        "n1 inputs are B-spline surfaces",
+        ma.faces and mb.faces
+        and all("BSpline" in f.surface_type for f in ma.faces)
+        and all("BSpline" in f.surface_type for f in mb.faces),
+        f"A={[f.surface_type for f in ma.faces]} "
+        f"B={[f.surface_type for f in mb.faces]}")
+
+    # Periodic NURBS acceleration may conservatively decline some faces;
+    # this test records how many were accelerated but does not turn absence
+    # of an acceleration structure into a correctness failure.
+    print(f"[INFO] freeform accelerators A={len(ma.nurbs_faces)}/{len(ma.faces)} "
+          f"B={len(mb.nurbs_faces)}/{len(mb.faces)}")
+
+    ix = intersect_models(
+        ma, mb, base_tol=1e-7, chord_tol=1e-5,
+        tangent_sin_tol=1e-4)
+    sp = split_models(ma, mb, ix, base_tol=1e-7)
+    r = assemble_boolean(ma, mb, sp, "union", base_tol=1e-7)
+
+    expected = 9.0 * math.pi / 4.0
+    oracle = BRepAlgoAPI_Fuse(a, b)
+    oracle.Build()
+    assert oracle.IsDone()
+    ov = volume(oracle.Shape())
+
+    ok &= check(
+        "n1 verified section exists",
+        ix.verified_edges >= 1 and not ix.has_ambiguous_contact,
+        f"edges={ix.verified_edges} ambiguous={ix.ambiguous_contacts}")
+    ok &= check(
+        "n1 global assembly valid",
+        r.free_edges == 0 and r.multiple_edges == 0
+        and BRepCheck_Analyzer(r.shape, True).IsValid(),
+        f"selected={r.selected_faces} shells={len(r.shells)} "
+        f"solids={len(r.solids)}")
+    ok &= check(
+        "n1 analytic volume",
+        abs(r.volume - expected) < 3e-6,
+        f"assembled={r.volume:.12g} expected={expected:.12g}")
+    ok &= check(
+        "n1 OCCT NURBS oracle volume",
+        abs(r.volume - ov) < 3e-6,
+        f"assembled={r.volume:.12g} oracle={ov:.12g}")
+
+    # The result must keep explicit input-face lineage through patch selection.
+    kept_a = [d for d in r.decisions if d.operand == "A" and d.keep]
+    kept_b = [d for d in r.decisions if d.operand == "B" and d.keep]
+    ok &= check(
+        "n1 bilateral provenance",
+        bool(kept_a) and bool(kept_b)
+        and all(d.sewed_face is not None for d in kept_a + kept_b),
+        f"keptA={len(kept_a)} keptB={len(kept_b)}")
+
+    print("\nALL PASS" if ok else "\nSOME FAILURES")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
