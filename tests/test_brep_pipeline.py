@@ -10,6 +10,7 @@ sys.path.insert(0, "src")
 
 from brepkernel import boolean_brep, BRepAmbiguousResult
 
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
 from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.BRepGProp import BRepGProp
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeSphere
@@ -149,12 +150,40 @@ def t4_independent_same_domain_fast_path():
         f"same_domain={sd_d}")
     return ok
 
+
+def t5_different_decomposition_public_fast_path():
+    a = BRepPrimAPI_MakeBox(2.0, 1.0, 1.0).Shape()
+    left = BRepPrimAPI_MakeBox(
+        gp_Pnt(0, 0, 0), gp_Pnt(1, 1, 1)).Shape()
+    right = BRepPrimAPI_MakeBox(
+        gp_Pnt(1, 0, 0), gp_Pnt(2, 1, 1)).Shape()
+    f = BRepAlgoAPI_Fuse(left, right)
+    f.Build()
+    assert f.IsDone()
+    b = f.Shape()
+
+    out, report = boolean_brep(a, b, "union")
+    sd = report["stages"].get("same_domain", {})
+    cb = sd.get("canonical_B") or {}
+    return check(
+        "p5 different decomposition canonical fast path",
+        report["accepted"]
+        and sd.get("equivalent")
+        and sd.get("canonicalized")
+        and cb.get("faces_before", 0) > cb.get("faces_after", 0)
+        and cb.get("faces_after") == 6
+        and sd.get("resolution") == "A"
+        and "intersection" not in report["stages"]
+        and solid_count(out) == 1,
+        f"same_domain={sd}")
+
 def main():
     ok = True
     ok &= t1_one_call_true_nurbs_union()
     ok &= t2_exact_identity_fast_path()
     ok &= t3_tangent_contact_structured_refusal()
     ok &= t4_independent_same_domain_fast_path()
+    ok &= t5_different_decomposition_public_fast_path()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
