@@ -87,9 +87,10 @@ def _bbox_scale(face) -> float:
     BRepBndLib.AddOptimal_s(face, b, False, False)
     if b.IsVoid():
         return 1.0
-    x0, y0, z0, x1, y1, z1 = b.Get()
-    return max(1.0, float(np.linalg.norm(
-        np.array([x1 - x0, y1 - y0, z1 - z0]))))
+    p0 = b.CornerMin()
+    p1 = b.CornerMax()
+    return max(1.0, float(np.linalg.norm(np.array(
+        [p1.X() - p0.X(), p1.Y() - p0.Y(), p1.Z() - p0.Z()]))))
 
 
 def _uv_interior_witness(child, parent, tol: float
