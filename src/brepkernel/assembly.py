@@ -330,7 +330,12 @@ def _make_outward_solid(shell):
 
 
 def _solid_interior_point(solid, tol: float) -> np.ndarray:
-    """Find a deterministic point classified IN a valid closed solid."""
+    """Find a point just inside this shell, preferably near its boundary.
+
+    A near-boundary witness is essential for shell nesting: the center of a
+    large outer shell may also lie inside a nested cavity shell, which would
+    falsely make the two shells appear to contain one another.
+    """
     from OCP.BRepClass3d import BRepClass3d_SolidClassifier
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
@@ -338,8 +343,9 @@ def _solid_interior_point(solid, tol: float) -> np.ndarray:
     from OCP.TopExp import TopExp_Explorer
     from OCP.TopoDS import TopoDS
     from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepClass import BRepClass_FaceClassifier
     from OCP.BRepTools import BRepTools
-    from OCP.gp import gp_Pnt, gp_Vec
+    from OCP.gp import gp_Pnt, gp_Pnt2d, gp_Vec
 
     clf = BRepClass3d_SolidClassifier(solid)
 
@@ -348,49 +354,69 @@ def _solid_interior_point(solid, tol: float) -> np.ndarray:
                     float(tol))
         return clf.State() == TopAbs_IN
 
+    lo, hi = _bbox(solid)
+    scale = max(float(np.linalg.norm(hi - lo)), 1.0)
+
+    # First preference: a tiny inward offset from a genuine interior point
+    # of one boundary face. Test both normal directions so this does not rely
+    # on imported face orientation.
+    frac = (0.5, 0.25, 0.75, 0.125, 0.875,
+            0.375, 0.625, 0.0625, 0.9375)
+    ex = TopExp_Explorer(solid, TopAbs_FACE)
+    while ex.More():
+        face = TopoDS.Face(ex.Current())
+        try:
+            u0, u1, v0, v1 = map(float, BRepTools.UVBounds_s(face))
+            if not all(np.isfinite([u0, u1, v0, v1])):
+                ex.Next()
+                continue
+            surf = BRepAdaptor_Surface(face)
+            found = False
+            for fu in frac:
+                if found:
+                    break
+                u = u0 + (u1 - u0) * fu
+                for fv in frac:
+                    v = v0 + (v1 - v0) * fv
+                    fc = BRepClass_FaceClassifier(
+                        face, gp_Pnt2d(float(u), float(v)),
+                        float(tol), True)
+                    if fc.State() != TopAbs_IN:
+                        continue
+                    p = gp_Pnt()
+                    du, dv = gp_Vec(), gp_Vec()
+                    surf.D1(float(u), float(v), p, du, dv)
+                    n = np.cross(
+                        np.array([du.X(), du.Y(), du.Z()]),
+                        np.array([dv.X(), dv.Y(), dv.Z()]))
+                    nn = float(np.linalg.norm(n))
+                    if nn <= 1e-300:
+                        continue
+                    n /= nn
+                    x = _p3(p)
+                    # Start close to the shell so a witness for an outer
+                    # boundary does not accidentally fall inside a nested
+                    # inner shell. Expand only if tolerance requires it.
+                    for eps in (1e-7, 1e-6, 1e-5, 1e-4):
+                        d = max(16.0 * tol, eps * scale)
+                        for sign in (-1.0, 1.0):
+                            q = x + sign * d * n
+                            if is_in(q):
+                                return q
+                    found = True
+        except Exception:
+            pass
+        ex.Next()
+
+    # Fallback for pathological parameterizations: center of mass, then a
+    # deterministic interior grid. These are valid solid witnesses but are
+    # less suitable for detecting nesting, hence they come second.
     props = GProp_GProps()
     BRepGProp.VolumeProperties_s(solid, props)
     cm = _p3(props.CentreOfMass())
     if is_in(cm):
         return cm
 
-    lo, hi = _bbox(solid)
-    scale = max(float(np.linalg.norm(hi - lo)), 1.0)
-
-    ex = TopExp_Explorer(solid, TopAbs_FACE)
-    while ex.More():
-        face = TopoDS.Face(ex.Current())
-        try:
-            from OCP.BRepClass import BRepClass_FaceClassifier
-            from OCP.gp import gp_Pnt2d
-            u0, u1, v0, v1 = map(float, BRepTools.UVBounds_s(face))
-            u, v = 0.5 * (u0 + u1), 0.5 * (v0 + v1)
-            fc = BRepClass_FaceClassifier(
-                face, gp_Pnt2d(u, v), float(tol), True)
-            if fc.State() == TopAbs_IN:
-                s = BRepAdaptor_Surface(face)
-                p = gp_Pnt()
-                du, dv = gp_Vec(), gp_Vec()
-                s.D1(u, v, p, du, dv)
-                n = np.cross(
-                    np.array([du.X(), du.Y(), du.Z()]),
-                    np.array([dv.X(), dv.Y(), dv.Z()]))
-                nn = float(np.linalg.norm(n))
-                if nn > 1e-300:
-                    n /= nn
-                    x = _p3(p)
-                    for eps in (1e-4, 1e-5, 1e-6, 1e-7):
-                        d = max(8.0 * tol, eps * scale)
-                        for sign in (-1.0, 1.0):
-                            q = x + sign * d * n
-                            if is_in(q):
-                                return q
-        except Exception:
-            pass
-        ex.Next()
-
-    frac = (0.5, 0.25, 0.75, 0.125, 0.875,
-            0.375, 0.625, 0.0625, 0.9375)
     for fx in frac:
         x = lo[0] + (hi[0] - lo[0]) * fx
         for fy in frac:
@@ -402,7 +428,6 @@ def _solid_interior_point(solid, tol: float) -> np.ndarray:
                     return q
     raise AssemblyError("could not find interior point of assembled shell",
                         kind="NoSolidInteriorWitness")
-
 
 def _shell_records(shells: list[object], tol: float
                    ) -> list[ShellAssemblyRecord]:
