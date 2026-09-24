@@ -200,15 +200,82 @@ f1d2e331 but refused under normalize.py):
 - 3 union-vol diffs vs f1d2e331:
   - 00270341: 3.15e-07 (numerical noise)
   - 00276289: 0.000242 (0.024%, fallback union)
-  - 00277962: 0.013 (1.3% — REGRESSION, see below)
+  - 00277962: 0.013 (1.3% — expected: v0.6 baseline never folded the
+    genuine ~515-unit shell interpenetration; v0.7 folds it, matching the
+    f1d2e331 +0.148%-vs-OCCT target. See correction below.)
 
 **DeepCAD: 80 models, 2 verdict changes, 0 exceptions, 0 union-vol diffs**
 - 2 models arranged→refused, both defective_input=True (correct).
 
-**00277962 regression:** Input has 2 disjoint shells (z=0 and z=155).
-Old code: 4 shells in union result, +0.148% vs OCCT. New code: 2 shells,
--1.3% vs old (≈-1.15% vs OCCT). The nesting/canonicalization merged
-disjoint shells it should have passed through. The "disjoint passthrough"
-fast path did not trigger (likely false nesting detection or overlap
-false positive). This is a real 1.3% move AWAY from OCCT on one model.
-Not fixed in this task — flagged honestly.
+**00277962 — CORRECTION (24 Sept 2026, post-v0.7 review round): the
+"regression" was a phantom, caused by a baseline mix-up in this document,
+not by a code bug.** Re-investigation with direct OCCT measurements:
+
+- The two shells are NOT disjoint. Same x/y footprint, z-ranges
+  [0, 158.8] and [155.2, 313.9]: OCCT pairwise fuse gives 39014.23 vs a
+  shell-sum of 39529.35, i.e. the solids genuinely interpenetrate by
+  ~515 volume units. The overlap graph (`merges=[(0,1)]`) was CORRECT;
+  the disjoint passthrough correctly did NOT fire.
+- The replay's `union_vol_old` (79174.14) is the **v0.6** baseline, which
+  never folded the overlap: 2×39587.07 = +1.468% vs the true set union.
+- v0.7 folds via the engine union: prepare(A) = 39072.09, union(A,A') =
+  78144.19 = **+0.148% vs the true union** (2×39014.23 = 78028.46, from
+  OCCT pairwise fuse + disjoint shifted copies, confirmed
+  common(A,A') = 0). The residual +0.148% is tessellation bias (mesh
+  shells are +0.146% larger than the exact OCCT solids), not kernel
+  error: the engine union matches the tessellation-corrected OCCT
+  expectation to 0.002%.
+- So v0.7 == the f1d2e331 target (+0.148%), and both beat the v0.6
+  baseline (+1.468%). The earlier text wrongly attributed f1d2e331's
+  +0.148% *achievement* to the v0.6 baseline and then chained
+  "-1.3% vs old" into "-1.15% vs OCCT". Nothing to fix in the
+  normalization machinery; the fix was to the record. Pinned by new
+  regression test t10 (interpenetrating slab must fold to the union
+  volume, not the sum) and t11 (genuinely disjoint shells take the
+  "disjoint passthrough", bit-identical).
+
+## v0.7 review round 2: semantic-leg hardening (24 Sept 2026)
+
+A follow-up external review of commit 11cb2d46 found three fixable items
+(all in `src/brepkernel/normalize.py::check_boolean_semantics`, plus
+regression tests). The deferred architectural items (STEP hierarchy,
+provenance, SolidComplex) stay deferred.
+
+### 1. 00277962 "regression" — root-caused to a phantom (no code change)
+
+See the CORRECTION above: the two shells genuinely interpenetrate
+(~515 units per OCCT pairwise fuse); the overlap graph was right to
+merge them; v0.7's 78144.19 is +0.148% vs the true set union, identical
+to the f1d2e331 target and better than the v0.6 baseline (+1.468%) the
+replay compared against. The "regression" was a baseline mix-up in this
+document (f1d2e331's +0.148% achievement misattributed to the v0.6
+baseline). Pinned by new tests t10 (slab-interpenetration folds to the
+union volume, never the sum) and t11 ("disjoint passthrough" status and
+bit-identical output for genuinely disjoint shells).
+
+### 2. Dead guard in check_boolean_semantics() — fixed
+
+The review caught: `vR = abs(signed_volume(...))` followed by
+`if vR < -av:` — dead code, since `abs()` can never be negative. Fixed
+properly: the signed volume is captured first and `svR < -av` refuses
+inside-out/corrupted results ("negative signed result volume"), then
+`vR = abs(svR)` feeds the remaining checks. Pinned by new test t12:
+an inside-out box (negative signed volume) presented as the result of
+each of union/intersection/difference is refused with
+`SemanticViolation`. This is the guard that would have caught the
+DeepCAD impossible-geometry case (negative difference volume) at the
+semantic leg.
+
+### 3. Semantic volume checks — strengthened where cheap, prose fixed
+
+The review noted the prose claimed more than the code enforced. Audit:
+the code already enforced union max(vA,vB)<=vol<=vA+vB, intersection
+vol<=min(vA,vB), and difference vol<=vA. Added the one cheap missing
+single-op bound: difference vol >= volA-volB (vol(A\B) >= volA-volB is
+exact set theory; same 1e-6/1e-9·scale³ tolerance pattern as the rest).
+The docstring now enumerates exactly which inequalities are enforced
+and explicitly lists what is deliberately NOT enforced: cross-operation
+identities (volD = volA-volI, inclusion-exclusion volU = volA+volB-volI)
+need the complementary operation's result, and we do not compute extra
+booleans just to check them. (The witness leg checks the per-point
+truth table, which is the pointwise form of those identities.)

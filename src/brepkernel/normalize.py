@@ -1019,29 +1019,46 @@ def _overlap_grid_points(prepA, prepB, scale, cap=500):
 def check_boolean_semantics(resV, resF, prepA, prepB, op, scale):
     """Refuse-fast semantic leg on every arranged op.
 
-    Cheap Boolean inequalities first (the DeepCAD failure violated all of
-    them: intersection bigger than the input, union smaller, negative
-    difference), then adversarial membership witnesses: every witness must
-    satisfy  w in result  <=>  (w in A) op (w in B)  with membership from
+    Cheap single-op Boolean inequalities first (the DeepCAD impossible
+    geometry violated all of them: intersection bigger than an operand,
+    union smaller than an operand, negative difference volume), then
+    adversarial membership witnesses: every witness must satisfy
+    w in result  <=>  (w in A) op (w in B)  with membership from
     the winding-number oracle on the prepared (denotation-true) operands.
     Raises ArrangementError(kind="SemanticViolation") on mismatch.
+
+    Exactly what the volume leg enforces (tol = 1e-6 relative +
+    1e-9*scale^3 absolute, matching float noise of the mesh volumes):
+      result signed volume >= 0            (inside-out/corrupted results)
+      union:        max(vA,vB) <= vol <= vA+vB
+      intersection:               vol <= min(vA,vB)
+      difference:   vA-vB        <= vol <= vA
+    Deliberately NOT enforced: cross-operation identities such as
+    volD = volA - volI or volU = volA + volB - volI. Those need the
+    complementary operation's result; we do not compute extra booleans
+    just to check them. (The witness leg below does check the per-point
+    truth table, which is the pointwise form of those identities.)
     """
     vA, vB = prepA["volume"], prepB["volume"]
-    vR = abs(signed_volume(resV, resF)) if len(resF) else 0.0
+    svR = signed_volume(resV, resF) if len(resF) else 0.0
     rel, av = 1e-6, 1e-9 * scale ** 3
 
     def bad(msg):
         raise ArrangementError(f"semantic violation ({op}): {msg} "
                                f"(volA={vA:.6g} volB={vB:.6g} "
-                               f"volR={vR:.6g})", kind="SemanticViolation")
+                               f"volR={abs(svR):.6g})",
+                               kind="SemanticViolation")
 
-    if vR < -av:
-        bad("negative result volume")
+    if svR < -av:
+        bad("negative signed result volume (inside-out/corrupted result)")
+    vR = abs(svR)
     if op == "intersection" and vR > min(vA, vB) * (1 + rel) + av:
         bad("intersection bigger than an operand")
     if op == "difference":
         if vR > vA * (1 + rel) + av:
             bad("difference bigger than input A")
+        if vR < (vA - vB) * (1 - rel) - av:
+            bad("difference smaller than volA-volB")
     if op == "union":
         if vR < max(vA, vB) * (1 - rel) - av:
             bad("union smaller than an operand")

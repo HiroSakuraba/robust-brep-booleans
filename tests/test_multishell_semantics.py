@@ -20,6 +20,14 @@ anonymous multi-shell meshes:
   7. self-intersecting single shell (closed, edge-manifold) -> typed refusal.
   8. shell-order permutation: permuted input shells must not materially
      change the result (volume / topology / membership).
+  9. three-level nesting (material island in void in material, vol 57).
+  10. 00277962 failure mode: two shells interpenetrating in a thin slab
+      must be FOLDED (union volume, not the sum) -- pins the correct
+      expectation an earlier MECHANISM.md entry misread as a regression.
+  11. genuinely disjoint shells take the "disjoint passthrough" (status
+      pinned, bit-identical).
+  12. negative signed result volume (inside-out/corrupted result) is
+      refused by the semantic leg for all three ops.
 
 Deterministic, tiny, no corpus needed. Uses arrange() directly on raw
 meshes (the layer where the bug lived).
@@ -303,6 +311,84 @@ def t9_nested_island():
     return ok
 
 
+# --------------------------------------------------------------------------
+# 10: 00277962 failure mode -- interpenetrating slab must be FOLDED
+# --------------------------------------------------------------------------
+
+def t10_interpenetrating_slab_folded():
+    # 00277962 (24 Sept 2026): two shells with the same x/y footprint whose
+    # z-ranges overlap in a thin slab genuinely interpenetrate (OCCT
+    # pairwise fuse confirms ~overlap volume). The denoted set is the
+    # UNION -- overlap counted once -- not the sum of shell volumes.
+    # (An earlier MECHANISM.md entry misread the v0.7 result as a
+    # regression: it compared against a v0.6 baseline that had never
+    # folded the overlap. The folded result matches the f1d2e331 target
+    # and is within tessellation bias of OCCT.)
+    A = concat([box_mesh([0, 0, 0], [2, 2, 3]),
+                box_mesh([0, 0, 2], [2, 2, 5])])
+    # analytic: 12 + 12 - overlap(2*2*1 = 4) = 20
+    prep = prepare_operand({"V": A[0], "F": A[1]}, 0, "input A")
+    ok = check("t10 slab overlap folded",
+               prep["report"]["status"] == "normalized",
+               f"status={prep['report']['status']}")
+    ok &= check("t10 slab union volume", abs(prep["volume"] - 20.0) < 1e-9,
+                f"vol={prep['volume']}")
+    ok &= check("t10 slab one shell",
+                connected_shells(prep["F"]) == 1,
+                f"shells={connected_shells(prep['F'])}")
+    # ... and NOT the naive sum (24.0) the unfolded code produced
+    ok &= check("t10 slab not double-counted",
+                abs(prep["volume"] - 24.0) > 1.0,
+                f"vol={prep['volume']}")
+    # end-to-end through arrange: union with a disjoint box
+    B = box_mesh([10, 0, 0], [11, 1, 1])
+    m = arrange({"V": A[0], "F": A[1]}, {"V": B[0], "F": B[1]}, "union")
+    ok &= check("t10 arrange union vol", abs(vol(m) - 21.0) < 1e-9,
+                f"vol={vol(m)}")
+    return ok
+
+
+# --------------------------------------------------------------------------
+# 11: genuinely disjoint shells take the passthrough (status pinned)
+# --------------------------------------------------------------------------
+
+def t11_disjoint_passthrough_status():
+    A = concat([box_mesh([0, 0, 0], [1, 1, 1]),
+                box_mesh([5, 0, 0], [6, 1, 1])])
+    prep = prepare_operand({"V": A[0], "F": A[1]}, 0, "input A")
+    ok = check("t11 passthrough status",
+               prep["report"]["status"] == "disjoint passthrough",
+               f"status={prep['report']['status']}")
+    ok &= check("t11 passthrough bit-identical",
+                np.array_equal(np.asarray(prep["V"]), A[0]) and
+                np.array_equal(np.asarray(prep["F"]), A[1]))
+    ok &= check("t11 passthrough volume", abs(prep["volume"] - 2.0) < 1e-9,
+                f"vol={prep['volume']}")
+    return ok
+
+
+# --------------------------------------------------------------------------
+# 12: negative signed result volume is refused by the semantic leg
+# --------------------------------------------------------------------------
+
+def t12_negative_signed_volume_refused():
+    from brepkernel.normalize import check_boolean_semantics
+    A = box_mesh([0, 0, 0], [1, 1, 1])
+    B = box_mesh([2, 0, 0], [3, 1, 1])
+    dA = {"V": A[0], "F": A[1], "volume": 1.0}
+    dB = {"V": B[0], "F": B[1], "volume": 1.0}
+    bad = box_mesh([0, 0, 0], [1, 1, 1])
+    badF = bad[1][:, ::-1].copy()          # inside-out: negative signed vol
+    assert signed_volume(bad[0], badF) < 0
+    ok = True
+    for op in ("union", "intersection", "difference"):
+        def run(op=op):
+            check_boolean_semantics(bad[0], badF, dA, dB, op, 1.0)
+        ok &= expect_refusal(f"t12 negative-volume {op} refused",
+                             "negative signed", run)
+    return ok
+
+
 def main():
     ok = True
     ok &= t1_two_overlapping_shells()
@@ -314,6 +400,9 @@ def main():
     ok &= t7_self_intersecting_shell()
     ok &= t8_shell_permutation()
     ok &= t9_nested_island()
+    ok &= t10_interpenetrating_slab_folded()
+    ok &= t11_disjoint_passthrough_status()
+    ok &= t12_negative_signed_volume_refused()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
