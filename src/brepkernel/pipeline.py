@@ -450,6 +450,30 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "multiple_edges": assembled.multiple_edges,
         "volume": assembled.volume,
         "empty": assembled.is_empty,
+        "edge_lineage": {
+            "result_edges": len(assembled.edge_lineage),
+            "boolean_section_edges": sum(
+                1 for e in assembled.edge_lineage
+                if e.provenance_kind == "boolean_section"),
+            "source_boundary_edges": sum(
+                1 for e in assembled.edge_lineage
+                if e.provenance_kind == "source_boundary"),
+            "unattributed_edges": sum(
+                1 for e in assembled.edge_lineage
+                if e.provenance_kind == "unattributed"),
+            "records": [
+                {
+                    "edge": e.result_edge_index,
+                    "kind": e.provenance_kind,
+                    "operands": list(e.operands),
+                    "parent_faces": [list(x) for x in e.parent_faces],
+                    "piece_refs": [list(x) for x in e.piece_refs],
+                    "intersection_refs": [list(x) for x in e.intersection_refs],
+                    "verified_pcurves": e.verified_pcurves,
+                }
+                for e in assembled.edge_lineage
+            ],
+        },
         "decisions": [
             {
                 "operand": d.operand,
