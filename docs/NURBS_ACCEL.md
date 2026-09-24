@@ -238,6 +238,68 @@ volume-property path produced a visible integration error on the converted
 NURBS sphere even though our assembled result and an independent OCCT Boolean
 agreed exactly.
 
+## Same-domain equivalence
+
+`src/brepkernel/same_domain.py` adds a conservative fast path for
+independently constructed closed B-reps that represent the same material
+boundary.
+
+OCCT's `AreFacesSameDomain` is useful evidence, but its implementation is
+essentially an interior-point validity test and is not used alone. The kernel
+requires:
+
+- the same solid/shell/face counts;
+- valid closed B-reps on both operands;
+- model bounding boxes agreeing within a scale-aware tolerance;
+- adaptive signed-volume agreement, including global material orientation;
+- per-face bounding-box agreement;
+- matching edge/wire topology signatures;
+- adaptive face-area agreement;
+- boundary-perimeter agreement;
+- `AreFacesSameDomain(A,B)` **and** `AreFacesSameDomain(B,A)`;
+- a deterministic one-to-one perfect matching of all faces.
+
+This intentionally prefers false negatives. Equivalent solids with a different
+face decomposition are not yet recognized by this fast path.
+
+The exact identity shortcut was also tightened from `IsSame()` to
+`IsEqual()`. OCCT documents that `IsSame()` ignores orientation, so a
+reversed view of the same TShape must not be treated as identical material.
+
+Current regressions pin:
+
+- independently constructed identical boxes -> same-domain fast path;
+- independently constructed identical NURBS spheres -> same-domain fast path;
+- translated but otherwise identical boxes -> rejected;
+- a reversed view of the same TShape -> rejected by global material
+  orientation.
+
+## Result edge / p-curve lineage
+
+Verified section records now survive local splitting, and final assembled edges
+carry lineage records.
+
+For every unique result edge, the assembler records:
+
+- adjacent selected patch references `(operand, parent_face, piece)`;
+- parent input-face references;
+- participating operands;
+- whether the edge is still an original source boundary;
+- matching verified Boolean-section references
+  `(face_A, face_B, section_edge_index)`;
+- whether bilateral verified p-curve evidence exists for that edge.
+
+Splitter and sewing are allowed to copy or shorten section edges. Lineage first
+uses topological identity, then a conservative geometric sub-edge check using
+edge length and multiple point-to-section distance probes. This lets a final
+edge remain traceable even if its TShape changed during local topology work.
+
+The public `boolean_brep()` report summarizes result-edge lineage, including
+Boolean-section edges, source-boundary edges and unattributed edges. Current
+overlapping-sphere regressions require at least one final section edge with
+bilateral operand provenance and verified p-curves; disjoint unions are checked
+to ensure they do not invent section lineage.
+
 ## CI / regression status
 
 The dedicated Freeform NURBS CI currently runs:
@@ -247,10 +309,11 @@ The dedicated Freeform NURBS CI currently runs:
 3. local face-split regressions;
 4. global B-rep assembly regressions;
 5. true NURBS end-to-end Boolean regression;
-6. public one-call B-rep pipeline regressions;
-7. existing multi-shell semantic regressions.
+6. strict same-domain equivalence regressions;
+7. public one-call B-rep pipeline regressions;
+8. existing multi-shell semantic regressions.
 
-The latest strict run passes all seven groups with current
+The latest strict code-bearing run passes all eight groups with current
 `cadquery-ocp 8.0.1.0.0`.
 
 ### Numerical checks
@@ -332,10 +395,11 @@ Its report includes:
 - selected faces, shells, solids, free/multiple edges and volume;
 - final validity/closed/manifold status.
 
-An exact `TopoDS_Shape.IsSame()` identity fast path handles A op A without
-running intersection: union/intersection return A and A-A returns an empty
-compound. This rule is intentionally narrow; independently constructed but
-geometrically coincident B-reps are not assumed identical.
+An exact oriented `TopoDS_Shape.IsEqual()` identity fast path handles
+literal A op A without intersection. Independently constructed but equivalent
+closed B-reps can also bypass intersection when the strict same-domain
+recognizer proves a complete one-to-one boundary match. Union/intersection
+return A and A-A returns an empty compound.
 
 Refusals are surfaced as `BRepAmbiguousResult` with the partial stage report
 and underlying typed cause attached.
@@ -371,13 +435,15 @@ general certified NURBS Boolean kernel.
 
 The main remaining work is:
 
-- same-domain / coincident-face resolution instead of current conservative
-  boundary refusal;
+- same-domain equivalence across *different* valid face decompositions; the
+  current recognizer deliberately requires matching solid/shell/face counts
+  and a one-to-one face map;
 - harder multi-face imported STEP/NURBS corpus cases: fillets, blends,
   trimmed periodic faces, sliver faces, tiny features, near tangencies and
   mixed analytic/freeform surfaces;
-- explicit result-level p-curve/edge lineage after sewing, beyond the current
-  selected/sewed face provenance;
+- persisting complete section/p-curve sample payloads in a canonical result
+  object; final edges currently retain verified section references and public
+  summaries rather than duplicating every UV/XYZ sample into the result;
 - deciding whether/when the legacy mesh/proxy `boolean()` and the new
   `boolean_brep()` should share a common dispatch surface; they are currently
   separate public routes so the stable Tier A contract is not silently changed;
