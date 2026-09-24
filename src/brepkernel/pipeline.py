@@ -361,6 +361,23 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     sd = same_domain_models(
         a, b, base_tol=float(base_tol),
         fuzz=max(float(base_tol), float(fuzzy)))
+    def canonical_report(ev):
+        if ev is None:
+            return None
+        return {
+            "changed": ev.changed,
+            "faces_before": ev.faces_before,
+            "faces_after": ev.faces_after,
+            "shells_before": ev.shells_before,
+            "shells_after": ev.shells_after,
+            "solids_before": ev.solids_before,
+            "solids_after": ev.solids_after,
+            "bbox_error": ev.bbox_error,
+            "volume_before": ev.volume_before,
+            "volume_after": ev.volume_after,
+            "volume_rel_error": ev.volume_rel_error,
+        }
+
     report["stages"]["same_domain"] = {
         "equivalent": sd.equivalent,
         "reason": sd.reason,
@@ -369,6 +386,9 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "signed_volume_A": sd.signed_volume_a,
         "signed_volume_B": sd.signed_volume_b,
         "bbox_error": sd.bbox_error,
+        "canonicalized": sd.canonicalized,
+        "canonical_A": canonical_report(sd.canonical_a),
+        "canonical_B": canonical_report(sd.canonical_b),
     }
     if sd.equivalent:
         if op == "difference":
