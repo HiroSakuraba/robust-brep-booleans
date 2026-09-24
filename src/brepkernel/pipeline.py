@@ -224,3 +224,208 @@ def boolean(solidA, solidB, op, proxy_tol=1e-3, allow_skips=True):
             f"tol={check_tol:g}); near-degenerate region, refusing",
             mesh, report)
     return mesh, report
+
+
+class BRepAmbiguousResult(Exception):
+    """Tier B/C B-rep refusal with the completed stage report attached."""
+
+    def __init__(self, message, report, cause=None):
+        super().__init__(message)
+        self.report = report
+        self.cause = cause
+
+
+def _empty_brep_compound():
+    from OCP.BRep import BRep_Builder
+    from OCP.TopoDS import TopoDS_Compound
+    c = TopoDS_Compound()
+    b = BRep_Builder()
+    b.MakeCompound(c)
+    return c
+
+
+def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
+                 broadphase_pad=None, chord_tol=None, contact_tol=None,
+                 fuzzy=0.0, parallel=True, use_obb=True,
+                 tangent_sin_tol=1e-4, area_rel_tol=2e-6,
+                 sew_tol=None):
+    """Run the exact trimmed-B-rep Tier B/C pipeline.
+
+    Returns (TopoDS_Shape, report) and leaves the existing mesh/proxy
+    boolean() API unchanged.
+
+    shapeA and shapeB may be OCCT TopoDS shapes or already-indexed BRepModel
+    objects. Ambiguous contacts, failed p-curve verification, split
+    inconsistencies, open/non-manifold sewing, and boundary-only patch
+    classifications refuse through BRepAmbiguousResult rather than being
+    converted into a guessed result.
+
+    Difference means A - B.
+    """
+    from OCP.BRepCheck import BRepCheck_Analyzer
+
+    from .freeform import FreeformError
+    from .step_ingest import BRepModel, index_shape
+    from .intersection import intersect_models
+    from .split import split_models
+    from .assembly import assemble_boolean
+
+    if op not in ("union", "intersection", "difference"):
+        raise ValueError(f"unknown op {op!r}")
+    if not base_tol > 0:
+        raise ValueError("base_tol must be positive")
+    if fuzzy < 0:
+        raise ValueError("fuzzy must be >= 0")
+
+    if contact_tol is None:
+        contact_tol = 4.0 * float(base_tol)
+    if broadphase_pad is None:
+        # Preserve tolerance-near contacts for the exact contact classifier;
+        # a fast AABB rejection must not make them disappear.
+        broadphase_pad = max(float(contact_tol), 4.0 * float(base_tol))
+    if chord_tol is None:
+        chord_tol = max(4.0 * float(base_tol), 1e-9)
+
+    report = {
+        "op": op,
+        "route": "Tier B/C exact trimmed B-rep",
+        "stages": {},
+        "accepted": False,
+    }
+
+    def refuse(stage, exc):
+        report["refusal"] = {
+            "stage": stage,
+            "type": type(exc).__name__,
+            "kind": getattr(exc, "kind", type(exc).__name__),
+            "message": str(exc),
+        }
+        raise BRepAmbiguousResult(
+            f"B-rep result refused in {stage}: {exc}", report, exc) from exc
+
+    try:
+        a = shapeA if isinstance(shapeA, BRepModel) else index_shape(shapeA)
+        b = shapeB if isinstance(shapeB, BRepModel) else index_shape(shapeB)
+    except FreeformError as exc:
+        refuse("ingest", exc)
+
+    report["stages"]["ingest"] = {
+        "A": {
+            "solids": len(a.solids), "shells": len(a.shells),
+            "faces": len(a.faces), "freeform_accels": len(a.nurbs_faces),
+            "local_patches": sum(
+                len(fr.freeform.index.records)
+                for fr in a.faces if fr.freeform is not None),
+        },
+        "B": {
+            "solids": len(b.solids), "shells": len(b.shells),
+            "faces": len(b.faces), "freeform_accels": len(b.nurbs_faces),
+            "local_patches": sum(
+                len(fr.freeform.index.records)
+                for fr in b.faces if fr.freeform is not None),
+        },
+    }
+
+    # Exact topological identity is a useful same-domain fast path and mirrors
+    # the Tier A identity rule. It is intentionally narrow: geometrically
+    # coincident but independently constructed shapes still go through the
+    # ordinary contact/refusal machinery until same-domain resolution exists.
+    if a.shape.IsSame(b.shape):
+        if op == "difference":
+            out = _empty_brep_compound()
+            resolution = "empty"
+        else:
+            out = a.shape
+            resolution = "A"
+        report["stages"]["identity"] = {
+            "exact_topological_identity": True,
+            "resolution": resolution,
+        }
+        report["stages"]["verification"] = {
+            "brep_valid": True if op == "difference"
+            else bool(BRepCheck_Analyzer(out, True).IsValid()),
+            "identity_exact": True,
+        }
+        if not report["stages"]["verification"]["brep_valid"]:
+            exc = FreeformError("exact-identity result is not B-rep valid",
+                                "IdentityResultInvalid")
+            refuse("verification", exc)
+        report["accepted"] = True
+        return out, report
+
+    try:
+        ix = intersect_models(
+            a, b, broadphase_pad=float(broadphase_pad),
+            base_tol=float(base_tol), chord_tol=float(chord_tol),
+            contact_tol=float(contact_tol), fuzzy=float(fuzzy),
+            parallel=bool(parallel), use_obb=bool(use_obb),
+            tangent_sin_tol=float(tangent_sin_tol))
+    except FreeformError as exc:
+        refuse("intersection", exc)
+
+    report["stages"]["intersection"] = {
+        "candidate_face_pairs": ix.candidate_pairs,
+        "section_calls": ix.section_calls,
+        "verified_edges": ix.verified_edges,
+        "point_contacts": ix.point_contacts,
+        "ambiguous_contacts": ix.ambiguous_contacts,
+        "face_pairs_skipped": ix.skipped_by_broadphase,
+    }
+
+    try:
+        sp = split_models(
+            a, b, ix, base_tol=float(base_tol),
+            area_rel_tol=float(area_rel_tol), fuzzy=float(fuzzy),
+            parallel=bool(parallel), use_obb=bool(use_obb))
+    except FreeformError as exc:
+        refuse("split", exc)
+
+    report["stages"]["split"] = {
+        "split_calls": sp.split_calls,
+        "affected_faces_A": sp.affected_faces_a,
+        "affected_faces_B": sp.affected_faces_b,
+        "unresolved_contacts": list(sp.unresolved_contacts),
+    }
+
+    try:
+        assembled = assemble_boolean(
+            a, b, sp, op, base_tol=float(base_tol), sew_tol=sew_tol)
+    except FreeformError as exc:
+        refuse("assembly", exc)
+
+    report["stages"]["assembly"] = {
+        "selected_faces": assembled.selected_faces,
+        "shells": len(assembled.shells),
+        "solids": len(assembled.solids),
+        "free_edges": assembled.free_edges,
+        "multiple_edges": assembled.multiple_edges,
+        "volume": assembled.volume,
+        "empty": assembled.is_empty,
+        "decisions": [
+            {
+                "operand": d.operand,
+                "parent_face_id": d.parent_face_id,
+                "piece_index": d.piece_index,
+                "classification": d.classification,
+                "keep": d.keep,
+                "reversed": d.reverse_for_difference,
+            }
+            for d in assembled.decisions
+        ],
+    }
+
+    valid = (True if assembled.is_empty
+             else bool(BRepCheck_Analyzer(assembled.shape, True).IsValid()))
+    report["stages"]["verification"] = {
+        "brep_valid": valid,
+        "closed": assembled.free_edges == 0,
+        "manifold_edges": assembled.multiple_edges == 0,
+        "unresolved_contacts": len(sp.unresolved_contacts),
+    }
+    if not valid:
+        exc = FreeformError("final B-rep validity check failed",
+                            "FinalBRepInvalid")
+        refuse("verification", exc)
+
+    report["accepted"] = True
+    return assembled.shape, report
