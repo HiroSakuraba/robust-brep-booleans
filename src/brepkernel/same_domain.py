@@ -46,6 +46,7 @@ class SameDomainResult:
     equivalent: bool
     reason: str
     matches: list[FaceSameDomainEvidence] = field(default_factory=list)
+    candidate_counts: list[int] = field(default_factory=list)
     signed_volume_a: Optional[float] = None
     signed_volume_b: Optional[float] = None
     bbox_error: Optional[float] = None
@@ -325,12 +326,14 @@ def same_domain_models(a: BRepModel, b: BRepModel, *,
     if matches is None:
         return SameDomainResult(
             False, "no one-to-one bidirectional same-domain face matching",
+            candidate_counts=[len(row) for row in candidates],
             signed_volume_a=va, signed_volume_b=vb,
             bbox_error=model_bbox_error)
 
     return SameDomainResult(
         True, "strict same-domain boundary match",
         matches=matches,
+        candidate_counts=[len(row) for row in candidates],
         signed_volume_a=va,
         signed_volume_b=vb,
         bbox_error=model_bbox_error)
