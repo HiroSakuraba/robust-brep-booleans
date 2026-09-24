@@ -60,11 +60,16 @@ def main():
         f"A={[f.surface_type for f in ma.faces]} "
         f"B={[f.surface_type for f in mb.faces]}")
 
-    # Periodic NURBS acceleration may conservatively decline some faces;
-    # this test records how many were accelerated but does not turn absence
-    # of an acceleration structure into a correctness failure.
-    print(f"[INFO] freeform accelerators A={len(ma.nurbs_faces)}/{len(ma.faces)} "
-          f"B={len(mb.nurbs_faces)}/{len(mb.faces)}")
+    ok &= check(
+        "n1 periodic NURBS accelerators built",
+        len(ma.nurbs_faces) == len(ma.faces)
+        and len(mb.nurbs_faces) == len(mb.faces)
+        and all(len(fr.freeform.index.records) > 1
+                for fr in ma.faces + mb.faces),
+        f"A={len(ma.nurbs_faces)}/{len(ma.faces)} "
+        f"B={len(mb.nurbs_faces)}/{len(mb.faces)} "
+        f"patchesA={[len(fr.freeform.index.records) if fr.freeform else 0 for fr in ma.faces]} "
+        f"patchesB={[len(fr.freeform.index.records) if fr.freeform else 0 for fr in mb.faces]}")
 
     ix = intersect_models(
         ma, mb, base_tol=1e-7, chord_tol=1e-5,
