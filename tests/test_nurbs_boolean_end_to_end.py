@@ -31,7 +31,9 @@ def check(name, cond, detail=""):
 
 def volume(shape):
     p = GProp_GProps()
-    BRepGProp.VolumeProperties_s(shape, p)
+    err = BRepGProp.VolumePropertiesGK_s(
+        shape, p, 1e-10, True, True, False, False, False)
+    assert float(err) >= 0.0
     return float(p.Mass())
 
 
