@@ -154,7 +154,13 @@ def split_face(face_rec: FaceRecord,
     from OCP.BRepCheck import BRepCheck_Analyzer
     from OCP.TopAbs import TopAbs_FACE
     from OCP.TopExp import TopExp_Explorer
-    from OCP.TopTools import TopTools_ListOfShape
+    try:
+        from OCP.TopTools import TopTools_ListOfShape
+    except ImportError:
+        # OCP 8.x generated collection types moved to OCP.collections.
+        from OCP.collections import (
+            List_TopoDS_Shape as TopTools_ListOfShape,
+        )
     from OCP.TopoDS import TopoDS
 
     if not base_tol > 0:
