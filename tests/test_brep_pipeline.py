@@ -12,7 +12,7 @@ from brepkernel import boolean_brep, BRepAmbiguousResult
 
 from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.BRepGProp import BRepGProp
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeSphere
 from OCP.GProp import GProp_GProps
 from OCP.TopAbs import TopAbs_SOLID
 from OCP.TopExp import TopExp_Explorer
@@ -114,11 +114,38 @@ def t3_tangent_contact_structured_refusal():
     return check("p3 tangent refuses with report", False, "no refusal")
 
 
+
+def t4_independent_same_domain_fast_path():
+    a = BRepPrimAPI_MakeBox(1.0, 2.0, 3.0).Shape()
+    b = BRepPrimAPI_MakeBox(1.0, 2.0, 3.0).Shape()
+    assert not a.IsSame(b)
+    u, ru = boolean_brep(a, b, "union")
+    d, rd = boolean_brep(a, b, "difference")
+    sd_u = ru["stages"].get("same_domain", {})
+    sd_d = rd["stages"].get("same_domain", {})
+    ok = check(
+        "p4 independent same-domain union",
+        ru["accepted"] and sd_u.get("equivalent")
+        and sd_u.get("matched_faces") == 6
+        and sd_u.get("resolution") == "A"
+        and "intersection" not in ru["stages"]
+        and solid_count(u) == 1,
+        f"same_domain={sd_u}")
+    ok &= check(
+        "p4 independent same-domain difference",
+        rd["accepted"] and sd_d.get("equivalent")
+        and sd_d.get("resolution") == "empty"
+        and "intersection" not in rd["stages"]
+        and solid_count(d) == 0,
+        f"same_domain={sd_d}")
+    return ok
+
 def main():
     ok = True
     ok &= t1_one_call_true_nurbs_union()
     ok &= t2_exact_identity_fast_path()
     ok &= t3_tangent_contact_structured_refusal()
+    ok &= t4_independent_same_domain_fast_path()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
