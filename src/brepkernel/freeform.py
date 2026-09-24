@@ -450,6 +450,73 @@ class FreeformFaceAccel:
                 "rows": rows}
 
 
+def _shift_knots_to_face_window(knots: np.ndarray, degree: int,
+                                n_poles: int, face0: float, face1: float,
+                                period: float, axis: str) -> np.ndarray:
+    """Translate a clamped periodic copy by a whole number of periods.
+
+    The geometric surface is unchanged by a whole-period translation, while
+    keeping the knot frame aligned with the original face is essential because
+    its p-curves remain expressed in that original UV frame.
+    """
+    K = np.asarray(knots, dtype=np.float64).copy()
+    d0 = float(K[degree])
+    d1 = float(K[n_poles])
+    scale = max(abs(face0), abs(face1), abs(d0), abs(d1), abs(period), 1.0)
+    eps = 1e-10 * scale
+    if not period > 0.0 or not np.isfinite(period):
+        raise FreeformError(f"invalid {axis}-period {period}",
+                            "InvalidPeriodicSurface")
+    if face1 - face0 > period + eps:
+        raise FreeformError(
+            f"{axis}-face window spans more than one period; "
+            "periodic acceleration refused",
+            "PeriodicWindowTooWide")
+
+    center_delta = 0.5 * ((face0 + face1) - (d0 + d1))
+    k0 = int(round(center_delta / period))
+    for k in (k0, k0 - 1, k0 + 1, k0 - 2, k0 + 2):
+        s0, s1 = d0 + k * period, d1 + k * period
+        if face0 >= s0 - eps and face1 <= s1 + eps:
+            return K + k * period
+    raise FreeformError(
+        f"could not align clamped {axis}-periodic knot domain "
+        f"[{d0}, {d1}] to face window [{face0}, {face1}]",
+        "PeriodicWindowUncovered")
+
+
+def _verify_nurbs_parameter_frame(face, nurbs: NurbsSurface,
+                                  rel_tol: float = 5e-11) -> None:
+    """Refuse an accelerator whose UV frame disagrees with OCCT.
+
+    This is especially important after de-periodizing a B-spline: geometric
+    equivalence alone is insufficient because trim p-curves use the original
+    face parameters.
+    """
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+
+    ad = BRepAdaptor_Surface(face)
+    u0, u1, v0, v1 = nurbs.uv_bounds
+    fractions = (0.07, 0.21, 0.43, 0.67, 0.89)
+    worst = 0.0
+    scale = 1.0
+    for fu in fractions:
+        u = u0 + (u1 - u0) * fu
+        for fv in fractions:
+            v = v0 + (v1 - v0) * fv
+            po = ad.Value(float(u), float(v))
+            a = np.array([po.X(), po.Y(), po.Z()], dtype=np.float64)
+            b = nurbs.value(float(u), float(v))
+            worst = max(worst, float(np.linalg.norm(a - b)))
+            scale = max(scale, float(np.linalg.norm(a)), float(np.linalg.norm(b)))
+    tol = rel_tol * scale
+    if worst > tol:
+        raise FreeformError(
+            f"NURBS UV-frame verification failed: max error {worst:.6g} "
+            f"> {tol:.6g}",
+            "NurbsParameterFrameMismatch")
+
+
 def nurbs_from_occt_face(face) -> NurbsSurface:
     """Extract transformed OCCT BSpline face into NumPy NURBS data."""
     from OCP.BRepAdaptor import BRepAdaptor_Surface
@@ -461,7 +528,21 @@ def nurbs_from_occt_face(face) -> NurbsSurface:
         raise FreeformError(
             f"face is {ad.GetType()}, not a BSpline surface",
             "UnsupportedSurfaceType")
-    bs = ad.BSpline()
+    source = ad.BSpline()
+    was_periodic_u = bool(source.IsUPeriodic())
+    was_periodic_v = bool(source.IsVPeriodic())
+    period_u = float(source.UPeriod()) if was_periodic_u else 0.0
+    period_v = float(source.VPeriod()) if was_periodic_v else 0.0
+
+    # Work on a copy: de-periodizing changes the pole/knot representation and
+    # must never mutate the imported B-rep that owns the authoritative
+    # p-curves.
+    bs = source.Copy()
+    if was_periodic_u:
+        bs.SetUNotPeriodic()
+    if was_periodic_v:
+        bs.SetVNotPeriodic()
+
     pu, pv = int(bs.UDegree()), int(bs.VDegree())
     nu, nv = int(bs.NbUPoles()), int(bs.NbVPoles())
     poles = np.empty((nu, nv, 3), dtype=np.float64)
@@ -486,8 +567,24 @@ def nurbs_from_occt_face(face) -> NurbsSurface:
     U = _expanded_knots(ku, mu)
     V = _expanded_knots(kv, mv)
     bounds = tuple(float(x) for x in BRepTools.UVBounds_s(face))
-    return NurbsSurface(pu, pv, U, V, poles, weights, bounds,
-                        bool(bs.IsUPeriodic()), bool(bs.IsVPeriodic()))
+    u0, u1, v0, v1 = bounds
+
+    # Set*NotPeriodic preserves the surface but clamps its knot frame.  A face
+    # produced by previous modeling operations may address the same periodic
+    # surface one or more whole periods away, so translate the copied knot
+    # vector back into the face's parameter frame before constructing the
+    # NumPy evaluator.
+    if was_periodic_u:
+        U = _shift_knots_to_face_window(
+            U, pu, nu, u0, u1, period_u, "U")
+    if was_periodic_v:
+        V = _shift_knots_to_face_window(
+            V, pv, nv, v0, v1, period_v, "V")
+
+    nurbs = NurbsSurface(
+        pu, pv, U, V, poles, weights, bounds, False, False)
+    _verify_nurbs_parameter_frame(face, nurbs)
+    return nurbs
 
 
 def candidate_patch_pairs(a: NurbsPatchIndex, b: NurbsPatchIndex,
