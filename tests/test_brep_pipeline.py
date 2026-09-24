@@ -86,6 +86,14 @@ def t1_one_call_true_nurbs_union():
                 and set(r["operands"]) == {"A", "B"}
                 for r in lin["records"]),
         f"edge_lineage={lin}")
+    payloads = asm["section_payloads"]
+    ok &= check(
+        "p1 section payload summaries",
+        bool(payloads)
+        and all(p["samples"] >= 2 and p["verify_tolerance"] > 0
+                for p in payloads)
+        and any(p["result_edges"] for p in payloads),
+        f"section_payloads={payloads}")
     return ok
 
 
