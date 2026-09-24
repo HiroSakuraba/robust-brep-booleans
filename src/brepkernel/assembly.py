@@ -246,10 +246,15 @@ def _empty_compound():
 
 
 def _shape_volume(shape) -> float:
+    """Adaptive volume measurement, including B-spline span integration."""
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
     g = GProp_GProps()
-    BRepGProp.VolumeProperties_s(shape, g)
+    err = BRepGProp.VolumePropertiesGK_s(
+        shape, g, 1e-10, True, True, False, False, False)
+    if float(err) < 0.0:
+        raise AssemblyError("adaptive volume integration failed",
+                            kind="VolumeIntegrationFailed")
     return float(g.Mass())
 
 
@@ -412,7 +417,11 @@ def _solid_interior_point(solid, tol: float) -> np.ndarray:
     # deterministic interior grid. These are valid solid witnesses but are
     # less suitable for detecting nesting, hence they come second.
     props = GProp_GProps()
-    BRepGProp.VolumeProperties_s(solid, props)
+    err = BRepGProp.VolumePropertiesGK_s(
+        solid, props, 1e-9, True, True, True, False, False)
+    if float(err) < 0.0:
+        raise AssemblyError("adaptive center-of-mass integration failed",
+                            kind="VolumeIntegrationFailed")
     cm = _p3(props.CentreOfMass())
     if is_in(cm):
         return cm
