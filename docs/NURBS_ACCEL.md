@@ -14,7 +14,8 @@ geometry creates two competing pressures:
    expensive even when 99% of two parts never come near one another.
 
 The new path therefore separates **broad-phase rejection**, **local freeform
-evaluation**, **trim validation**, and **final geometric verification**.
+evaluation**, **trim validation**, **surface/surface intersection**, and
+**final geometric verification**.
 
 ## New modules
 
@@ -47,9 +48,56 @@ Unsupported/analytic surface pairs remain face-level candidates. The optimizer
 is therefore conservative: missing an acceleration path costs time, not
 correctness.
 
+### `src/brepkernel/intersection.py`
+
+The next stage consumes only the surviving face pairs.
+
+- Runs `BRepAlgoAPI_Section` on **trimmed faces**, not infinite underlying
+  surfaces.
+- Requests 3D section curves and p-curves on both originating faces.
+- Requires SameParameter correspondence. If OCCT returns an edge without it,
+  the code repairs a copy and refuses if correspondence still cannot be
+  established.
+- Samples section curves adaptively according to 3D chord deviation.
+- At every verification sample, independently evaluates:
+  - the section edge's 3D curve;
+  - face A at p-curve A's UV;
+  - face B at p-curve B's UV.
+  All three positions must agree within a tolerance derived from the input face
+  and section-edge tolerances.
+- Every sampled UV must classify IN/ON its actual trimmed face.
+- Records surface transversality. Near-tangent intersections and periodic seam
+  crossings are marked as risk conditions instead of being silently treated as
+  ordinary transverse cuts.
+- Distinguishes:
+  - `curve`
+  - `curve_near_tangent`
+  - `point_contact`
+  - `ambiguous_contact`
+  - `disjoint`
+  - `distance_unknown`
+- A no-edge result is **not** automatically called disjoint. Exact tangencies
+  are preserved as point contacts; a no-curve pair whose exact OCCT face
+  distance lies inside the contact band becomes `ambiguous_contact`.
+- Model-level work is driven by the conservative face/span broad phase, so
+  distant faces cost zero section calls.
+
+This moves the freeform contract from "triangle cuts look plausible" toward a
+true B-rep statement:
+
+```
+section edge
+    ├── 3D curve
+    ├── p-curve on original face A
+    └── p-curve on original face B
+
+all three representations agree within tolerance
+```
+
 ## Local validation performed before push
 
-The new regression test was run against the installed OCP build and passed:
+The NURBS evaluator/accelerator regressions were exercised against the installed
+OCP build:
 
 - rational NURBS value agreement vs OCCT: ~1.9e-15 max error;
 - first-derivative agreement vs OCCT: ~8.3e-15 max error;
@@ -61,17 +109,59 @@ The new regression test was run against the installed OCP build and passed:
 - the face-level broad phase rejected far B-spline faces and retained the
   partially overlapping pair.
 
+The new intersection regression set pins:
+
+- a transverse cubic B-spline / plane cut with verified p-curves;
+- a UV-trimmed B-spline whose section is clipped to the actual face;
+- a far face pair producing zero section calls;
+- exact sphere/plane tangency surviving as a point contact;
+- a near-tangent positive gap inside the contact band becoming
+  `ambiguous_contact`, never "disjoint".
+
+## Why this should be faster
+
+The intended work funnel is now:
+
+```
+all face pairs
+   ↓  geometry-aware face AABBs
+possible face pairs
+   ↓  NURBS control-hull knot-span AABBs
+possible local patch pairs
+   ↓  OCCT trimmed-face section only here
+verified section curves
+```
+
+Uniform fine tessellation is no longer the first response to difficult
+freeform geometry.
+
+## Why this should be more accurate
+
+The original B-rep remains the source of truth. A tessellation can be used as
+a computational proxy, but the emerging Tier B/C acceptance path can verify
+geometry against:
+
+- original trimmed faces;
+- original NURBS surface evaluations;
+- original p-curves;
+- section-edge 3D geometry;
+- exact OCCT trimmed-face distance in fallback cases.
+
+In particular, being close to the *underlying untrimmed surface* is not enough:
+a point or edge must also belong to the actual trimmed face.
+
 ## What this does **not** claim yet
 
 This is not a finished NURBS boolean kernel.
 
 Still needed:
 
-- exact/verified trimmed surface-surface intersection curves;
-- p-curve/trim-loop provenance through boolean splitting;
+- turning verified section edges/p-curves into robust face split loops;
+- p-curve provenance through face splitting and result assembly;
 - certified local tessellation error bounds for general NURBS rather than only
   a curvature scheduling heuristic;
 - periodic-surface span subdivision with certified wrapped control hulls;
+- same-domain/coincident-face handling beyond the current contact escalation;
 - integration of STEP face provenance into `classify.py` / Stage 6;
 - a canonical `SolidComplex` rather than mesh-first result storage;
 - freeform corpus regression against OCCT at several local feature scales.
