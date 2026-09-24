@@ -64,6 +64,7 @@ class ModelSplitResult:
     affected_faces_a: int
     affected_faces_b: int
     unresolved_contacts: list[tuple[int, int, str]]
+    section_edges: list[SectionEdgeRecord] = field(default_factory=list)
 
     @property
     def certified_local_split(self) -> bool:
@@ -300,18 +301,21 @@ def split_models(a: BRepModel, b: BRepModel,
     edges_a: dict[int, list[SectionEdgeRecord]] = {}
     edges_b: dict[int, list[SectionEdgeRecord]] = {}
     unresolved: list[tuple[int, int, str]] = []
+    used_sections: list[SectionEdgeRecord] = []
 
     for pair in intersections.pairs:
         if pair.status == "curve":
             for e in pair.edges:
                 edges_a.setdefault(pair.face_a, []).append(e)
                 edges_b.setdefault(pair.face_b, []).append(e)
+                used_sections.append(e)
         elif pair.status == "disjoint":
             continue
         elif pair.status == "curve_near_tangent" and allow_risky:
             for e in pair.edges:
                 edges_a.setdefault(pair.face_a, []).append(e)
                 edges_b.setdefault(pair.face_b, []).append(e)
+                used_sections.append(e)
         else:
             unresolved.append((pair.face_a, pair.face_b, pair.status))
 
@@ -344,4 +348,5 @@ def split_models(a: BRepModel, b: BRepModel,
         affected_faces_a=len(edges_a),
         affected_faces_b=len(edges_b),
         unresolved_contacts=unresolved,
+        section_edges=used_sections,
     )
