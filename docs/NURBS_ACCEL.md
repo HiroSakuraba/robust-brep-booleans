@@ -1,214 +1,350 @@
-# v0.8 freeform / NURBS acceleration foundation
+# v0.8 freeform / NURBS Boolean path
 
-This branch adds the first Tier B/C geometry infrastructure without changing
-the certified Tier A boolean path.
+This branch adds a conservative Tier B/C B-rep path without changing the
+certified Tier A Boolean path.
 
-## Why this exists
+## Design rule
 
-The current prototype verifies analytic solids well, but imported STEP/NURBS
-geometry creates two competing pressures:
+The imported B-rep is the source of truth. Meshes and local NURBS acceleration
+structures may reduce work, but they do not get to invent topology.
 
-1. **Accuracy:** trim loops, high curvature, seams, near tangencies, rational
-   weights, and small local features make uniform coarse tessellation unsafe.
-2. **Performance:** uniformly fine tessellation makes every downstream stage
-   expensive even when 99% of two parts never come near one another.
+For difficult geometry the rule is:
 
-The new path therefore separates **broad-phase rejection**, **local freeform
-evaluation**, **trim validation**, **surface/surface intersection**, and
-**final geometric verification**.
+> reject cheaply when we can prove two regions cannot interact; otherwise use
+> the original trimmed surfaces, preserve provenance, verify the result, and
+> refuse unresolved topology rather than guessing.
 
-## New modules
-
-### `src/brepkernel/freeform.py`
-
-- NumPy rational B-spline evaluator with first derivatives.
-- Expanded knot-vector extraction from OCCT `Geom_BSplineSurface`.
-- Conservative knot-span AABBs from active control points for positive-weight,
-  non-periodic NURBS.
-- Sweep-and-prune knot-span pair culling.
-- Fast local Gauss-Newton point projection using span-AABB seeds.
-- Trim-aware acceptance. If the untrimmed closest point does not belong to the
-  trimmed face, the fast path does **not** guess: it can fall back to OCCT
-  `BRepExtrema_DistShapeShape`.
-- Curvature-ranked refinement plan. This is explicitly a scheduling heuristic,
-  not a correctness certificate: it can request more triangles in hard regions,
-  never less verification.
-
-### `src/brepkernel/step_ingest.py`
-
-- Preserves STEP/OCCT `Solid -> Shell -> Face` hierarchy.
-- Records per-face solid/shell IDs, orientation, exact OCCT UV bounds, surface
-  type and precise geometry-aware AABB.
-- Builds a `FreeformFaceAccel` for B-spline faces when supported.
-- Two-tier candidate search:
-  1. face-level OCCT AABB sweep-and-prune;
-  2. NURBS span-level conservative control-hull culling.
-
-Unsupported/analytic surface pairs remain face-level candidates. The optimizer
-is therefore conservative: missing an acceleration path costs time, not
-correctness.
-
-### `src/brepkernel/intersection.py`
-
-The next stage consumes only the surviving face pairs.
-
-- Runs `BRepAlgoAPI_Section` on **trimmed faces**, not infinite underlying
-  surfaces.
-- Requests 3D section curves and p-curves on both originating faces.
-- Requires SameParameter correspondence. If OCCT returns an edge without it,
-  the code repairs a copy and refuses if correspondence still cannot be
-  established.
-- Samples section curves adaptively according to 3D chord deviation.
-- At every verification sample, independently evaluates:
-  - the section edge's 3D curve;
-  - face A at p-curve A's UV;
-  - face B at p-curve B's UV.
-  All three positions must agree within a tolerance derived from the input face
-  and section-edge tolerances.
-- Every sampled UV must classify IN/ON its actual trimmed face.
-- Records surface transversality. Near-tangent intersections and periodic seam
-  crossings are marked as risk conditions instead of being silently treated as
-  ordinary transverse cuts.
-- Distinguishes:
-  - `curve`
-  - `curve_near_tangent`
-  - `point_contact`
-  - `ambiguous_contact`
-  - `disjoint`
-  - `distance_unknown`
-- A no-edge result is **not** automatically called disjoint. Exact tangencies
-  are preserved as point contacts; a no-curve pair whose exact OCCT face
-  distance lies inside the contact band becomes `ambiguous_contact`.
-- Model-level work is driven by the conservative face/span broad phase, so
-  distant faces cost zero section calls.
-
-This moves the freeform contract from "triangle cuts look plausible" toward a
-true B-rep statement:
+## Pipeline
 
 ```
-section edge
-    ├── 3D curve
-    ├── p-curve on original face A
-    └── p-curve on original face B
-
-all three representations agree within tolerance
+STEP / OCCT B-rep
+       |
+       v
+Solid -> Shell -> Face provenance
+       |
+       v
+geometry-aware face AABB broad phase
+       |
+       v
+NURBS knot-span control-hull broad phase
+       |
+       v
+trimmed face / face section
+       |
+       v
+verified 3D curve + p-curve on A + p-curve on B
+       |
+       v
+local affected-face partition
+       |
+       v
+exact patch classification against original solids
+       |
+       v
+selected-face sewing
+       |
+       v
+closed-shell nesting / cavity reconstruction
+       |
+       v
+valid oriented OCCT solid(s)
 ```
 
+## `src/brepkernel/freeform.py`
 
-### `src/brepkernel/split.py`
+The freeform module provides a NumPy rational B-spline evaluator with first
+derivatives and a conservative local acceleration index.
 
-The verified section curves are now usable as local B-rep split tools without
-running a global solid Boolean merely to partition faces.
+### Local knot-span acceleration
 
-- Only faces touched by verified transverse section edges are sent to
-  `BRepAlgoAPI_Splitter`; unaffected faces pass through unchanged.
-- All section edges affecting one parent face are applied in one splitter call.
-- Near-tangent, seam-risk, point-contact, and near-contact cases remain
-  unresolved by default rather than being forced into guessed topology.
-- Every split result is checked with OCCT's shape validator.
-- The summed child-face area must reproduce the parent-face area within a
-  scale-aware tolerance.
-- Child pieces retain their parent face ID. A deterministic UV witness is
-  sought on each piece and checked against the parent trimmed face and support
-  surface; very thin pieces that do not yield a stable witness are flagged for
-  stronger downstream verification rather than silently trusted.
+For positive-weight NURBS, each non-zero knot-span pair is associated with the
+active control block. The convex-hull property gives a conservative local 3D
+axis-aligned bounding box (AABB). Sweep-and-prune then removes local patch
+pairs that cannot interact.
 
-This gives the freeform path a concrete local topology pipeline:
+This is useful for:
+
+- rejecting a face pair even when its coarse face AABBs overlap;
+- seeding local point-to-surface projection;
+- ranking local refinement work;
+- avoiding uniform fine tessellation of an entire freeform face.
+
+A partially overlapping synthetic regression reduces 256 naive span pairs to
+160 conservative candidate pairs.
+
+### Periodic NURBS
+
+Periodic B-splines are no longer forced into a single whole-surface box.
+
+The implementation:
+
+1. copies the OCCT B-spline so the authoritative imported surface is never
+   mutated;
+2. records its exact U/V periods;
+3. applies `SetUNotPeriodic()` / `SetVNotPeriodic()` to the copy;
+4. translates the copied knot vector only by whole periods when necessary so
+   its parameter domain covers the original face's UV window;
+5. refuses acceleration if the face spans more than one representable period;
+6. constructs the local knot-span control-hull index from the clamped copy;
+7. independently samples the original OCCT face and the NumPy evaluator in
+   the same UV frame and rejects the accelerator if they disagree.
+
+This last check is important: geometric equivalence is not enough. Trim
+p-curves are expressed in the original surface's parameter coordinates.
+
+The current end-to-end periodic regression converts a sphere to a B-spline
+before ingestion and produces **8 local patch records per spherical face**
+instead of the previous single fallback box.
+
+### Projection and refinement
+
+- Local Gauss-Newton projection is seeded from nearby patch AABBs.
+- A projected point is not accepted merely because it lies on the underlying
+  surface; its UV must also lie in/on the actual trimmed face.
+- Difficult trim cases can fall back to exact OCCT face distance.
+- Curvature-ranked refinement is a scheduling heuristic only. It may request
+  more work in difficult regions; it is not used as a correctness certificate.
+
+## `src/brepkernel/step_ingest.py`
+
+STEP/OCCT ingestion preserves:
+
+- solid IDs;
+- shell IDs;
+- face IDs;
+- face orientation;
+- exact OCCT UV bounds;
+- surface type;
+- geometry-aware face AABB;
+- optional `FreeformFaceAccel`.
+
+The candidate search is two-tier:
+
+1. face-level geometry AABB sweep-and-prune;
+2. NURBS local control-hull span rejection when both faces support it.
+
+Unsupported accelerators cost performance, not correctness. The face remains a
+candidate for the exact OCCT path.
+
+## `src/brepkernel/intersection.py`
+
+Only surviving face pairs receive expensive trimmed face/face section work.
+
+For each section edge the kernel requires:
+
+- a 3D curve;
+- a p-curve on originating face A;
+- a p-curve on originating face B;
+- SameParameter correspondence;
+- sampled agreement of all three geometric representations;
+- UV membership in/on both actual trimmed faces.
+
+The code also records transversality and seam risk.
+
+Results distinguish:
+
+- `curve`;
+- `curve_near_tangent`;
+- `point_contact`;
+- `ambiguous_contact`;
+- `disjoint`;
+- `distance_unknown`.
+
+A no-edge result is not automatically disjoint. Exact tangencies survive as
+point contacts, and a no-curve pair inside the configured contact band becomes
+ambiguous.
+
+## `src/brepkernel/split.py`
+
+Verified transverse section edges can partition only the faces they actually
+touch.
+
+- Unaffected faces pass through unchanged.
+- All verified tools affecting one parent face are applied in one local
+  `BRepAlgoAPI_Splitter` call.
+- Near-tangent/seam-risk and unresolved contacts are not forced through by
+  default.
+- Every result is checked with OCCT validity.
+- Child faces retain their parent-face ID.
+- A child UV witness is checked against the original parent trim/support.
+
+### High-accuracy area conservation
+
+The split verifier uses the adaptive `BRepGProp.SurfaceProperties` overload,
+not the loose default integration path. This mattered on rational B-spline
+surfaces: the default property calculation was sufficiently inaccurate to
+look like a split-area defect even when the split was correct.
+
+The child areas must reproduce the parent area within the scale-aware split
+tolerance.
+
+## `src/brepkernel/assembly.py`
+
+This branch now includes the first global B-rep material assembly stage.
+
+### Exact patch classification
+
+Each split patch gets a deterministic point in the actual trimmed face and is
+classified against the other operand's original OCCT solids with
+`BRepClass3d_SolidClassifier`.
+
+Current material rules are:
+
+| Operation | A patch | B patch |
+| --- | --- | --- |
+| Union | keep if outside B | keep if outside A |
+| Intersection | keep if inside B | keep if inside A |
+| A - B | keep if outside B | keep if inside A, reversed |
+
+A witness classified ON/boundary or unknown is not majority-voted into a
+result. Assembly refuses it.
+
+Likewise, unresolved point/near-tangent contacts from the intersection stage
+block assembly.
+
+### Sewing and result construction
+
+Selected exact B-rep faces are sewn with OCCT.
+
+The result must have:
+
+- zero free boundary edges;
+- zero non-manifold multiple edges;
+- a valid OCCT B-rep.
+
+A full periodic face may itself be a closed skin (for example a one-face
+sphere). If sewing returns such a standalone face rather than an explicit
+shell, it is promoted to a one-face shell only after OCCT confirms that shell
+is closed.
+
+### Disconnected solids and cavities
+
+Closed shells are normalized and geometrically nested.
+
+A near-boundary interior witness is used for nesting rather than merely a
+center-of-mass point. This avoids the concentric-shell error where the center
+of an outer sphere is also inside its inner cavity shell.
+
+Even-depth shells become material outers. Direct odd-depth children become
+cavity shells. Disconnected outer shells become separate solids in a compound.
+
+Final solids must be orientable, B-rep valid, and have positive volume.
+
+### High-accuracy volume verification
+
+B-spline result volume is measured with adaptive Gauss-Kronrod integration
+(`VolumePropertiesGK`) with span-aware integration enabled. The default OCCT
+volume-property path produced a visible integration error on the converted
+NURBS sphere even though our assembled result and an independent OCCT Boolean
+agreed exactly.
+
+## CI / regression status
+
+The dedicated Freeform NURBS CI currently runs:
+
+1. NURBS evaluator / broad-phase regressions;
+2. trimmed surface-intersection regressions;
+3. local face-split regressions;
+4. global B-rep assembly regressions;
+5. true NURBS end-to-end Boolean regression;
+6. existing multi-shell semantic regressions.
+
+The latest strict run passes all six groups with current
+`cadquery-ocp 8.0.1.0.0`.
+
+### Numerical checks
+
+- NURBS value agreement vs OCCT: about `1.9e-15` max error.
+- First derivatives vs OCCT: about `8.3e-15` max error.
+- Known `0.003` normal offsets project back to `0.003`.
+- Synthetic partial overlap: 160 conservative span pairs vs 256 naive.
+- Far freeform faces can produce zero expensive section calls.
+- Periodic converted sphere: 1/1 accelerators built on each operand,
+  8 local patch records per face.
+
+### End-to-end analytic B-rep assembly
+
+For two radius-1 spheres with centers separated by 1, the assembled exact
+B-rep path produces valid closed solids for union, intersection, and A-B and
+agrees with independent OCCT Boolean results. Before the NURBS conversion
+test was added, the analytic-surface regression errors relative to the
+closed-form volumes were about `6e-9`.
+
+The assembly suite also pins:
+
+- disjoint union -> two material solids;
+- disjoint intersection -> empty result;
+- contained subtraction -> one material solid with a cavity shell;
+- exact tangency -> refusal rather than speculative topology.
+
+### True NURBS end-to-end regression
+
+Both spheres are first converted to B-spline surfaces with
+`BRepBuilderAPI_NurbsConvert` before this kernel sees them.
+
+The strict run reports:
 
 ```
-candidate faces
-    ↓
-verified 3D section + bilateral p-curves
-    ↓
-local face partition
-    ↓
-parent-face provenance retained
+A surface: GeomAbs_BSplineSurface
+B surface: GeomAbs_BSplineSurface
+accelerators: 1/1 and 1/1
+local patches: 8 and 8
+verified section edges: 2
+ambiguous contacts: 0
+selected result faces: 2
+result shells: 1
+result solids: 1
 ```
 
-The next boundary is global assembly: joining split patches across adjacent
-faces into coherent wires/shells and classifying which patches belong in the
-requested Boolean result.
+The assembled union is B-rep valid, preserves selected-face provenance from
+both operands, and matches the independent OCCT NURBS Boolean volume.
 
-## Local validation performed before push
+## Performance boundary
 
-The NURBS evaluator/accelerator regressions were exercised against the installed
-OCP build:
-
-- rational NURBS value agreement vs OCCT: ~1.9e-15 max error;
-- first-derivative agreement vs OCCT: ~8.3e-15 max error;
-- all sampled points stayed inside their control-hull span AABBs;
-- known 0.003 normal offsets projected back to 0.003 distance;
-- a separated NURBS pair produced zero candidate span pairs;
-- a partially overlapping pair reduced 256 naive span comparisons to 160;
-- OCCT box indexing preserved 1 solid / 1 shell / 6 faces;
-- the face-level broad phase rejected far B-spline faces and retained the
-  partially overlapping pair.
-
-The new intersection regression set pins:
-
-- a transverse cubic B-spline / plane cut with verified p-curves;
-- a UV-trimmed B-spline whose section is clipped to the actual face;
-- a far face pair producing zero section calls;
-- exact sphere/plane tangency surviving as a point contact;
-- a near-tangent positive gap inside the contact band becoming
-  `ambiguous_contact`, never "disjoint".
-
-The local split regressions additionally pin:
-
-- a verified NURBS section partitioning the affected trimmed face;
-- child area conservation and parent-face provenance;
-- incomplete open contours not being promoted into invented splits;
-- far faces remaining bit-identical passthroughs;
-- tangent and near-tangent contacts blocking speculative splitting.
-
-## Why this should be faster
-
-The intended work funnel is now:
+The work funnel is now:
 
 ```
 all face pairs
-   ↓  geometry-aware face AABBs
-possible face pairs
-   ↓  NURBS control-hull knot-span AABBs
-possible local patch pairs
-   ↓  OCCT trimmed-face section only here
-verified section curves
+   ↓ face AABBs
+candidate face pairs
+   ↓ NURBS control-hull span rejection
+candidate local interactions
+   ↓ one OCCT trimmed-face Section call per surviving face pair
+verified section geometry
+   ↓ only affected faces split
+classified exact patches
+   ↓ sew only selected result patches
+valid B-rep solid(s)
 ```
 
-Uniform fine tessellation is no longer the first response to difficult
-freeform geometry.
+The span index currently rejects whole face interactions and accelerates local
+projection/refinement. It does **not** yet subdivide a surviving face pair into
+many small OCCT Section calls. That is intentional: doing so creates seam,
+duplicate-curve, and curve-stitching problems. It should only be introduced if
+profiling shows whole-face Section is the dominant cost on real STEP corpora.
 
-## Why this should be more accurate
+## What remains
 
-The original B-rep remains the source of truth. A tessellation can be used as
-a computational proxy, but the emerging Tier B/C acceptance path can verify
-geometry against:
+This is now materially beyond a mesh-first prototype, but it is not yet a
+general certified NURBS Boolean kernel.
 
-- original trimmed faces;
-- original NURBS surface evaluations;
-- original p-curves;
-- section-edge 3D geometry;
-- exact OCCT trimmed-face distance in fallback cases.
+The main remaining work is:
 
-In particular, being close to the *underlying untrimmed surface* is not enough:
-a point or edge must also belong to the actual trimmed face.
+- same-domain / coincident-face resolution instead of current conservative
+  boundary refusal;
+- harder multi-face imported STEP/NURBS corpus cases: fillets, blends,
+  trimmed periodic faces, sliver faces, tiny features, near tangencies and
+  mixed analytic/freeform surfaces;
+- explicit result-level p-curve/edge lineage after sewing, beyond the current
+  selected/sewed face provenance;
+- integration of the exact patch classifier/assembler into the main Stage 6
+  operation path rather than keeping it as a parallel Tier B/C module;
+- a canonical `SolidComplex` result representation;
+- certified local tessellation error bounds if tessellation is used for later
+  acceleration or downstream consumers;
+- profiling on production-scale STEP assemblies before adding more subdivision
+  machinery.
 
-## What this does **not** claim yet
-
-This is not a finished NURBS boolean kernel.
-
-Still needed:
-
-- joining locally split patches across adjacent faces into robust global
-  wires/shells;
-- p-curve provenance through result assembly and classification;
-- certified local tessellation error bounds for general NURBS rather than only
-  a curvature scheduling heuristic;
-- periodic-surface span subdivision with certified wrapped control hulls;
-- same-domain/coincident-face handling beyond the current contact escalation;
-- integration of STEP face provenance into `classify.py` / Stage 6;
-- a canonical `SolidComplex` rather than mesh-first result storage;
-- freeform corpus regression against OCCT at several local feature scales.
-
-The important boundary is maintained: optimization may reduce work, but
-ambiguous geometry must still be refined, checked with OCCT, or refused.
+The invariant remains unchanged: an optimization may remove work only when it
+cannot remove a real geometric interaction. Ambiguous geometry is checked with
+the exact B-rep, escalated, or refused.
