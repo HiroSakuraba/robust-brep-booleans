@@ -50,17 +50,25 @@ def _point_segment_distance(p: np.ndarray, a: np.ndarray,
 
 
 def _adaptive_edge_samples(edge, chord_tol: float, *,
-                           max_depth: int = 12,
-                           min_depth: int = 2
+                           max_depth: int = 12
                            ) -> tuple[np.ndarray, np.ndarray]:
-    """Sample a section edge densely only where its 3D curve bends.
+    """Hybrid deflection sampler with independent local verification.
 
-    Three interior probes per interval avoid the common midpoint-only failure
-    where an oscillatory/symmetric curve crosses its chord at the midpoint.
-    This controls verification/sample density; it is not itself a proof of
-    an exact Hausdorff bound.
+    OCCT first proposes a non-uniform parameter distribution using its
+    QuasiUniformDeflection algorithm. That avoids the dyadic over-refinement
+    pattern seen on smoothly parameterized NURBS sections.
+
+    We do *not* trust the proposal blindly. Every proposed interval is checked
+    again at quarter/mid/three-quarter parameters with the same chord-deviation
+    criterion used by the previous recursive sampler; failing intervals are
+    recursively bisected. Global quartile parameters are always included, so
+    straight/simple curves still receive at least five verification samples.
+
+    Like the previous implementation, this controls verification density and
+    is not claimed as a certified Hausdorff bound.
     """
     from OCP.BRepAdaptor import BRepAdaptor_Curve
+    from OCP.GCPnts import GCPnts_QuasiUniformDeflection
 
     if not chord_tol > 0:
         raise ValueError("chord_tol must be positive")
@@ -75,25 +83,70 @@ def _adaptive_edge_samples(edge, chord_tol: float, *,
     cache: dict[float, np.ndarray] = {}
 
     def point(t: float) -> np.ndarray:
+        t = float(t)
         if t not in cache:
-            cache[t] = _p3(c.Value(float(t)))
+            cache[t] = _p3(c.Value(t))
         return cache[t]
+
+    # Mandatory global coverage protects against a sampler returning only
+    # endpoints on a geometrically simple curve.
+    seeds = [t0 + (t1 - t0) * q for q in (0.0, 0.25, 0.5, 0.75, 1.0)]
+
+    try:
+        proposed = GCPnts_QuasiUniformDeflection(
+            c, float(chord_tol), t0, t1)
+        if proposed.IsDone():
+            n = int(proposed.NbPoints())
+            if 2 <= n <= 100000:
+                seeds.extend(float(proposed.Parameter(i))
+                             for i in range(1, n + 1))
+    except Exception:
+        # Optimization only. The independently checked quartile seed set
+        # remains sufficient to fall back to recursive refinement.
+        pass
+
+    # Collapse parameter duplicates introduced by combining mandatory and OCCT
+    # seed points. Use a scale-aware parameter tolerance rather than exact
+    # equality because periodic/trimmed curves can return numerically adjacent
+    # endpoints.
+    pscale = max(abs(t0), abs(t1), abs(t1 - t0), 1.0)
+    ptol = 32.0 * np.finfo(np.float64).eps * pscale
+    raw = sorted(t for t in seeds
+                 if np.isfinite(t) and t0 - ptol <= t <= t1 + ptol)
+    seed_params = []
+    for t in raw:
+        t = min(max(float(t), t0), t1)
+        if not seed_params or abs(t - seed_params[-1]) > ptol:
+            seed_params.append(t)
+    if not seed_params or abs(seed_params[0] - t0) > ptol:
+        seed_params.insert(0, t0)
+    else:
+        seed_params[0] = t0
+    if abs(seed_params[-1] - t1) > ptol:
+        seed_params.append(t1)
+    else:
+        seed_params[-1] = t1
 
     leaves: list[tuple[float, float]] = []
 
-    def split(a: float, b: float, depth: int):
+    def refine(a: float, b: float, depth: int):
+        if b - a <= ptol:
+            leaves.append((a, b))
+            return
         pa, pb = point(a), point(b)
         probes = [a + (b - a) * q for q in (0.25, 0.5, 0.75)]
         dev = max(_point_segment_distance(point(t), pa, pb)
                   for t in probes)
-        if depth < min_depth or (dev > chord_tol and depth < max_depth):
+        if dev > chord_tol and depth < max_depth:
             m = 0.5 * (a + b)
-            split(a, m, depth + 1)
-            split(m, b, depth + 1)
+            refine(a, m, depth + 1)
+            refine(m, b, depth + 1)
         else:
             leaves.append((a, b))
 
-    split(t0, t1, 0)
+    for a, b in zip(seed_params[:-1], seed_params[1:]):
+        refine(float(a), float(b), 0)
+
     ts = sorted(set([leaves[0][0]] + [b for _, b in leaves]))
     T = np.asarray(ts, dtype=np.float64)
     P = np.vstack([point(float(t)) for t in T])
