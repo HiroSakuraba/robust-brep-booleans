@@ -79,6 +79,27 @@ class EdgeLineageRecord:
 
 
 @dataclass
+class SectionPayloadRecord:
+    face_a: int
+    face_b: int
+    section_edge_index: int
+    parameters: np.ndarray
+    xyz: np.ndarray
+    uv_a: np.ndarray
+    uv_b: np.ndarray
+    edge_tolerance: float
+    verify_tolerance: float
+    max_surface_error_a: float
+    max_surface_error_b: float
+    max_cross_surface_error: float
+    min_transversality: float
+    max_transversality: float
+    risk_flags: tuple[str, ...]
+    repaired_same_parameter: bool
+    result_edge_indices: tuple[int, ...]
+
+
+@dataclass
 class BooleanAssemblyResult:
     operation: str
     decisions: list[PatchDecision]
@@ -91,6 +112,7 @@ class BooleanAssemblyResult:
     free_edges: int
     multiple_edges: int
     edge_lineage: list[EdgeLineageRecord] = field(default_factory=list)
+    section_payloads: list[SectionPayloadRecord] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -707,6 +729,44 @@ def _build_edge_lineage(result_shape, selected: list[PatchDecision],
     return out
 
 
+def _build_section_payloads(split: ModelSplitResult,
+                            edge_lineage: list[EdgeLineageRecord]
+                            ) -> list[SectionPayloadRecord]:
+    """Persist verified section evidence and link it to final result edges."""
+    result_edges: dict[tuple[int, int, int], list[int]] = {}
+    for lin in edge_lineage:
+        for ref in lin.intersection_refs:
+            result_edges.setdefault(ref, []).append(lin.result_edge_index)
+
+    out = []
+    seen = set()
+    for sec in split.section_edges:
+        key = (sec.face_a, sec.face_b, sec.edge_index)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(SectionPayloadRecord(
+            face_a=sec.face_a,
+            face_b=sec.face_b,
+            section_edge_index=sec.edge_index,
+            parameters=np.array(sec.parameters, dtype=np.float64, copy=True),
+            xyz=np.array(sec.xyz, dtype=np.float64, copy=True),
+            uv_a=np.array(sec.uv_a, dtype=np.float64, copy=True),
+            uv_b=np.array(sec.uv_b, dtype=np.float64, copy=True),
+            edge_tolerance=float(sec.edge_tolerance),
+            verify_tolerance=float(sec.verify_tolerance),
+            max_surface_error_a=float(sec.max_surface_error_a),
+            max_surface_error_b=float(sec.max_surface_error_b),
+            max_cross_surface_error=float(sec.max_cross_surface_error),
+            min_transversality=float(sec.min_transversality),
+            max_transversality=float(sec.max_transversality),
+            risk_flags=tuple(sec.risk_flags),
+            repaired_same_parameter=bool(sec.repaired_same_parameter),
+            result_edge_indices=tuple(sorted(set(result_edges.get(key, [])))),
+        ))
+    return out
+
+
 def _compound_solids(solids: list[SolidAssemblyRecord]):
     from OCP.BRep import BRep_Builder
     from OCP.TopoDS import TopoDS_Compound
@@ -745,6 +805,7 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
             sewed_shape=empty, shells=[], solids=[], shape=empty,
             volume=0.0, free_edges=0, multiple_edges=0,
             edge_lineage=[],
+            section_payloads=[],
             notes=["empty material result"])
 
     if sew_tol is None:
@@ -810,6 +871,7 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     volume = float(sum(s.volume for s in solids))
     edge_lineage = _build_edge_lineage(
         result_shape, selected, split, model_a, model_b, float(base_tol))
+    section_payloads = _build_section_payloads(split, edge_lineage)
 
     return BooleanAssemblyResult(
         operation=operation,
@@ -823,4 +885,5 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         free_edges=free,
         multiple_edges=multi,
         edge_lineage=edge_lineage,
+        section_payloads=section_payloads,
     )
