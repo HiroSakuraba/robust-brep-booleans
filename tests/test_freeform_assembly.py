@@ -114,6 +114,25 @@ def t1_overlap_spheres_all_ops():
             and any(set(e.operands) == {"A", "B"}
                     for e in section_lineage),
             f"lineage={[(e.result_edge_index,e.provenance_kind,e.operands,e.intersection_refs) for e in r.edge_lineage]}")
+        payload_keys = {
+            (p.face_a, p.face_b, p.section_edge_index)
+            for p in r.section_payloads}
+        lineage_refs = {
+            ref for e in section_lineage for ref in e.intersection_refs}
+        ok &= check(
+            f"t1 {op} full section payload persistence",
+            bool(r.section_payloads)
+            and lineage_refs.issubset(payload_keys)
+            and all(
+                len(p.parameters) == len(p.xyz)
+                == len(p.uv_a) == len(p.uv_b)
+                and p.xyz.ndim == 2 and p.xyz.shape[1] == 3
+                and p.uv_a.ndim == 2 and p.uv_a.shape[1] == 2
+                and p.uv_b.ndim == 2 and p.uv_b.shape[1] == 2
+                and len(p.parameters) >= 2
+                for p in r.section_payloads)
+            and any(p.result_edge_indices for p in r.section_payloads),
+            f"payloads={[(p.face_a,p.face_b,p.section_edge_index,len(p.parameters),p.result_edge_indices) for p in r.section_payloads]}")
     return ok
 
 
@@ -135,6 +154,9 @@ def t2_disjoint_union_two_solids():
                 all(not e.intersection_refs and not e.verified_pcurves
                     for e in r.edge_lineage),
                 f"lineage={[(e.result_edge_index,e.provenance_kind) for e in r.edge_lineage]}")
+    ok &= check("t2 no invented section payloads",
+                len(r.section_payloads) == 0,
+                f"payloads={len(r.section_payloads)}")
     return ok
 
 
