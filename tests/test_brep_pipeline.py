@@ -76,6 +76,15 @@ def t1_one_call_true_nurbs_union():
         report["stages"]["verification"]["brep_valid"]
         and report["stages"]["verification"]["closed"]
         and report["stages"]["verification"]["manifold_edges"])
+    lin = asm["edge_lineage"]
+    ok &= check(
+        "p1 final edge/p-curve lineage",
+        lin["result_edges"] >= 1
+        and lin["boolean_section_edges"] >= 1
+        and any(r["verified_pcurves"] and r["intersection_refs"]
+                and set(r["operands"]) == {"A", "B"}
+                for r in lin["records"]),
+        f"edge_lineage={lin}")
     return ok
 
 
