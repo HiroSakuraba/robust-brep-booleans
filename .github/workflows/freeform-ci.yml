@@ -1,0 +1,36 @@
+name: Freeform NURBS CI
+
+on:
+  push:
+    branches:
+      - feature/nurbs-freeform-accel-v08
+  pull_request:
+    paths:
+      - "src/brepkernel/freeform.py"
+      - "src/brepkernel/step_ingest.py"
+      - "src/brepkernel/intersection.py"
+      - "tests/test_freeform_nurbs.py"
+      - "tests/test_freeform_intersection.py"
+      - "docs/NURBS_ACCEL.md"
+      - ".github/workflows/freeform-ci.yml"
+
+jobs:
+  freeform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install geometry dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy manifold3d cadquery-ocp
+      - name: NURBS evaluator / broadphase regressions
+        run: python tests/test_freeform_nurbs.py
+      - name: Trimmed surface intersection regressions
+        run: python tests/test_freeform_intersection.py
+      - name: Multi-shell semantic regressions
+        run: python tests/test_multishell_semantics.py
