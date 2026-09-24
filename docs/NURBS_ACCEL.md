@@ -94,6 +94,41 @@ section edge
 all three representations agree within tolerance
 ```
 
+
+### `src/brepkernel/split.py`
+
+The verified section curves are now usable as local B-rep split tools without
+running a global solid Boolean merely to partition faces.
+
+- Only faces touched by verified transverse section edges are sent to
+  `BRepAlgoAPI_Splitter`; unaffected faces pass through unchanged.
+- All section edges affecting one parent face are applied in one splitter call.
+- Near-tangent, seam-risk, point-contact, and near-contact cases remain
+  unresolved by default rather than being forced into guessed topology.
+- Every split result is checked with OCCT's shape validator.
+- The summed child-face area must reproduce the parent-face area within a
+  scale-aware tolerance.
+- Child pieces retain their parent face ID. A deterministic UV witness is
+  sought on each piece and checked against the parent trimmed face and support
+  surface; very thin pieces that do not yield a stable witness are flagged for
+  stronger downstream verification rather than silently trusted.
+
+This gives the freeform path a concrete local topology pipeline:
+
+```
+candidate faces
+    ↓
+verified 3D section + bilateral p-curves
+    ↓
+local face partition
+    ↓
+parent-face provenance retained
+```
+
+The next boundary is global assembly: joining split patches across adjacent
+faces into coherent wires/shells and classifying which patches belong in the
+requested Boolean result.
+
 ## Local validation performed before push
 
 The NURBS evaluator/accelerator regressions were exercised against the installed
@@ -117,6 +152,14 @@ The new intersection regression set pins:
 - exact sphere/plane tangency surviving as a point contact;
 - a near-tangent positive gap inside the contact band becoming
   `ambiguous_contact`, never "disjoint".
+
+The local split regressions additionally pin:
+
+- a verified NURBS section partitioning the affected trimmed face;
+- child area conservation and parent-face provenance;
+- incomplete open contours not being promoted into invented splits;
+- far faces remaining bit-identical passthroughs;
+- tangent and near-tangent contacts blocking speculative splitting.
 
 ## Why this should be faster
 
@@ -156,8 +199,9 @@ This is not a finished NURBS boolean kernel.
 
 Still needed:
 
-- turning verified section edges/p-curves into robust face split loops;
-- p-curve provenance through face splitting and result assembly;
+- joining locally split patches across adjacent faces into robust global
+  wires/shells;
+- p-curve provenance through result assembly and classification;
 - certified local tessellation error bounds for general NURBS rather than only
   a curvature scheduling heuristic;
 - periodic-surface span subdivision with certified wrapped control hulls;
