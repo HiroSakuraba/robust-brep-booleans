@@ -14,6 +14,8 @@ from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.BRepGProp import BRepGProp
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
 from OCP.GProp import GProp_GProps
+from OCP.TopAbs import TopAbs_SOLID
+from OCP.TopExp import TopExp_Explorer
 from OCP.gp import gp_Pnt
 
 
@@ -28,6 +30,15 @@ def volume(shape):
         shape, p, 1e-10, True, True, False, False, False)
     assert float(err) >= 0.0
     return float(p.Mass())
+
+
+def solid_count(shape):
+    n = 0
+    ex = TopExp_Explorer(shape, TopAbs_SOLID)
+    while ex.More():
+        n += 1
+        ex.Next()
+    return n
 
 
 def t1_one_call_true_nurbs_union():
@@ -81,7 +92,7 @@ def t2_exact_identity_fast_path():
         "p2 difference exact empty",
         rd["accepted"]
         and rd["stages"]["identity"]["resolution"] == "empty"
-        and abs(volume(d)) < 1e-15)
+        and solid_count(d) == 0)
     return ok
 
 
