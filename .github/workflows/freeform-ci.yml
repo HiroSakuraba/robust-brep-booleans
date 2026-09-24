@@ -48,9 +48,9 @@ jobs:
         run: python tests/test_freeform_assembly.py
       - name: True NURBS end-to-end Boolean regression
         run: python tests/test_nurbs_boolean_end_to_end.py
-      - name: Public exact B-rep pipeline regressions
-        run: python tests/test_brep_pipeline.py
       - name: Strict same-domain equivalence regressions
         run: python tests/test_same_domain.py
+      - name: Public exact B-rep pipeline regressions
+        run: python tests/test_brep_pipeline.py
       - name: Multi-shell semantic regressions
         run: python tests/test_multishell_semantics.py
