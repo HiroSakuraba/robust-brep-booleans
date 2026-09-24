@@ -2,25 +2,7 @@
  "abc": [
   {
    "id": "00000050_80d90bfdd2e74e709956122a",
-   "shells_in": 3,
-   "defective": false,
-   "verdict_changed": {},
-   "new": {
-    "union": {
-     "verdict": "arranged"
-    },
-    "intersection": {
-     "verdict": "arranged"
-    },
-    "difference": {
-     "verdict": "arranged"
-    }
-   },
-   "union_vol_old": 30118.264450529707,
-   "union_vol_new": 25404.8327067191,
-   "union_vol_reldiff": 0.15649745527510667,
-   "shells_old": 3,
-   "shells_new": 1
+   "skipped": "step missing"
   },
   {
    "id": "00270179_94a61850bab24bb0843876bf_step_000",
@@ -1004,8 +986,8 @@
     }
    },
    "union_vol_old": 232636.99658714817,
-   "union_vol_new": 232636.92338341125,
-   "union_vol_reldiff": 3.146693689744295e-07,
+   "union_vol_new": 232636.92338341122,
+   "union_vol_reldiff": 3.1466936909953356e-07,
    "shells_old": 8,
    "shells_new": 6
   },
@@ -1026,10 +1008,10 @@
     }
    },
    "union_vol_old": 161313.53365817628,
-   "union_vol_new": 161313.8943346762,
-   "union_vol_reldiff": 2.2358725380842723e-06,
+   "union_vol_new": 161313.53365817628,
+   "union_vol_reldiff": 0.0,
    "shells_old": 2,
-   "shells_new": 1
+   "shells_new": 2
   },
   {
    "id": "00273581_b5e213618b746c2c6eff9376_step_000",
@@ -1048,10 +1030,10 @@
     }
    },
    "union_vol_old": 12320.768959257382,
-   "union_vol_new": 12366.210032215366,
-   "union_vol_reldiff": 0.003688168580082036,
+   "union_vol_new": 12320.768959257382,
+   "union_vol_reldiff": 0.0,
    "shells_old": 6,
-   "shells_new": 1
+   "shells_new": 6
   },
   {
    "id": "00276289_bac679d3b1093419f4d82f65_step_010",
@@ -1070,8 +1052,8 @@
     }
    },
    "union_vol_old": 52268516.408760756,
-   "union_vol_new": 52281167.87833301,
-   "union_vol_reldiff": 0.00024204761186091375,
+   "union_vol_new": 52281167.87833298,
+   "union_vol_reldiff": 0.00024204761186034357,
    "shells_old": 7,
    "shells_new": 1
   },
@@ -1114,8 +1096,8 @@
     }
    },
    "union_vol_old": 79174.13937811508,
-   "union_vol_new": 78144.18976432887,
-   "union_vol_reldiff": 0.013008661942852879,
+   "union_vol_new": 78144.18976432884,
+   "union_vol_reldiff": 0.013008661942853246,
    "shells_old": 4,
    "shells_new": 2
   },
@@ -1974,7 +1956,7 @@
      "verdict": "arranged"
     }
    },
-   "union_vol_reldiff": 9.516343880071907e-16
+   "union_vol_reldiff": 5.437910788612518e-16
   },
   {
    "name": "cad_step/00730848.step",
