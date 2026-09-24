@@ -269,6 +269,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     from .intersection import intersect_models
     from .split import split_models
     from .assembly import assemble_boolean
+    from .same_domain import same_domain_models
 
     if op not in ("union", "intersection", "difference"):
         raise ValueError(f"unknown op {op!r}")
@@ -326,11 +327,11 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         },
     }
 
-    # Exact topological identity is a useful same-domain fast path and mirrors
-    # the Tier A identity rule. It is intentionally narrow: geometrically
-    # coincident but independently constructed shapes still go through the
-    # ordinary contact/refusal machinery until same-domain resolution exists.
-    if a.shape.IsSame(b.shape):
+    # Exact oriented topological equality is the cheapest identity path.
+    # IsSame() is intentionally NOT used: OCCT documents that IsSame ignores
+    # orientation, so a reversed view of the same TShape would otherwise be
+    # accepted as identical material.
+    if a.shape.IsEqual(b.shape):
         if op == "difference":
             out = _empty_brep_compound()
             resolution = "empty"
@@ -339,6 +340,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             resolution = "A"
         report["stages"]["identity"] = {
             "exact_topological_identity": True,
+            "same_domain_equivalent": True,
             "resolution": resolution,
         }
         report["stages"]["verification"] = {
@@ -349,6 +351,52 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         if not report["stages"]["verification"]["brep_valid"]:
             exc = FreeformError("exact-identity result is not B-rep valid",
                                 "IdentityResultInvalid")
+            refuse("verification", exc)
+        report["accepted"] = True
+        return out, report
+
+    # Independently constructed B-reps can represent the same material
+    # boundary without sharing a TShape. Use the strict optional recognizer;
+    # failure means "not proven equivalent", never "different".
+    sd = same_domain_models(
+        a, b, base_tol=float(base_tol),
+        fuzz=max(float(base_tol), float(fuzzy)))
+    report["stages"]["same_domain"] = {
+        "equivalent": sd.equivalent,
+        "reason": sd.reason,
+        "matched_faces": len(sd.matches),
+        "signed_volume_A": sd.signed_volume_a,
+        "signed_volume_B": sd.signed_volume_b,
+        "bbox_error": sd.bbox_error,
+    }
+    if sd.equivalent:
+        if op == "difference":
+            out = _empty_brep_compound()
+            resolution = "empty"
+        else:
+            out = a.shape
+            resolution = "A"
+        report["stages"]["same_domain"]["resolution"] = resolution
+        report["stages"]["same_domain"]["face_matches"] = [
+            {
+                "A": ev.face_a,
+                "B": ev.face_b,
+                "bbox_error": ev.bbox_error,
+                "area_rel_error": ev.area_rel_error,
+                "perimeter_rel_error": ev.perimeter_rel_error,
+                "edges": ev.edge_count,
+                "wires": ev.wire_count,
+            }
+            for ev in sd.matches
+        ]
+        report["stages"]["verification"] = {
+            "brep_valid": True if op == "difference"
+            else bool(BRepCheck_Analyzer(out, True).IsValid()),
+            "strict_same_domain": True,
+        }
+        if not report["stages"]["verification"]["brep_valid"]:
+            exc = FreeformError("same-domain fast-path result is invalid",
+                                "SameDomainResultInvalid")
             refuse("verification", exc)
         report["accepted"] = True
         return out, report
