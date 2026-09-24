@@ -10,9 +10,11 @@ on:
       - "src/brepkernel/step_ingest.py"
       - "src/brepkernel/intersection.py"
       - "src/brepkernel/split.py"
+      - "src/brepkernel/assembly.py"
       - "tests/test_freeform_nurbs.py"
       - "tests/test_freeform_intersection.py"
       - "tests/test_freeform_split.py"
+      - "tests/test_freeform_assembly.py"
       - "docs/NURBS_ACCEL.md"
       - ".github/workflows/freeform-ci.yml"
 
@@ -35,5 +37,7 @@ jobs:
         run: python tests/test_freeform_intersection.py
       - name: Local face split regressions
         run: python tests/test_freeform_split.py
+      - name: Global B-rep assembly regressions
+        run: python tests/test_freeform_assembly.py
       - name: Multi-shell semantic regressions
         run: python tests/test_multishell_semantics.py
