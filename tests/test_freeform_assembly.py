@@ -103,6 +103,17 @@ def t1_overlap_spheres_all_ops():
                  or any(d.operand == "B" and d.keep
                         and d.reverse_for_difference for d in r.decisions)),
             f"decisions={[(d.operand,d.classification,d.keep) for d in r.decisions]}")
+        section_lineage = [
+            e for e in r.edge_lineage
+            if e.provenance_kind == "boolean_section"]
+        ok &= check(
+            f"t1 {op} verified edge lineage",
+            bool(section_lineage)
+            and all(e.verified_pcurves and e.intersection_refs
+                    for e in section_lineage)
+            and any(set(e.operands) == {"A", "B"}
+                    for e in section_lineage),
+            f"lineage={[(e.result_edge_index,e.provenance_kind,e.operands,e.intersection_refs) for e in r.edge_lineage]}")
     return ok
 
 
@@ -120,6 +131,10 @@ def t2_disjoint_union_two_solids():
     ok &= check("t2 disjoint volume",
                 abs(r.volume - want) < 2e-6,
                 f"got={r.volume:.12g} expected={want:.12g}")
+    ok &= check("t2 no invented section lineage",
+                all(not e.intersection_refs and not e.verified_pcurves
+                    for e in r.edge_lineage),
+                f"lineage={[(e.result_edge_index,e.provenance_kind) for e in r.edge_lineage]}")
     return ok
 
 
