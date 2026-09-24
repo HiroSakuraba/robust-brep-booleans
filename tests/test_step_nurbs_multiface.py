@@ -15,8 +15,6 @@ sys.path.insert(0, "src")
 from brepkernel import boolean_brep
 from brepkernel.step_ingest import index_shape
 
-from OCP.BRep import BRep_Tool
-from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
 from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.BRepCheck import BRepCheck_Analyzer
@@ -45,17 +43,12 @@ def volume(shape):
     return float(g.Mass())
 
 
-def vertical_edges(shape):
+def all_edges(shape):
     out = []
     ee = TopExp_Explorer(shape, TopAbs_EDGE)
     while ee.More():
         e = TopoDS.Edge(ee.Current())
-        curve = BRepAdaptor_Curve(e)
-        t0 = float(curve.FirstParameter())
-        t1 = float(curve.LastParameter())
-        p0 = curve.Value(t0)
-        p1 = curve.Value(t1)
-        if abs(p0.Z() - p1.Z()) > 0.9:
+        if not any(e.IsSame(x) for x in out):
             out.append(e)
         ee.Next()
     return out
@@ -64,10 +57,10 @@ def vertical_edges(shape):
 def rounded_nurbs_shape():
     box = BRepPrimAPI_MakeBox(2.0, 1.5, 1.0).Shape()
     fillet = BRepFilletAPI_MakeFillet(box)
-    es = vertical_edges(box)
-    assert len(es) == 4
+    es = all_edges(box)
+    assert len(es) == 12
     for e in es:
-        fillet.Add(0.18, e)
+        fillet.Add(0.12, e)
     fillet.Build()
     assert fillet.IsDone()
     rounded = fillet.Shape()
