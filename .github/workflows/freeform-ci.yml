@@ -3,7 +3,7 @@ name: Freeform NURBS CI
 on:
   push:
     branches:
-      - feature/nurbs-freeform-accel-v08
+      - main
   pull_request:
     paths:
       - "src/brepkernel/freeform.py"
@@ -18,6 +18,10 @@ on:
       - "tests/test_nurbs_boolean_end_to_end.py"
       - "docs/NURBS_ACCEL.md"
       - ".github/workflows/freeform-ci.yml"
+
+concurrency:
+  group: freeform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   freeform:
