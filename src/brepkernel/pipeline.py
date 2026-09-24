@@ -470,6 +470,23 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "multiple_edges": assembled.multiple_edges,
         "volume": assembled.volume,
         "empty": assembled.is_empty,
+        "section_payloads": [
+            {
+                "ref": [p.face_a, p.face_b, p.section_edge_index],
+                "samples": int(len(p.parameters)),
+                "result_edges": list(p.result_edge_indices),
+                "edge_tolerance": p.edge_tolerance,
+                "verify_tolerance": p.verify_tolerance,
+                "max_surface_error_A": p.max_surface_error_a,
+                "max_surface_error_B": p.max_surface_error_b,
+                "max_cross_surface_error": p.max_cross_surface_error,
+                "min_transversality": p.min_transversality,
+                "max_transversality": p.max_transversality,
+                "risk_flags": list(p.risk_flags),
+                "repaired_same_parameter": p.repaired_same_parameter,
+            }
+            for p in assembled.section_payloads
+        ],
         "edge_lineage": {
             "result_edges": len(assembled.edge_lineage),
             "boolean_section_edges": sum(
