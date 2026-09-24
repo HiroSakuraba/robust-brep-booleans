@@ -254,16 +254,51 @@ def _shape_volume(shape) -> float:
 
 
 def _extract_shells(shape) -> list[object]:
-    from OCP.TopAbs import TopAbs_SHELL
+    """Extract sewn shells and promote standalone closed periodic faces.
+
+    OCCT sewing may legitimately return a FACE (or a compound of FACE
+    objects) when a single periodic face already forms a closed skin, e.g. a
+    full sphere.  That representation is geometrically closed but contains no
+    explicit TopoDS_Shell.  We wrap only faces that are not already owned by a
+    returned shell, and only when OCCT itself reports the one-face shell
+    closed.
+    """
+    from OCP.BRep import BRep_Builder, BRep_Tool
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_SHELL
     from OCP.TopExp import TopExp_Explorer
-    from OCP.TopoDS import TopoDS
+    from OCP.TopoDS import TopoDS, TopoDS_Shell
+
     out = []
+    claimed_faces = []
+
     ex = TopExp_Explorer(shape, TopAbs_SHELL)
     while ex.More():
         sh = TopoDS.Shell(ex.Current())
         if not any(sh.IsSame(x) for x in out):
             out.append(sh)
+            ef = TopExp_Explorer(sh, TopAbs_FACE)
+            while ef.More():
+                f = TopoDS.Face(ef.Current())
+                if not any(f.IsSame(x) for x in claimed_faces):
+                    claimed_faces.append(f)
+                ef.Next()
         ex.Next()
+
+    builder = BRep_Builder()
+    ef = TopExp_Explorer(shape, TopAbs_FACE)
+    while ef.More():
+        face = TopoDS.Face(ef.Current())
+        if any(face.IsSame(x) for x in claimed_faces):
+            ef.Next()
+            continue
+        sh = TopoDS_Shell()
+        builder.MakeShell(sh)
+        builder.Add(sh, face)
+        if BRep_Tool.IsClosed_s(sh):
+            sh.Closed(True)
+            out.append(sh)
+            claimed_faces.append(face)
+        ef.Next()
     return out
 
 
