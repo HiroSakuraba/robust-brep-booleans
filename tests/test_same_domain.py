@@ -5,6 +5,7 @@ sys.path.insert(0, "src")
 
 from brepkernel.same_domain import same_domain_shapes
 
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
 from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeSphere
 from OCP.gp import gp_Pnt
@@ -13,6 +14,15 @@ from OCP.gp import gp_Pnt
 def check(name, cond, detail=""):
     print(f"[{'PASS' if cond else 'FAIL'}] {name} {detail}")
     return bool(cond)
+
+
+def face_count(shape):
+    n = 0
+    ex = TopExp_Explorer(shape, TopAbs_FACE)
+    while ex.More():
+        n += 1
+        ex.Next()
+    return n
 
 
 def t1_independent_boxes_match():
@@ -66,12 +76,40 @@ def t4_independent_nurbs_spheres_match():
         f"equivalent={r.equivalent} reason={r.reason} matches={len(r.matches)}")
 
 
+
+def t5_different_face_decomposition_matches_after_canonicalization():
+    a = BRepPrimAPI_MakeBox(2.0, 1.0, 1.0).Shape()
+    left = BRepPrimAPI_MakeBox(
+        gp_Pnt(0, 0, 0), gp_Pnt(1, 1, 1)).Shape()
+    right = BRepPrimAPI_MakeBox(
+        gp_Pnt(1, 0, 0), gp_Pnt(2, 1, 1)).Shape()
+    f = BRepAlgoAPI_Fuse(left, right)
+    f.Build()
+    assert f.IsDone()
+    b = f.Shape()
+
+    ca, cb = face_count(a), face_count(b)
+    r = same_domain_shapes(a, b)
+    canon = r.canonical_b
+    return check(
+        "sd5 different decomposition canonicalized",
+        ca != cb
+        and r.equivalent
+        and r.canonicalized
+        and canon is not None
+        and canon.faces_before == cb
+        and canon.faces_after == ca,
+        f"faces={ca}/{cb} equivalent={r.equivalent} "
+        f"canonicalized={r.canonicalized} "
+        f"canonB={canon}")
+
 def main():
     ok = True
     ok &= t1_independent_boxes_match()
     ok &= t2_shifted_box_rejected()
     ok &= t3_reversed_same_tshape_rejected()
     ok &= t4_independent_nurbs_spheres_match()
+    ok &= t5_different_face_decomposition_matches_after_canonicalization()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
