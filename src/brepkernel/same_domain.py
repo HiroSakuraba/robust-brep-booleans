@@ -168,13 +168,13 @@ def _face_candidate(fa, fb, ida: int, idb: int, context, *,
             fb, fa, context, float(fuzz)):
         return None
 
-    # Same material boundary should have the same normal sense. This is also
-    # what prevents a reversed view of the same support geometry from being
-    # accepted as an identity fast path.
+    # Keep local normal-sense information for diagnostics, but do not use it
+    # as a cross-model equivalence gate. Independently constructed coincident
+    # faces can use different support-surface parameter frames even when their
+    # enclosing closed solids represent the same material. Global material
+    # orientation is checked from the signed closed-solid volume instead.
     reverse = bool(BOPTools_AlgoTools.IsSplitToReverse_s(
         fa, fb, context))
-    if reverse:
-        return None
 
     return FaceSameDomainEvidence(
         face_a=ida,
