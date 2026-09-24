@@ -42,6 +42,21 @@ class FaceSameDomainEvidence:
 
 
 @dataclass
+class CanonicalizationEvidence:
+    changed: bool
+    faces_before: int
+    faces_after: int
+    shells_before: int
+    shells_after: int
+    solids_before: int
+    solids_after: int
+    bbox_error: float
+    volume_before: float
+    volume_after: float
+    volume_rel_error: float
+
+
+@dataclass
 class SameDomainResult:
     equivalent: bool
     reason: str
@@ -50,6 +65,9 @@ class SameDomainResult:
     signed_volume_a: Optional[float] = None
     signed_volume_b: Optional[float] = None
     bbox_error: Optional[float] = None
+    canonicalized: bool = False
+    canonical_a: Optional[CanonicalizationEvidence] = None
+    canonical_b: Optional[CanonicalizationEvidence] = None
 
 
 def _bbox(shape) -> tuple[np.ndarray, np.ndarray]:
@@ -198,6 +216,86 @@ def _face_candidate(fa, fb, ida: int, idb: int, context, *,
     )
 
 
+def _count_topology(shape) -> tuple[int, int, int]:
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_SHELL, TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+
+    def count(kind):
+        n = 0
+        ex = TopExp_Explorer(shape, kind)
+        while ex.More():
+            n += 1
+            ex.Next()
+        return n
+
+    return count(TopAbs_SOLID), count(TopAbs_SHELL), count(TopAbs_FACE)
+
+
+def _canonicalize_same_domain_shape(shape, *, base_tol: float,
+                                    volume_rel_tol: float
+                                    ) -> tuple[object, CanonicalizationEvidence]:
+    """Merge neighbouring same-domain faces/edges without changing material."""
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
+
+    if not BRepCheck_Analyzer(shape, True).IsValid():
+        raise SameDomainError("cannot canonicalize invalid B-rep",
+                              kind="CanonicalizationInputInvalid")
+
+    sb, hb, fb = _count_topology(shape)
+    lo0, hi0 = _bbox(shape)
+    v0 = _signed_volume(shape)
+    scale = _shape_scale(shape)
+
+    un = ShapeUpgrade_UnifySameDomain(shape, True, True, False)
+    un.SetSafeInputMode(True)
+    un.SetLinearTolerance(max(float(base_tol), 1e-10 * scale))
+    un.SetAngularTolerance(1e-10)
+    un.AllowInternalEdges(False)
+    un.Build()
+    out = un.Shape()
+
+    if out.IsNull() or not BRepCheck_Analyzer(out, True).IsValid():
+        raise SameDomainError("same-domain canonicalization returned invalid B-rep",
+                              kind="CanonicalizationInvalid")
+
+    sa, ha, fa = _count_topology(out)
+    lo1, hi1 = _bbox(out)
+    v1 = _signed_volume(out)
+    bbox_error = max(
+        float(np.max(np.abs(lo0 - lo1))),
+        float(np.max(np.abs(hi0 - hi1))))
+    bbox_tol = max(8.0 * float(base_tol), 2e-10 * scale)
+    vre = _rel_error(abs(v0), abs(v1))
+
+    if sa != sb:
+        raise SameDomainError(
+            f"canonicalization changed solid count {sb} -> {sa}",
+            kind="CanonicalizationChangedMaterial")
+    if bbox_error > bbox_tol:
+        raise SameDomainError(
+            f"canonicalization changed bounding box by {bbox_error:.6g}",
+            kind="CanonicalizationChangedMaterial")
+    if vre > volume_rel_tol:
+        raise SameDomainError(
+            f"canonicalization changed volume by rel {vre:.6g}",
+            kind="CanonicalizationChangedMaterial")
+    if (v0 < 0.0) != (v1 < 0.0):
+        raise SameDomainError(
+            "canonicalization reversed material orientation",
+            kind="CanonicalizationChangedMaterial")
+
+    return out, CanonicalizationEvidence(
+        changed=not out.IsEqual(shape),
+        faces_before=fb, faces_after=fa,
+        shells_before=hb, shells_after=ha,
+        solids_before=sb, solids_after=sa,
+        bbox_error=bbox_error,
+        volume_before=v0, volume_after=v1,
+        volume_rel_error=vre,
+    )
+
+
 def _perfect_matching(candidates: list[list[FaceSameDomainEvidence]],
                       n_b: int
                       ) -> Optional[list[FaceSameDomainEvidence]]:
@@ -238,8 +336,8 @@ def _perfect_matching(candidates: list[list[FaceSameDomainEvidence]],
     return [by_a[i] for i in range(len(candidates))]
 
 
-def same_domain_models(a: BRepModel, b: BRepModel, *,
-                       base_tol: float = 1e-7,
+def _same_domain_models_strict(a: BRepModel, b: BRepModel, *,
+                               base_tol: float = 1e-7,
                        fuzz: Optional[float] = None,
                        area_rel_tol: float = 5e-8,
                        perimeter_rel_tol: float = 5e-8,
@@ -343,6 +441,72 @@ def same_domain_models(a: BRepModel, b: BRepModel, *,
         signed_volume_a=va,
         signed_volume_b=vb,
         bbox_error=model_bbox_error)
+
+
+def same_domain_models(a: BRepModel, b: BRepModel, *,
+                       base_tol: float = 1e-7,
+                       fuzz: Optional[float] = None,
+                       area_rel_tol: float = 5e-8,
+                       perimeter_rel_tol: float = 5e-8,
+                       volume_rel_tol: float = 5e-8,
+                       allow_canonicalization: bool = True
+                       ) -> SameDomainResult:
+    """Recognize equivalent closed B-reps, canonicalizing decomposition if needed.
+
+    Fast strict matching is attempted first. If it fails only because topology
+    decomposition differs (or no perfect one-to-one face map exists), both
+    operands may be independently normalized with OCCT's
+    ShapeUpgrade_UnifySameDomain. Canonicalization is accepted only after
+    validity, solid-count, bounding-box, signed-volume and orientation
+    preservation checks. The normalized boundaries must then pass the same
+    strict matcher; canonicalization never bypasses the matcher.
+    """
+    strict = _same_domain_models_strict(
+        a, b, base_tol=base_tol, fuzz=fuzz,
+        area_rel_tol=area_rel_tol,
+        perimeter_rel_tol=perimeter_rel_tol,
+        volume_rel_tol=volume_rel_tol)
+    if strict.equivalent or not allow_canonicalization:
+        return strict
+
+    # Canonicalization is useful only when both operands are closed solids.
+    if not a.solids or not b.solids:
+        return strict
+
+    from .step_ingest import index_shape
+    try:
+        ca_shape, eva = _canonicalize_same_domain_shape(
+            a.shape, base_tol=base_tol,
+            volume_rel_tol=volume_rel_tol)
+        cb_shape, evb = _canonicalize_same_domain_shape(
+            b.shape, base_tol=base_tol,
+            volume_rel_tol=volume_rel_tol)
+        ca = index_shape(ca_shape, build_freeform=False)
+        cb = index_shape(cb_shape, build_freeform=False)
+        canon = _same_domain_models_strict(
+            ca, cb, base_tol=base_tol, fuzz=fuzz,
+            area_rel_tol=area_rel_tol,
+            perimeter_rel_tol=perimeter_rel_tol,
+            volume_rel_tol=volume_rel_tol)
+    except SameDomainError as exc:
+        strict.reason = f"{strict.reason}; canonicalization refused: {exc}"
+        return strict
+    except Exception as exc:
+        strict.reason = (
+            f"{strict.reason}; canonicalization failed: "
+            f"{type(exc).__name__}: {exc}")
+        return strict
+
+    canon.canonicalized = True
+    canon.canonical_a = eva
+    canon.canonical_b = evb
+    if canon.equivalent:
+        canon.reason = "strict same-domain match after canonical decomposition"
+    else:
+        canon.reason = (
+            f"{strict.reason}; canonical decomposition still not equivalent: "
+            f"{canon.reason}")
+    return canon
 
 
 def same_domain_shapes(shape_a, shape_b, **kwargs) -> SameDomainResult:
