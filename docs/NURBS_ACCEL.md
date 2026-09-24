@@ -311,9 +311,10 @@ The dedicated Freeform NURBS CI currently runs:
 5. true NURBS end-to-end Boolean regression;
 6. strict same-domain equivalence regressions;
 7. public one-call B-rep pipeline regressions;
-8. existing multi-shell semantic regressions.
+8. imported multi-face NURBS STEP regression;
+9. existing multi-shell semantic regressions.
 
-The latest strict code-bearing run passes all eight groups with current
+The latest strict code-bearing run passes all nine groups with current
 `cadquery-ocp 8.0.1.0.0`.
 
 ### Numerical checks
@@ -404,6 +405,122 @@ return A and A-A returns an empty compound.
 Refusals are surfaced as `BRepAmbiguousResult` with the partial stage report
 and underlying typed cause attached.
 
+
+## Different-decomposition canonicalization
+
+Strict one-to-one face matching remains the preferred same-domain path, but
+equivalent material can legitimately be represented with extra coplanar seams.
+
+When strict matching fails, the optional second stage independently runs
+`ShapeUpgrade_UnifySameDomain` on safe copies of both operands. A canonical
+shape is accepted for comparison only if it preserves:
+
+- B-rep validity;
+- solid count;
+- scale-aware bounding box;
+- adaptive signed volume;
+- global material orientation.
+
+The canonicalized shapes then have to pass the **same strict face matcher**;
+canonicalization is not itself an equivalence verdict.
+
+The pinned regression compares:
+
+- A: one ordinary `2 x 1 x 1` box;
+- B: the same material produced by fusing two adjacent `1 x 1 x 1` boxes,
+  retaining additional coplanar face decomposition before normalization.
+
+The boundaries differ before canonicalization and resolve to the same six-face
+boundary afterward. The public report records face/shell/solid counts before
+and after normalization plus bbox and volume-preservation errors.
+
+A separate adversarial regression uses two two-solid arrangements with the
+same overall bounding box and the same total volume but material in different
+corners. It remains non-equivalent, demonstrating that bbox/volume agreement
+does not certify the fast path.
+
+## Persistent verified section payloads
+
+`BooleanAssemblyResult` now retains the complete verified section evidence,
+not just section references.
+
+For every verified Boolean section it copies and stores:
+
+- curve parameters;
+- sampled XYZ points;
+- UV samples on operand A;
+- UV samples on operand B;
+- edge and verification tolerances;
+- maximum surface-A, surface-B and cross-surface errors;
+- minimum/maximum transversality;
+- risk flags;
+- whether SameParameter repair was needed;
+- final result-edge indices derived from that section.
+
+Final edge-lineage records reference these payloads by
+`(face_A, face_B, section_edge_index)`. The ordinary public report stays
+compact: it exposes sample counts, errors, tolerances and result-edge links
+without dumping every XYZ/UV sample.
+
+## Imported multi-face NURBS STEP corpus
+
+The CI now contains a real STEP round-trip rather than only in-memory test
+solids:
+
+1. build a rectangular solid;
+2. fillet all 12 edges;
+3. convert the rounded B-rep to NURBS;
+4. write it through `STEPControl_Writer`;
+5. read it back through `STEPControl_Reader`;
+6. run an A-B clip with a transverse box;
+7. compare the assembled result against an independent OCCT cut oracle.
+
+Latest measured run:
+
+```
+imported solids              1
+imported faces              26
+NURBS/freeform faces        26 / 26
+
+naive face pairs           156
+candidate face pairs         8
+face pairs culled          148
+OCCT Section calls           8
+verified section edges       8
+ambiguous contacts           0
+
+local split calls             9
+affected faces A              8
+affected faces B              1
+unresolved contacts           0
+
+selected result faces        18
+result shells                 1
+result solids                 1
+free edges                    0
+multiple/non-manifold edges   0
+
+final result edges           40
+Boolean-section edges         8
+source-boundary edges        24
+unattributed edges            0
+persisted section payloads    8
+
+assembled volume      1.47334470035
+OCCT oracle volume    1.47334470035
+absolute error       4.44e-16
+```
+
+This case is useful because the imported shape is genuinely multi-face and
+trimmed: all 26 imported faces are B-spline surfaces, eight separate source
+faces intersect the cutter, and final edge lineage remains complete.
+
+The run also exposes a future performance target. Four curved section records
+needed 513 adaptive verification samples each while simpler sections needed
+five. Correctness is currently preferred over reducing that sampling cost;
+profiling can determine whether certified/curvature-aware section sampling is
+worth implementing next.
+
 ## Performance boundary
 
 The work funnel is now:
@@ -435,15 +552,14 @@ general certified NURBS Boolean kernel.
 
 The main remaining work is:
 
-- same-domain equivalence across *different* valid face decompositions; the
-  current recognizer deliberately requires matching solid/shell/face counts
-  and a one-to-one face map;
-- harder multi-face imported STEP/NURBS corpus cases: fillets, blends,
-  trimmed periodic faces, sliver faces, tiny features, near tangencies and
-  mixed analytic/freeform surfaces;
-- persisting complete section/p-curve sample payloads in a canonical result
-  object; final edges currently retain verified section references and public
-  summaries rather than duplicating every UV/XYZ sample into the result;
+- broader different-decomposition equivalence beyond cases reducible by
+  same-domain face/edge unification;
+- harder imported STEP/NURBS corpus cases beyond the now-pinned all-edge
+  filleted rounded box: blends, trimmed periodic faces, sliver faces, tiny
+  features, near tangencies and mixed analytic/freeform surfaces;
+- serialization/export of the canonical result provenance payloads; complete
+  XYZ/UV evidence is now retained in memory but is intentionally summarized in
+  the ordinary public report;
 - deciding whether/when the legacy mesh/proxy `boolean()` and the new
   `boolean_brep()` should share a common dispatch surface; they are currently
   separate public routes so the stable Tier A contract is not silently changed;
