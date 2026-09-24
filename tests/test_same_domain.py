@@ -8,6 +8,8 @@ from brepkernel.same_domain import same_domain_shapes
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
 from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeSphere
+from OCP.TopAbs import TopAbs_FACE
+from OCP.TopExp import TopExp_Explorer
 from OCP.gp import gp_Pnt
 
 
