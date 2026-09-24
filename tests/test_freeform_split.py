@@ -18,8 +18,17 @@ from OCP.BRep import BRep_Builder
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
 from OCP.Geom import Geom_BSplineSurface, Geom_Plane
-from OCP.TColgp import TColgp_Array2OfPnt
-from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal
+try:
+    # OCP <= 7.x bindings
+    from OCP.TColgp import TColgp_Array2OfPnt
+    from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal
+except ImportError:
+    # OCP 8.x generated collections
+    from OCP.collections import (
+        Array2_gp_Pnt as TColgp_Array2OfPnt,
+        Array1_int as TColStd_Array1OfInteger,
+        Array1_double as TColStd_Array1OfReal,
+    )
 from OCP.TopoDS import TopoDS_Shell
 from OCP.gp import gp_Dir, gp_Pln, gp_Pnt
 
