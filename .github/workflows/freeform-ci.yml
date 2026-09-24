@@ -9,8 +9,10 @@ on:
       - "src/brepkernel/freeform.py"
       - "src/brepkernel/step_ingest.py"
       - "src/brepkernel/intersection.py"
+      - "src/brepkernel/split.py"
       - "tests/test_freeform_nurbs.py"
       - "tests/test_freeform_intersection.py"
+      - "tests/test_freeform_split.py"
       - "docs/NURBS_ACCEL.md"
       - ".github/workflows/freeform-ci.yml"
 
@@ -31,5 +33,7 @@ jobs:
         run: python tests/test_freeform_nurbs.py
       - name: Trimmed surface intersection regressions
         run: python tests/test_freeform_intersection.py
+      - name: Local face split regressions
+        run: python tests/test_freeform_split.py
       - name: Multi-shell semantic regressions
         run: python tests/test_multishell_semantics.py
