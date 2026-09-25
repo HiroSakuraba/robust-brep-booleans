@@ -212,6 +212,8 @@ class FaceIntersectionResult:
     raw_trimmed_components: int = 0
     raw_unmatched_components: int = 0
     completeness_max_distance: float = 0.0
+    approximation_gaps: list = field(default_factory=list)
+    completeness_components: list = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 
@@ -232,6 +234,8 @@ class ModelIntersectionResult:
     raw_trimmed_components: int = 0
     raw_unmatched_components: int = 0
     completeness_max_distance: float = 0.0
+    approximation_gaps: list = field(default_factory=list)
+    completeness_components: list = field(default_factory=list)
 
     @property
     def has_ambiguous_contact(self) -> bool:
@@ -628,11 +632,143 @@ def _crosscheck_section_modes(primary: list[SectionEdgeRecord],
 
 
 
+@dataclass
+class CompletenessProbeReport:
+    """Outcome of the raw-intersector completeness probe for one face pair.
+
+    approximation_gaps holds one dict per raw component that failed the
+    coverage match but sits inside the separation band of the verified edge
+    set (an approximation gap, accepted and recorded). Components outside
+    the band raise SectionCompletenessMismatch instead of appearing here.
+    """
+    raw_curve_count: int = 0
+    trimmed_components: int = 0
+    unmatched_components: int = 0
+    approximation_gaps: list = field(default_factory=list)
+    components: list = field(default_factory=list)
+    max_distance: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# G4: completeness-probe scope classification.
+#
+# The probe reruns the lower-level walking intersector (IntTools_FaceFace)
+# and checks the Section result against it. It is only meaningful where
+# OCCT itself intersects the pair numerically (IntPatch walking): for pairs
+# OCCT solves in closed form (IntAna) the analytic result is exact, so
+# there is no approximation branch left for the probe to second-guess and
+# the extra intersector run would only double cost.
+# ---------------------------------------------------------------------------
+
+_QUADRIC_TYPES = frozenset({
+    "GeomAbs_Cylinder", "GeomAbs_Cone", "GeomAbs_Sphere"})
+_PLANE_OR_QUADRIC = frozenset({
+    "GeomAbs_Plane", "GeomAbs_Cylinder", "GeomAbs_Cone", "GeomAbs_Sphere"})
+
+
+def _quadric_axis_point(face, surface_type):
+    """Return (point, direction-or-None) describing the quadric axis.
+
+    Cylinders and cones have a true axis (gp_Ax1). A sphere's stored axis
+    direction is arbitrary, so only its center is meaningful: the direction
+    comes back None and coaxiality against another quadric is decided by
+    center-to-axis distance. Returns None for non-quadric surfaces.
+    """
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    s = BRepAdaptor_Surface(face)
+    if surface_type == "GeomAbs_Cylinder":
+        ax = s.Cylinder().Axis()
+    elif surface_type == "GeomAbs_Cone":
+        ax = s.Cone().Axis()
+    elif surface_type == "GeomAbs_Sphere":
+        return (_p3(s.Sphere().Location()), None)
+    else:
+        return None
+    d = ax.Direction()
+    return (_p3(ax.Location()),
+            np.array([d.X(), d.Y(), d.Z()], dtype=np.float64))
+
+
+def _axes_coaxial(p1, d1, p2, d2, *, lin_tol, ang_tol):
+    """Conservative coaxiality test: true only when clearly the same axis.
+
+    Either direction may be None (sphere side); then only the
+    center-to-axis distance is checked. Direction comparison is modulo
+    sign. Tolerances are existing pipeline/OCCT quantities kept tight on
+    purpose: a missed coaxial verdict only costs an extra probe run, while
+    a wrong one would skip the probe where OCCT walks (I1).
+    """
+    if d1 is not None and d2 is not None:
+        if abs(float(d1 @ d2)) < float(np.cos(ang_tol)):
+            return False
+        w = p2 - p1
+        return float(np.linalg.norm(w - (w @ d1) * d1)) <= lin_tol
+    if d1 is None and d2 is None:
+        # Sphere/sphere: every pair is trivially coaxial (the radical plane
+        # always exists) and OCCT solves the circle in closed form.
+        return True
+    c, p, d = (p1, p2, d2) if d1 is None else (p2, p1, d1)
+    w = c - p
+    return float(np.linalg.norm(w - (w @ d) * d)) <= lin_tol
+
+
+def _quadrics_coaxial(fa: FaceRecord, fb: FaceRecord, *,
+                      base_tol: float) -> bool:
+    """Check coaxiality for a cylinder/cone/sphere pair.
+
+    Linear tolerance reuses existing pipeline quantities (base_tol and the
+    two face tolerances); the angular tolerance is OCCT's own
+    Precision.Angular. Both are tight by design (see _axes_coaxial).
+    """
+    from OCP.BRep import BRep_Tool
+    from OCP.Precision import Precision
+    a = _quadric_axis_point(fa.face, fa.surface_type)
+    b = _quadric_axis_point(fb.face, fb.surface_type)
+    if a is None or b is None:
+        return False
+    lin_tol = max(float(base_tol),
+                  float(BRep_Tool.Tolerance_s(fa.face)),
+                  float(BRep_Tool.Tolerance_s(fb.face)))
+    return _axes_coaxial(a[0], a[1], b[0], b[1],
+                         lin_tol=lin_tol,
+                         ang_tol=float(Precision.Angular_s()))
+
+
+def _pair_needs_completeness_probe(fa: FaceRecord, fb: FaceRecord, *,
+                                   base_tol: float) -> bool:
+    """Decide whether the face pair needs the completeness probe (G4 rule).
+
+    The probe is worthwhile wherever OCCT intersects the pair with a
+    numerical walking intersector (IntPatch): only there can the Section
+    post-processing drop a branch the lower-level intersector saw.
+
+    Rule:
+    - either face freeform (BSpline): probe ON (unchanged pre-G4 behavior);
+    - plane/plane, plane/cylinder, plane/sphere, plane/cone: probe OFF
+      (closed form via IntAna);
+    - quadric/quadric (cylinder/cone/sphere pairs): probe OFF only when
+      coaxial (closed-form circle intersection); otherwise probe ON;
+    - anything involving a torus, or any other surface type: probe ON.
+    When in doubt the probe is ON: a false refusal is allowed, a missed
+    dropped branch is not (I1).
+    """
+    if fa.freeform is not None or fb.freeform is not None:
+        return True
+    kinds = {fa.surface_type, fb.surface_type}
+    if "GeomAbs_Plane" in kinds:
+        # Plane/plane and plane/quadric are closed form. A torus (or any
+        # other surface kind) paired with a plane still walks.
+        return not kinds <= _PLANE_OR_QUADRIC
+    if kinds <= _QUADRIC_TYPES:
+        return not _quadrics_coaxial(fa, fb, base_tol=base_tol)
+    return True
+
+
 def _raw_intersector_completeness_probe(
         fa: FaceRecord, fb: FaceRecord,
         verified: list[SectionEdgeRecord], *,
         base_tol: float, fuzzy: float, parallel: bool
-        ) -> tuple[int, int, int, float]:
+        ) -> CompletenessProbeReport:
     """Probe Section post-processing against lower-level face/face curves.
 
     OCCT's BRepAlgoAPI_Section ultimately consumes IntTools_FaceFace curves.
@@ -640,6 +776,16 @@ def _raw_intersector_completeness_probe(
     tolerance used by BOPAlgo_PaveFiller (1e-7), samples every bounded raw
     curve component that actually lies in/on both trimmed faces, and requires
     those components to be represented by the final verified Section edges.
+
+    Matching is per raw curve, by coverage: a component is matched when at
+    least 95 percent of its in-trim samples lie within its own match
+    tolerance tol_i and every sample lies within 8*tol_i, where
+    tol_i = max(16*base_tol, 4*max_verify_tol, 2*ic.Tolerance()).
+    An unmatched component whose nearest distance to the verified edge set
+    is below 8*tol_i is the same branch seen through a coarser
+    approximation: it is recorded as an approximation_gap and accepted.
+    An unmatched component farther away is a genuinely missing branch and
+    refuses with SectionCompletenessMismatch.
 
     This is a post-processing completeness check, not a mathematical proof
     that IntTools_FaceFace itself discovered every true intersection branch.
@@ -665,17 +811,20 @@ def _raw_intersector_completeness_probe(
 
     lines = raw.Lines()
     raw_count = int(lines.Length())
+    report = CompletenessProbeReport(raw_curve_count=raw_count)
     if raw_count == 0:
-        return 0, 0, 0, 0.0
+        return report
 
     target = _edge_compound(verified) if verified else None
-    tol = max(
-        16.0 * float(base_tol),
-        4.0 * max((r.verify_tolerance for r in verified),
-                  default=float(base_tol)))
+    # Positional accuracy the Section verifier itself certifies for the
+    # verified edges of this pair. A pipeline quantity, not a tuned number.
+    max_verify_tol = max(
+        (r.verify_tolerance for r in verified), default=float(base_tol))
+    # Trim-classifier tolerance: unchanged pre-G3 floor.
+    trim_tol = max(16.0 * float(base_tol), 4.0 * max_verify_tol)
+
     trimmed_components = 0
-    unmatched = 0
-    max_dist = 0.0
+    refused: list[str] = []
 
     for i in range(1, raw_count + 1):
         ic = lines.Value(i)
@@ -702,19 +851,41 @@ def _raw_intersector_completeness_probe(
                 f"raw intersection curve {i} lacks bilateral p-curves",
                 kind="IntersectionCompletenessProbeFailed")
 
+        # Per-curve match tolerance, derived from quantities OCCT reports
+        # for this exact entity plus existing pipeline quantities:
+        # - 16*base_tol: the pre-G3 probe floor, kept unchanged;
+        # - 4*max_verify_tol: the raw curve and the verified edge are two
+        #   independent approximations of the same true branch, each good
+        #   to about max_verify_tol; the small multiple covers the triangle
+        #   inequality across the two plus sampling slack;
+        # - 2*ic.Tolerance(): OCCT's own reported 3D deviation for this raw
+        #   curve approximation, doubled for the two-sided deviation.
+        # ic.TangentialTolerance() is recorded below but not folded in: it
+        # governs OCCT's tangential-contact classification, not 3D
+        # positional deviation.
+        curve_tol = float(ic.Tolerance())
+        tol_i = max(16.0 * float(base_tol),
+                    4.0 * max_verify_tol,
+                    2.0 * curve_tol)
+        band_i = 8.0 * tol_i
+
         in_points = []
-        # Enough global coverage to recognize separate trimmed components
-        # without turning this diagnostic into another high-density sampler.
-        for j in range(17):
-            t = t0 + (t1 - t0) * (j / 16.0)
+        # 21 samples: with the 95% coverage rule a single borderline
+        # sample (20/21 = 95.2%) does not condemn a component, while a
+        # systematic offset still fails. Enough global coverage to
+        # recognize separate trimmed components without turning this
+        # diagnostic into another high-density sampler.
+        n_probe = 21
+        for j in range(n_probe):
+            t = t0 + (t1 - t0) * (j / (n_probe - 1.0))
             ua = c2a.Value(float(t))
             ub = c2b.Value(float(t))
             ca = BRepClass_FaceClassifier(
                 fa.face, gp_Pnt2d(float(ua.X()), float(ua.Y())),
-                tol, True)
+                trim_tol, True)
             cb = BRepClass_FaceClassifier(
                 fb.face, gp_Pnt2d(float(ub.X()), float(ub.Y())),
-                tol, True)
+                trim_tol, True)
             if (ca.State() in (TopAbs_IN, TopAbs_ON)
                     and cb.State() in (TopAbs_IN, TopAbs_ON)):
                 in_points.append(_p3(c3.Value(float(t))))
@@ -726,23 +897,68 @@ def _raw_intersector_completeness_probe(
         trimmed_components += 1
 
         if target is None:
-            unmatched += 1
+            # No verified edges at all: nothing can be "the same branch".
+            refused.append(
+                f"component {i}: no verified Section edges to match "
+                f"(curve_tolerance={curve_tol:.6g})")
             continue
 
-        d = max((_point_shape_distance(p, target) for p in in_points),
-                default=float("inf"))
-        max_dist = max(max_dist, float(d))
-        if not np.isfinite(d) or d > tol:
-            unmatched += 1
+        dists = [_point_shape_distance(p, target) for p in in_points]
+        if not all(np.isfinite(d) for d in dists):
+            refused.append(
+                f"component {i}: distance evaluation failed "
+                f"(curve_tolerance={curve_tol:.6g})")
+            continue
+        nearest = min(dists)
+        maxd = max(dists)
+        report.max_distance = max(report.max_distance, float(maxd))
 
-    if unmatched:
+        n_in = len(in_points)
+        within = sum(1 for d in dists if d <= tol_i)
+        coverage = within / n_in
+        comp_record = {
+            "component_index": i,
+            "face_a": fa.face_id,
+            "face_b": fb.face_id,
+            "curve_tolerance": curve_tol,
+            "tangential_tolerance": float(ic.TangentialTolerance()),
+            "match_tolerance": float(tol_i),
+            "separation_band": float(band_i),
+            "in_trim_samples": n_in,
+            "coverage_within_tol": float(coverage),
+            "nearest_distance": float(nearest),
+            "max_sample_distance": float(maxd),
+        }
+        if coverage >= 0.95 and maxd <= band_i:
+            comp_record["verdict"] = "matched"
+            report.components.append(comp_record)
+            continue
+
+        if nearest < band_i:
+            # Same branch, approximation-level offset: accept and record.
+            comp_record["verdict"] = "approximation_gap"
+            report.components.append(comp_record)
+            report.approximation_gaps.append(comp_record)
+            continue
+
+        refused.append(
+            f"component {i}: nearest_distance={nearest:.6g}, "
+            f"max_sample_distance={maxd:.6g}, "
+            f"match_tolerance={tol_i:.6g} (8x band {band_i:.6g}), "
+            f"coverage={coverage:.4f} over {n_in} in-trim samples, "
+            f"curve_tolerance={curve_tol:.6g}")
+
+    report.trimmed_components = trimmed_components
+    report.unmatched_components = len(refused)
+    if refused:
         raise IntersectionError(
-            f"lower-level intersector exposes {unmatched} trimmed curve "
+            f"lower-level intersector exposes {len(refused)} trimmed curve "
             f"component(s) not represented by verified Section edges "
             f"(raw={raw_count}, trimmed={trimmed_components}, "
-            f"max_distance={max_dist:.6g}, tol={tol:.6g})",
+            f"max_distance={report.max_distance:.6g}); "
+            + "; ".join(refused),
             kind="SectionCompletenessMismatch")
-    return raw_count, trimmed_components, unmatched, float(max_dist)
+    return report
 
 
 def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
@@ -764,10 +980,18 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
         raise ValueError("base_tol must be positive")
     if fuzzy < 0:
         raise ValueError("fuzzy must be >= 0")
-    if contact_tol is None:
-        contact_tol = max(4.0 * base_tol,
-                          2.0 * float(BRep_Tool.Tolerance_s(fa.face)),
-                          2.0 * float(BRep_Tool.Tolerance_s(fb.face)))
+    # G6: the near-contact band is tolerance-aware in both directions.
+    # A pair of faces whose OCCT tolerances sum to 2t is ambiguous at
+    # distances up to about 2t, so the pipeline's explicit contact_tol
+    # must never suppress that band: take the max. This rule was already
+    # the default when contact_tol was left unset; the change only stops
+    # an explicit small contact_tol from hiding a high-tolerance face.
+    # Widening the band can only add typed refusals, never acceptances.
+    contact_tol = max(
+        0.0 if contact_tol is None else float(contact_tol),
+        4.0 * base_tol,
+        2.0 * float(BRep_Tool.Tolerance_s(fa.face)),
+        2.0 * float(BRep_Tool.Tolerance_s(fb.face)))
 
     edges, vertices = _run_section_engine(
         fa, fb, approximation=True, fuzzy=float(fuzzy),
@@ -801,14 +1025,28 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
 
     raw_count = raw_trimmed = raw_unmatched = 0
     completeness_distance = 0.0
-    # Restrict the extra intersector run to pairs involving freeform faces.
-    # Analytic-only pairs already have exact closed-form/OCCT paths and do not
-    # justify doubling FF work in the Tier B/C freeform route.
-    if completeness_probe and (fa.freeform is not None or fb.freeform is not None):
-        (raw_count, raw_trimmed, raw_unmatched,
-         completeness_distance) = _raw_intersector_completeness_probe(
+    approximation_gaps: list = []
+    completeness_components: list = []
+    # Run the extra intersector run wherever OCCT walks the intersection
+    # numerically (IntPatch) rather than solving it in closed form: freeform
+    # pairs (pre-G4 behavior, unchanged), non-coaxial quadric/quadric pairs,
+    # and anything involving a torus or another non-quadric surface.
+    # Closed-form pairs (plane/plane, plane/quadric, coaxial quadrics) keep
+    # the probe off: OCCT's analytic result (IntAna) is exact, so there is
+    # no approximation branch left for the probe to second-guess, and the
+    # extra IntTools_FaceFace run would only double cost. See
+    # _pair_needs_completeness_probe for the rule; in doubt the probe is on.
+    if completeness_probe and _pair_needs_completeness_probe(
+            fa, fb, base_tol=base_tol):
+        probe = _raw_intersector_completeness_probe(
             fa, fb, verified, base_tol=base_tol,
             fuzzy=float(fuzzy), parallel=bool(parallel))
+        raw_count = probe.raw_curve_count
+        raw_trimmed = probe.trimmed_components
+        raw_unmatched = probe.unmatched_components
+        completeness_distance = probe.max_distance
+        approximation_gaps = probe.approximation_gaps
+        completeness_components = probe.components
 
     # Vertices include edge endpoints. They are useful diagnostic data, but
     # only a no-edge vertex set is a pure point-contact result.
@@ -822,7 +1060,9 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
             raw_curve_count=raw_count,
             raw_trimmed_components=raw_trimmed,
             raw_unmatched_components=raw_unmatched,
-            completeness_max_distance=completeness_distance)
+            completeness_max_distance=completeness_distance,
+            approximation_gaps=approximation_gaps,
+            completeness_components=completeness_components)
 
     if vertices:
         return FaceIntersectionResult(
@@ -832,6 +1072,8 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
             raw_trimmed_components=raw_trimmed,
             raw_unmatched_components=raw_unmatched,
             completeness_max_distance=completeness_distance,
+            approximation_gaps=approximation_gaps,
+            completeness_components=completeness_components,
             notes=["zero-dimensional contact: topology-sensitive"])
 
     d = _shape_distance(fa.face, fb.face)
@@ -853,6 +1095,7 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
 
 def intersect_models(a: BRepModel, b: BRepModel, *,
                      broadphase_pad: float = 0.0,
+                     broadphase_face_pads=None,
                      base_tol: float = 1e-7,
                      chord_tol: Optional[float] = None,
                      contact_tol: Optional[float] = None,
@@ -864,8 +1107,16 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
                      crosscheck_nonapprox: bool = False,
                      completeness_probe: bool = True
                      ) -> ModelIntersectionResult:
-    """Run verified section work only for conservative candidate face pairs."""
-    candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad))
+    """Run verified section work only for conservative candidate face pairs.
+
+    broadphase_face_pads is an optional (pads_a, pads_b) tuple of per-face
+    pads (see step_ingest.face_broadphase_pads); when given, each face's
+    box is expanded by its own pad instead of the uniform broadphase_pad.
+    """
+    pads_a, pads_b = (None, None) if broadphase_face_pads is None \
+        else broadphase_face_pads
+    candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad),
+                                      pads_a=pads_a, pads_b=pads_b)
     results: list[FaceIntersectionResult] = []
     section_calls = 0
     verified_edges = 0
@@ -879,6 +1130,8 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
     raw_trimmed_components = 0
     raw_unmatched_components = 0
     completeness_max_distance = 0.0
+    approximation_gaps: list = []
+    completeness_components: list = []
 
     by_a = {f.face_id: f for f in a.faces}
     by_b = {f.face_id: f for f in b.faces}
@@ -902,7 +1155,7 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
                 max_shadow_distance,
                 max((float(e.shadow_max_distance or 0.0)
                      for e in r.edges), default=0.0))
-        if (fa.freeform is not None or fb.freeform is not None):
+        if _pair_needs_completeness_probe(fa, fb, base_tol=base_tol):
             completeness_probes += int(bool(completeness_probe))
             raw_curve_count += int(r.raw_curve_count)
             raw_trimmed_components += int(r.raw_trimmed_components)
@@ -910,6 +1163,8 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
             completeness_max_distance = max(
                 completeness_max_distance,
                 float(r.completeness_max_distance))
+            approximation_gaps.extend(r.approximation_gaps)
+            completeness_components.extend(r.completeness_components)
         point_contacts += int(r.status == "point_contact")
         ambiguous += int(r.status in ("ambiguous_contact",
                                       "distance_unknown",
@@ -932,4 +1187,6 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
         raw_trimmed_components=raw_trimmed_components,
         raw_unmatched_components=raw_unmatched_components,
         completeness_max_distance=completeness_max_distance,
+        approximation_gaps=approximation_gaps,
+        completeness_components=completeness_components,
     )
