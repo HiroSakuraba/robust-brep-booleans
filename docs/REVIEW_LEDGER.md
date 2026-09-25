@@ -1923,3 +1923,101 @@ git grep -P '\x{2014}' -- <touched files>                  # 0 matches
 - I1-I9 held: local branch only, no push, no src/ edits, no em dashes.
 
 G7 gate: stress round COMPLETE, no wrong accept, suite green.
+
+---
+
+## Merge of the 7 gate branches into main (2026-09-25)
+
+- Date: 2026-09-25
+- Base: 88d09eb "Merge v0.9 verified periodic seam-aware NURBS splitting"
+- Authorization: Ben said "merge them" (18:17 EDT); local merge only at this stage.
+
+### Merge order
+
+1. gate/G2-planar (brings the whole G0->G1->G3->G4->G6->G2 stack plus the planar rework) -> 97aaf32
+2. gate/G1-arbiter-rework (scale-aware arbiter) -> b676d49
+3. gate/G3G4-rework (adaptive probe matching, tolerance cap) -> 3c079ef
+4. gate/G6-broadphase-rework (per-face pads) -> 58eb526
+5. probe-hardening (pass/fail semantics, F2/F4 assertions) -> 184a735
+6. gate/G5-classifier (multi-ray parity, dual agreement) -> 66c95df
+7. gate/G7-seam-stress (seam stress round) -> 6737c93
+
+All 7 branches verified reachable from main via git merge-base --is-ancestor.
+
+### Conflicts encountered and how resolved
+
+- docs/REVIEW_LEDGER.md (every merge): each branch appended its section at the
+  file tail of its own base, so the sections were spliced into gate order
+  (G1 rework after G1; G3 REWORK after G3; G4 REWORK after G4; G6 rework after
+  G6; probe-hardening, G5, G7 appended). No content dropped; section counts
+  verified.
+- probe-hardening and G7: both branches recreated tools/review_probes/*.py from
+  the appendix instead of editing G0's versions (add/add). The G1 arbiter
+  rework's scale-aware arbiter.py would have been regressed by taking their
+  copies, so HEAD's versions were kept and only probe-hardening's functional
+  changes were applied as patches: common_cad_probes.py refuse-counter/exit
+  fix, repro_findings.py F2/F4 assertions. G7's copies were verbatim appendix
+  files with no functional changes; HEAD's kept.
+- src/brepkernel/assembly.py (G5 merge): genuine semantic clash. G2's
+  one_side classified non-coincident pieces with _classify_point_in_model and
+  mapped to the four G2 states; G5's one_side used the dual classifier
+  (_agreed_point_verdict + _witness_material_verdict) but its
+  _decision_rule only accepted inside/outside. Resolution: kept G2's
+  coincident-piece early path and G2's keep-table _decision_rule; for
+  non-coincident pieces kept G5's dual-classifier path with the
+  {"inside": "IN", "outside": "OUT"} mapping before the keep table
+  (exactly the mapping the G2 code already used). The G5 multi-ray
+  classifier, _agreed_point_verdict, _witness_material_verdict and
+  ClassifierDisagreement all survive in the merged file.
+- src/brepkernel/intersection.py, pipeline.py (G3G4, G6 merges): auto-merged
+  cleanly; syntax-checked with ast.parse.
+
+### Full suite results on merged main
+
+26/26 test files exit 0, 0 [FAIL] lines:
+test_brep_pipeline, test_degenerate, test_freeform_assembly,
+test_freeform_intersection, test_freeform_nurbs, test_freeform_split
+(includes t7 shared-seam, passing after the fix below),
+test_g1_arbiter_scale, test_g1_negative_corruption,
+test_g2_coincident_probes, test_g2_keep_table, test_g2_three_case,
+test_g3_f2_regression, test_g3_probe_rework, test_g4_probe_coverage,
+test_g5_classifier_independence, test_g6_perface_broadphase,
+test_g6_tolerance_broadphase, test_g7_seam_stress, test_metamorphic,
+test_multishell_semantics, test_nurbs_adversarial_corpus,
+test_nurbs_boolean_end_to_end, test_regression, test_same_domain,
+test_step_nurbs_multiface, test_stress.
+
+### Probe results on merged main
+
+- tools/review_probes/common_cad_probes.py (no --baseline): exit 0,
+  wrong=0 unmet_accepts=0 unexpected_accepts=0 (17 cases: 15 accepted with
+  correct volumes, equal-radius crossing cylinders refused as expected,
+  edge-touching union refused NonManifoldResult with expect=either).
+- tools/review_probes/repro_findings.py: exit 0. F2 ACCEPTED, volume rel err
+  2.56e-09 vs OCCT (limit 1e-6), arbiter checked=300 kernel_errors=0,
+  classifier_disagreements=0. F4 kernel union winding +0.0000 (OUT),
+  surface_distance=1.0396 > 1.0; hardened assertions pass.
+
+### Known exception
+
+- tests/test_freeform_split.py t7: the "pre-existing failure" claim did NOT
+  hold. Bisection: t7 passes on v0.9 (88d09eb) and on the G1/G3/G4/G6 tips,
+  fails on gate/G2-coincident-faces and on merged main. Root cause: the G2.5
+  _resolve_contacts refactor overwrote split_models' local unresolved list,
+  silently dropping shared_seam_curve entries. The assembly UnresolvedContact
+  gate keys off unresolved_contacts, so a shared seam slipped through instead
+  of refusing: a genuine I1 safety-gate bypass, not a stale test. Fixed on
+  main (commit 59fe570): shared-seam entries are carried in a dedicated list
+  and prepended to the final unresolved contacts; t7 passes. Failing test
+  first per I4 (t7 failed pre-fix, passes post-fix).
+
+### Push status
+
+- Ben authorized the push (follow-up message). Awaiting green suite + probes
+  before pushing local main to origin main (HiroSakuraba/robust-brep-booleans).
+
+### Gate status after merge
+
+G0, G1 (+rework), G2-planar, G3 (+rework), G4 (+rework), G5, G6 (+rework),
+probe-hardening, new G7: merged. Still open: curved coincident-face
+recognition (deferred), G8 real-data refusal rate, G9 docs/release, Part B.
