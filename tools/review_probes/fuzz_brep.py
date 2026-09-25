@@ -1,4 +1,6 @@
-"""Randomized generic-position fuzz of boolean_brep() with an independent arbiter.
+"""Randomized generic-position fuzz of boolean_brep() with an independent
+Boolean arbiter (independent of OCCT's Boolean/intersection decision
+paths; it still tessellates with OCCT).
 
 Usage (from repo root):
     python tools/review_probes/fuzz_brep.py --trials 150 --seed 7

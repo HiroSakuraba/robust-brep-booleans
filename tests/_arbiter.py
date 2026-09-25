@@ -1,10 +1,12 @@
-"""Thin test helper wrapping the G0 independent membership arbiter.
+"""Thin test helper wrapping the review-probe independent Boolean arbiter.
 
 Tier B/C test scripts that ACCEPT a Boolean result call check_accepted()
 with the two input shapes, the result shape, and the op. The arbiter judges
 the result wrong at a point only when the generalized winding number of the
 result disagrees with the set operation of the winding numbers of the
-inputs, which is independent of OCCT's Boolean/intersector machinery.
+inputs, which is independent of OCCT's Boolean/intersector decision paths
+(it still tessellates with OCCT, so "Boolean arbiter", not "kernel
+arbiter").
 
 Tests that expect a refusal must NOT call this helper.
 """
@@ -37,7 +39,10 @@ def raw_audit(a, b, out, op, n=300, seed=20260925, lo=None, hi=None):
 
     Returns (result_dict, seconds). Triangle soups and winding numbers are
     cached per test process; the cached values are bit-identical to fresh
-    computation.
+    computation. lo/hi default to None, which lets membership_audit derive
+    the scale-aware sample domain from the combined bbox of a, b and out
+    (and the scale-aware exclusion band); pass explicit bounds for the
+    legacy fixed-domain behavior.
     """
     from time import perf_counter
     import arbiter as arb
@@ -65,8 +70,8 @@ def raw_audit(a, b, out, op, n=300, seed=20260925, lo=None, hi=None):
 
     orig_membership = arb.membership_audit
 
-    def patched_membership(aa, bb, oo, opp, rng, n=300, lo=-2.2, hi=2.2,
-                           band=2e-3, deflection=2e-4):
+    def patched_membership(aa, bb, oo, opp, rng, n=300, lo=None, hi=None,
+                           band=None, deflection=2e-4):
         arb.triangles, arb.winding = cached_triangles, cached_winding
         try:
             return orig_membership(aa, bb, oo, opp, rng, n=n, lo=lo,
@@ -76,8 +81,6 @@ def raw_audit(a, b, out, op, n=300, seed=20260925, lo=None, hi=None):
 
     arb.membership_audit = patched_membership
     try:
-        if lo is None or hi is None:
-            lo, hi = audit_bounds(a, b)
         rng = np.random.default_rng(seed)
         t0 = perf_counter()
         res = arb.membership_audit(a, b, out, op, rng, n=n, lo=lo, hi=hi)
@@ -107,13 +110,11 @@ def check_accepted(name, check_fn, a, b, out, op, n=300, seed=20260925,
 
 
 def audit_bounds(a, b, pad_frac=0.1):
-    """Sampling box covering both input shapes, returned as (lo, hi)."""
-    from OCP.Bnd import Bnd_Box
-    from OCP.BRepBndLib import BRepBndLib
-    box = Bnd_Box()
-    BRepBndLib.Add_s(a, box)
-    BRepBndLib.Add_s(b, box)
-    lo = np.array(box.CornerMin().Coord(), dtype=float)
-    hi = np.array(box.CornerMax().Coord(), dtype=float)
-    pad = pad_frac * float(np.max(hi - lo))
-    return lo - pad, hi + pad
+    """Sampling box covering both input shapes, returned as (lo, hi).
+
+    Kept for backward compatibility; delegates to the arbiter's
+    combined_domain(). Prefer letting membership_audit derive the domain
+    (it also covers the result shape) by passing lo/hi=None.
+    """
+    import arbiter as arb
+    return arb.combined_domain(a, b, pad_frac=pad_frac)

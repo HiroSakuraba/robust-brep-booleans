@@ -7,7 +7,7 @@ then returns sphere B alone: closed, manifold, B-rep valid, and inside the
 pre-G1 volume bounds (result volume == max(va, vb)), so the pre-G1 checks
 accept it silently. The G1 guards must catch it:
 
-  - the independent membership arbiter reports kernel_errors > 0;
+  - the independent Boolean arbiter reports kernel_errors > 0;
   - boolean_brep(..., crosscheck_ops=True) raises a typed refusal with
     kind=OperationIdentityFailed, because
     vol(AuB) + vol(AnB) != vol(A) + vol(B) for the corrupted union.
@@ -87,7 +87,8 @@ def t1_pre_g1_checks_pass_silently():
 
 
 def t2_arbiter_catches_corruption():
-    """The G0 arbiter alone catches the corruption (crosscheck disabled)."""
+    """The independent Boolean arbiter alone catches the corruption
+    (crosscheck disabled)."""
     a, b = make_pair()
     with FlipFirstKeep():
         out, report = boolean_brep(a, b, "union")

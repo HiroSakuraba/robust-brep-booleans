@@ -246,9 +246,136 @@ git grep -P '\x{2014}' -- tests/_arbiter.py tests/test_g1_negative_corruption.py
 | I1-I9 invariants held | PASS (no crash, no tolerance changed, no push/merge, local-only branch) |
 
 G1 gate: CLOSED.
-
 ---
 
+## G1 rework - Scale-aware independent Boolean arbiter
+
+- Date: 2026-09-25
+- Branch: gate/G1-arbiter-rework (local only; never pushed, never merged to main)
+- Base: 032dee7 "docs: add G1 gate entry to the review ledger" (gate/G1-arbiter tip)
+- Commits:
+  - f497abb "tests: add G1 arbiter scale-awareness and no-mutation regression (fails pre-fix)"
+  - 52c47f4 "arbiter: scale-aware domain/band, no input mutation; independent Boolean arbiter naming"
+- Environment: ~/workspace/brep-booleans/.venv (CPython 3.12.3),
+  numpy==2.5.3, manifold3d==3.5.3, cadquery-ocp==8.0.1.0.0 (OCCT 8.0.1).
+
+### What was built
+
+The review found the bundled winding arbiter was not scale-aware and
+mutated its inputs. All four items are in tools/review_probes/arbiter.py;
+all existing public names and signatures are kept backward compatible
+(membership_audit, occt_state, winding, triangles, surface_distance,
+has_solid, want).
+
+1. Scale-aware sampling domain: membership_audit() lo/hi/band now default
+   to None, meaning "derive". New combined_domain(*shapes, pad_frac=0.1)
+   unions the Bnd_Box of A, B and out and pads by 0.1 * (largest box
+   edge); null shapes and void bboxes are skipped, and the legacy
+   [-2.2, 2.2]^3 cube survives only as the documented FALLBACK_DOMAIN
+   for the all-void case. Explicit lo/hi still select the legacy fixed
+   behavior. tests/_arbiter.py raw_audit() now passes lo/hi=None through
+   (previously it derived from A and B only via audit_bounds, which now
+   delegates to combined_domain and is kept for compatibility).
+2. Scale-aware surface-exclusion band: new exclusion_band(*shapes,
+   deflection=2e-4) returns BAND_SAFETY * deflection + max entity
+   tolerance, the max over BRep_Tool.Tolerance_s of every face, edge and
+   vertex of the input shapes; the documented fallback when no tolerance
+   is measurable is BAND_SAFETY * deflection + CONTACT_TOL (1e-7, OCCT's
+   nominal contact tolerance). BAND_SAFETY = 2.0 is documented, not tuned:
+   one deflection for the tessellation chordal deviation behind the
+   winding test, roughly one more for the distance query against the true
+   surface. The winding decisiveness guard (|w| not in (0.05, 0.95)) is
+   unchanged.
+3. No input mutation: triangles() deep-copies the shape with
+   BRepBuilderAPI_Copy (verified empirically: the copy's TShapes are
+   distinct, so tessellations attach to the copy only) and runs
+   BRepTools.Clean_s + BRepMesh_IncrementalMesh on the copy.
+   surface_distance() and occt_state() were audited and do not mutate.
+4. Naming: module and caller docstrings now say "independent Boolean
+   arbiter" with the explicit caveat that it tessellates with OCCT's
+   BRepMesh, so it is independent of OCCT's Boolean/intersection decision
+   paths, not of OCCT entirely (not an "independent kernel arbiter").
+   Result-dict keys (kernel_errors etc.) are unchanged; the dict gains
+   additive diagnostics: domain, band_used, skipped_winding,
+   skipped_band, interior_checked.
+
+### I4 pre-fix demonstration (test committed at f497abb, run on 032dee7)
+
+New tests/test_g1_arbiter_scale.py, 3 tests, all FAIL pre-fix, all PASS
+post-fix:
+
+- t1 translated operands (+1000 x): pre-fix the audit sampled the
+  hard-coded cube (domain x=[-2.200, 2.200]) while the geometry sat at
+  x=[1000, 1001.5], yet reported checked=120, kernel_errors=0: a vacuous
+  audit. Post-fix the domain is x=[999.850, 1001.650], checked=120,
+  kernel_errors=0.
+- t2 micro-part (2e-3 boxes): pre-fix band_used=2.000e-3 (absolute) and
+  interior_checked=0: no interior point of the part was ever examined.
+  Post-fix band_used=4.001e-04, interior_checked=11, checked=106,
+  kernel_errors=0 on the correct OCCT fuse.
+- t3 no mutation: pre-fix triangles() left 6/6 faces of the input box
+  triangulated; post-fix 0/6, soup shape (12, 3, 3) identical.
+
+### Deviations from the plan
+
+- D1 (G1 rework): the suite on this branch is 16 files, not 20: the G1
+  tip carries 15 test files and this item adds 1
+  (tests/test_g1_arbiter_scale.py). An early `ls` showed 20 because the
+  shared clone transiently contained other gates' in-progress test files
+  (g2/g3/g4/g6) in the working tree during the coordinator's migration to
+  per-worker worktrees; those files are not on this branch.
+- D2 (G1 rework): the clone was shared with concurrently running gate
+  workers during this item, which caused three incidents, all repaired
+  without touching other workers' commits: (a) the f497abb commit first
+  landed on gate/G3G4-rework after a branch switch under this worker;
+  repaired by cherry-picking to gate/G1-arbiter-rework and resetting
+  gate/G3G4-rework to its prior tip 79e3079 (removing only this worker's
+  own commit); (b) a later branch switch deleted
+  tests/data/review_20260925/completeness_false_alarm_*.brep from the
+  working tree; restored via git checkout -- (fixtures needed by
+  repro_findings.py); (c) two VM reboots SIGTERM'd suite runs mid-flight;
+  the killed test_brep_pipeline.py run was re-executed to completion.
+  Each worker now has a dedicated worktree.
+
+### Commands run
+
+```
+python tests/test_g1_arbiter_scale.py                       # 6/6 checks post-fix, ~8s
+for t in $(git ls-files 'tests/test_*.py' | sort); do python $t; done   # full 16-file suite
+python tests/test_brep_pipeline.py                          # rerun after reboot kill: ALL PASS, exit 0
+python tools/review_probes/fuzz_brep.py --trials 20 --seed 7 --out /tmp/fuzz_g1r.json
+python tools/review_probes/repro_findings.py                # F4 behavior check
+```
+
+### Results (trimmed)
+
+- test_g1_arbiter_scale: ALL PASS, 6 checks.
+- Full suite: 16/16 test files exit 0, 0 [FAIL] lines (15 G1 files + the
+  new scale test). All 23 Tier B/C membership audits still pass with the
+  derived domain/band (checked 299-300, kernel_errors=0); the negative
+  corruption test still catches the flipped keep decision.
+- fuzz_brep.py short run (--trials 20 --seed 7): exit 0,
+  TALLY {'accept': 19, 'refuse:InsufficientPatchWitnesses': 1},
+  0 WRONG, 0 CRASH.
+- repro_findings.py: F4 output byte-identical to
+  docs/baseline_20260925/repro.txt (classifier false IN on kernel union
+  and OCCT fuse at surface_distance=1.0396, winding 0.0). F2 refuses with
+  SectionCompletenessMismatch exactly as baselined (the G3 fix is a later
+  gate), so the script exits 1 via f2 as before.
+- No em dashes in any touched file, prose, or commit message.
+
+### Gate verdicts
+
+| Criterion | Result |
+|---|---|
+| Scale-aware domain from combined A/B/out bbox | PASS (t1; fuzz and Tier B/C audits use the derived domain) |
+| Scale-aware band from deflection + tolerances | PASS (t2; band_used reported per audit) |
+| triangles() never mutates inputs | PASS (t3; deep copy verified) |
+| "Independent Boolean arbiter" naming, no overclaim | PASS |
+| Full suite green, ledger updated | PASS (16/16 exit 0; this entry) |
+| I1-I9 invariants held | PASS (no crash; no kernel tolerance touched; I3 derivations documented above; test committed failing first per I4; local branch only, no push/merge) |
+
+G1 rework: CLOSED.
 ## G3 - Completeness probe tolerance
 
 - Date: 2026-09-25
