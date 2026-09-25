@@ -11,13 +11,21 @@ import numpy as np
 sys.path.insert(0, "src")
 
 from brepkernel.intersection import (
-    IntersectionError, intersect_models, section_face_pair,
+    IntersectionError, _raw_intersector_completeness_probe,
+    intersect_models, section_face_pair,
 )
 from brepkernel.step_ingest import index_shape
 
 from OCP.BRep import BRep_Builder
-from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
+from OCP.BRepBuilderAPI import (
+    BRepBuilderAPI_MakeFace,
+    BRepBuilderAPI_NurbsConvert,
+)
+from OCP.BRepPrimAPI import (
+    BRepPrimAPI_MakeBox,
+    BRepPrimAPI_MakeSphere,
+    BRepPrimAPI_MakeTorus,
+)
 from OCP.Geom import Geom_BSplineSurface, Geom_Plane
 try:
     # OCP <= 7.x bindings
@@ -238,6 +246,43 @@ def t8_forced_near_tangent_curve_is_risky():
         and r.ambiguous_contacts >= 1,
         f"statuses={statuses} ambiguous={r.ambiguous_contacts}")
 
+
+def t9_completeness_probe_detects_hidden_second_loop():
+    """Deliberately hide one torus/plane loop and require detection."""
+    tor0 = BRepPrimAPI_MakeTorus(3.0, 1.0).Shape()
+    conv = BRepBuilderAPI_NurbsConvert(tor0, True)
+    assert conv.IsDone()
+    tor = conv.Shape()
+    cutter = BRepPrimAPI_MakeBox(
+        gp_Pnt(-5.0, -5.0, -2.0),
+        gp_Pnt(5.0, 5.0, 0.0)).Shape()
+
+    a = index_shape(tor)
+    b = index_shape(cutter)
+    r = intersect_models(a, b, base_tol=1e-7)
+    curve_pairs = [p for p in r.pairs if p.edges]
+    if len(curve_pairs) != 1 or len(curve_pairs[0].edges) != 2:
+        return check(
+            "t9 setup has exactly two section loops",
+            False,
+            f"pairs={[(p.face_a,p.face_b,len(p.edges)) for p in r.pairs]}")
+
+    p = curve_pairs[0]
+    fa = next(x for x in a.faces if x.face_id == p.face_a)
+    fb = next(x for x in b.faces if x.face_id == p.face_b)
+    try:
+        _raw_intersector_completeness_probe(
+            fa, fb, p.edges[:1],
+            base_tol=1e-7, fuzzy=0.0, parallel=False)
+    except IntersectionError as e:
+        return check(
+            "t9 omitted torus loop is detected",
+            getattr(e, "kind", "") == "SectionCompletenessMismatch",
+            f"kind={getattr(e, 'kind', '?')} message={e}")
+    return check(
+        "t9 omitted torus loop is detected",
+        False, "probe accepted an intentionally incomplete edge set")
+
 def main():
     ok = True
     ok &= t1_transverse_curve_has_verified_pcurves()
@@ -248,6 +293,7 @@ def main():
     ok &= t6_loose_section_tolerance_refuses()
     ok &= t7_narrow_trimmed_freeform_section_stays_inside_trim()
     ok &= t8_forced_near_tangent_curve_is_risky()
+    ok &= t9_completeness_probe_detects_hidden_second_loop()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
