@@ -15,15 +15,19 @@ import sys
 
 sys.path.insert(0, "src")
 
-from brepkernel.assembly import assemble_boolean, AssemblyError
+from brepkernel.assembly import (
+    assemble_boolean, AssemblyError, _classify_pieces,
+)
 from brepkernel.intersection import intersect_models
-from brepkernel.split import split_models
+from brepkernel.split import (
+    FaceSplitResult, ModelSplitResult, SplitFacePiece, split_models,
+)
 from brepkernel.step_ingest import index_shape
 
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
 from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepGProp import BRepGProp
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeSphere
 from OCP.GProp import GProp_GProps
 from OCP.gp import gp_Pnt
 
@@ -210,6 +214,57 @@ def t5_exact_tangency_refuses_global_assembly():
     return check("t5 tangent assembly refuses", False, "no refusal")
 
 
+
+def t6_unsplit_straddling_patch_refuses_multiwitness():
+    """An intentionally unsplit face crossing another solid must not be
+    classified from one lucky interior point.
+
+    This simulates the dangerous downstream state caused by a missed section:
+    the full sphere face spans both inside and outside of a box occupying the
+    x >= 0.2 half-space. Multi-witness classification must refuse.
+    """
+    sphere = BRepPrimAPI_MakeSphere(
+        gp_Pnt(0, 0, 0), 1.0).Shape()
+    cutter = BRepPrimAPI_MakeBox(
+        gp_Pnt(0.2, -2.0, -2.0),
+        gp_Pnt(2.0, 2.0, 2.0)).Shape()
+    ma = index_shape(sphere)
+    mb = index_shape(cutter)
+
+    face = ma.faces[0].face
+    piece = SplitFacePiece(
+        parent_face_id=ma.faces[0].face_id,
+        piece_index=0,
+        face=face,
+        area=0.0,
+        uv_witness=None,
+        unchanged=True)
+    fr = FaceSplitResult(
+        parent_face_id=ma.faces[0].face_id,
+        status="unchanged",
+        pieces=[piece],
+        source_edges=0,
+        area_before=0.0,
+        area_after=0.0,
+        area_error=0.0)
+    sp = ModelSplitResult(
+        faces_a=[fr], faces_b=[],
+        split_calls=0,
+        affected_faces_a=0,
+        affected_faces_b=0,
+        unresolved_contacts=[])
+
+    try:
+        _classify_pieces(ma, mb, sp, "union", 1e-7)
+    except AssemblyError as e:
+        return check(
+            "t6 straddling patch refuses multi-witness",
+            getattr(e, "kind", "") == "PatchClassificationInconsistent",
+            f"kind={getattr(e, 'kind', '?')} message={e}")
+    return check(
+        "t6 straddling patch refuses multi-witness",
+        False, "classification unexpectedly accepted")
+
 def main():
     ok = True
     ok &= t1_overlap_spheres_all_ops()
@@ -217,6 +272,7 @@ def main():
     ok &= t3_contained_difference_builds_cavity()
     ok &= t4_disjoint_intersection_is_empty()
     ok &= t5_exact_tangency_refuses_global_assembly()
+    ok &= t6_unsplit_straddling_patch_refuses_multiwitness()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
