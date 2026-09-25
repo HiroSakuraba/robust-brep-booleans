@@ -208,6 +208,10 @@ class FaceIntersectionResult:
     point_contacts: list[np.ndarray] = field(default_factory=list)
     min_distance: Optional[float] = None
     section_done: bool = True
+    raw_curve_count: int = 0
+    raw_trimmed_components: int = 0
+    raw_unmatched_components: int = 0
+    completeness_max_distance: float = 0.0
     notes: list[str] = field(default_factory=list)
 
 
@@ -223,6 +227,11 @@ class ModelIntersectionResult:
     shadow_section_calls: int = 0
     shadow_verified_edges: int = 0
     max_shadow_distance: float = 0.0
+    completeness_probes: int = 0
+    raw_curve_count: int = 0
+    raw_trimmed_components: int = 0
+    raw_unmatched_components: int = 0
+    completeness_max_distance: float = 0.0
 
     @property
     def has_ambiguous_contact(self) -> bool:
@@ -618,6 +627,117 @@ def _crosscheck_section_modes(primary: list[SectionEdgeRecord],
     return float(max_dist), float(rel)
 
 
+
+def _raw_intersector_completeness_probe(
+        fa: FaceRecord, fb: FaceRecord,
+        verified: list[SectionEdgeRecord], *,
+        base_tol: float, fuzzy: float, parallel: bool
+        ) -> tuple[int, int, int, float]:
+    """Probe Section post-processing against lower-level face/face curves.
+
+    OCCT's BRepAlgoAPI_Section ultimately consumes IntTools_FaceFace curves.
+    This probe reruns that lower-level intersector with the same approximation
+    tolerance used by BOPAlgo_PaveFiller (1e-7), samples every bounded raw
+    curve component that actually lies in/on both trimmed faces, and requires
+    those components to be represented by the final verified Section edges.
+
+    This is a post-processing completeness check, not a mathematical proof
+    that IntTools_FaceFace itself discovered every true intersection branch.
+    """
+    from OCP.BRepClass import BRepClass_FaceClassifier
+    from OCP.IntTools import IntTools_FaceFace
+    from OCP.TopAbs import TopAbs_IN, TopAbs_ON
+    from OCP.gp import gp_Pnt2d
+
+    raw = IntTools_FaceFace()
+    raw.SetParameters(True, True, True, 1e-7)
+    if fuzzy > 0.0:
+        raw.SetFuzzyValue(float(fuzzy))
+    raw.Perform(fa.face, fb.face, bool(parallel))
+    if not raw.IsDone():
+        raise IntersectionError(
+            f"lower-level face/face intersector failed for "
+            f"{fa.face_id}/{fb.face_id}",
+            kind="IntersectionCompletenessProbeFailed")
+
+    lines = raw.Lines()
+    raw_count = int(lines.Length())
+    if raw_count == 0:
+        return 0, 0, 0, 0.0
+
+    target = _edge_compound(verified) if verified else None
+    tol = max(
+        16.0 * float(base_tol),
+        4.0 * max((r.verify_tolerance for r in verified),
+                  default=float(base_tol)))
+    trimmed_components = 0
+    unmatched = 0
+    max_dist = 0.0
+
+    for i in range(1, raw_count + 1):
+        ic = lines.Value(i)
+        c3 = ic.Curve()
+        if c3 is None:
+            continue
+        t0 = float(c3.FirstParameter())
+        t1 = float(c3.LastParameter())
+        if not (np.isfinite(t0) and np.isfinite(t1) and t1 > t0):
+            # A face-trimmed FF component should normally be bounded. An
+            # unbounded raw line cannot safely certify completeness.
+            raise IntersectionError(
+                f"raw intersection curve {i} is unbounded",
+                kind="IntersectionCompletenessProbeFailed")
+
+        c2a = ic.FirstCurve2d()
+        c2b = ic.SecondCurve2d()
+        if c2a is None or c2b is None:
+            raise IntersectionError(
+                f"raw intersection curve {i} lacks bilateral p-curves",
+                kind="IntersectionCompletenessProbeFailed")
+
+        in_points = []
+        # Enough global coverage to recognize separate trimmed components
+        # without turning this diagnostic into another high-density sampler.
+        for j in range(17):
+            t = t0 + (t1 - t0) * (j / 16.0)
+            ua = c2a.Value(float(t))
+            ub = c2b.Value(float(t))
+            ca = BRepClass_FaceClassifier(
+                fa.face, gp_Pnt2d(float(ua.X()), float(ua.Y())),
+                tol, True)
+            cb = BRepClass_FaceClassifier(
+                fb.face, gp_Pnt2d(float(ub.X()), float(ub.Y())),
+                tol, True)
+            if (ca.State() in (TopAbs_IN, TopAbs_ON)
+                    and cb.State() in (TopAbs_IN, TopAbs_ON)):
+                in_points.append(_p3(c3.Value(float(t))))
+
+        # Require several points before treating a raw line as a material
+        # trimmed component; isolated endpoint hits are point-contact evidence.
+        if len(in_points) < 3:
+            continue
+        trimmed_components += 1
+
+        if target is None:
+            unmatched += 1
+            continue
+
+        d = max((_point_shape_distance(p, target) for p in in_points),
+                default=float("inf"))
+        max_dist = max(max_dist, float(d))
+        if not np.isfinite(d) or d > tol:
+            unmatched += 1
+
+    if unmatched:
+        raise IntersectionError(
+            f"lower-level intersector exposes {unmatched} trimmed curve "
+            f"component(s) not represented by verified Section edges "
+            f"(raw={raw_count}, trimmed={trimmed_components}, "
+            f"max_distance={max_dist:.6g}, tol={tol:.6g})",
+            kind="SectionCompletenessMismatch")
+    return raw_count, trimmed_components, unmatched, float(max_dist)
+
+
 def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
                       base_tol: float = 1e-7,
                       chord_tol: Optional[float] = None,
@@ -627,7 +747,8 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
                       use_obb: bool = True,
                       tangent_sin_tol: float = 1e-4,
                       max_section_tol: Optional[float] = None,
-                      crosscheck_nonapprox: bool = False
+                      crosscheck_nonapprox: bool = False,
+                      completeness_probe: bool = True
                       ) -> FaceIntersectionResult:
     """Intersect one pair of *trimmed* faces and verify all section curves."""
     from OCP.BRep import BRep_Tool
@@ -671,6 +792,17 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
             e.shadow_max_distance = max_shadow_distance
             e.shadow_length_rel_error = shadow_length_rel
 
+    raw_count = raw_trimmed = raw_unmatched = 0
+    completeness_distance = 0.0
+    # Restrict the extra intersector run to pairs involving freeform faces.
+    # Analytic-only pairs already have exact closed-form/OCCT paths and do not
+    # justify doubling FF work in the Tier B/C freeform route.
+    if completeness_probe and (fa.freeform is not None or fb.freeform is not None):
+        (raw_count, raw_trimmed, raw_unmatched,
+         completeness_distance) = _raw_intersector_completeness_probe(
+            fa, fb, verified, base_tol=base_tol,
+            fuzzy=float(fuzzy), parallel=bool(parallel))
+
     # Vertices include edge endpoints. They are useful diagnostic data, but
     # only a no-edge vertex set is a pure point-contact result.
     if verified:
@@ -679,12 +811,20 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
                   else "curve")
         return FaceIntersectionResult(
             fa.face_id, fb.face_id, status, verified, vertices,
-            min_distance=0.0)
+            min_distance=0.0,
+            raw_curve_count=raw_count,
+            raw_trimmed_components=raw_trimmed,
+            raw_unmatched_components=raw_unmatched,
+            completeness_max_distance=completeness_distance)
 
     if vertices:
         return FaceIntersectionResult(
             fa.face_id, fb.face_id, "point_contact", [], vertices,
             min_distance=0.0,
+            raw_curve_count=raw_count,
+            raw_trimmed_components=raw_trimmed,
+            raw_unmatched_components=raw_unmatched,
+            completeness_max_distance=completeness_distance,
             notes=["zero-dimensional contact: topology-sensitive"])
 
     d = _shape_distance(fa.face, fb.face)
@@ -714,7 +854,8 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
                      use_obb: bool = True,
                      tangent_sin_tol: float = 1e-4,
                      max_section_tol: Optional[float] = None,
-                     crosscheck_nonapprox: bool = False
+                     crosscheck_nonapprox: bool = False,
+                     completeness_probe: bool = True
                      ) -> ModelIntersectionResult:
     """Run verified section work only for conservative candidate face pairs."""
     candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad))
@@ -726,6 +867,11 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
     shadow_calls = 0
     shadow_edges = 0
     max_shadow_distance = 0.0
+    completeness_probes = 0
+    raw_curve_count = 0
+    raw_trimmed_components = 0
+    raw_unmatched_components = 0
+    completeness_max_distance = 0.0
 
     by_a = {f.face_id: f for f in a.faces}
     by_b = {f.face_id: f for f in b.faces}
@@ -738,7 +884,8 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
             contact_tol=contact_tol, fuzzy=fuzzy, parallel=parallel,
             use_obb=use_obb, tangent_sin_tol=tangent_sin_tol,
             max_section_tol=max_section_tol,
-            crosscheck_nonapprox=bool(crosscheck_nonapprox))
+            crosscheck_nonapprox=bool(crosscheck_nonapprox),
+            completeness_probe=bool(completeness_probe))
         results.append(r)
         verified_edges += len(r.edges)
         if any(e.shadow_crosschecked for e in r.edges):
@@ -748,6 +895,14 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
                 max_shadow_distance,
                 max((float(e.shadow_max_distance or 0.0)
                      for e in r.edges), default=0.0))
+        if (fa.freeform is not None or fb.freeform is not None):
+            completeness_probes += int(bool(completeness_probe))
+            raw_curve_count += int(r.raw_curve_count)
+            raw_trimmed_components += int(r.raw_trimmed_components)
+            raw_unmatched_components += int(r.raw_unmatched_components)
+            completeness_max_distance = max(
+                completeness_max_distance,
+                float(r.completeness_max_distance))
         point_contacts += int(r.status == "point_contact")
         ambiguous += int(r.status in ("ambiguous_contact",
                                       "distance_unknown",
@@ -765,4 +920,9 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
         shadow_section_calls=shadow_calls,
         shadow_verified_edges=shadow_edges,
         max_shadow_distance=max_shadow_distance,
+        completeness_probes=completeness_probes,
+        raw_curve_count=raw_curve_count,
+        raw_trimmed_components=raw_trimmed_components,
+        raw_unmatched_components=raw_unmatched_components,
+        completeness_max_distance=completeness_max_distance,
     )
