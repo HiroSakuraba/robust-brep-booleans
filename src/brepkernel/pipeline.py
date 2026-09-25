@@ -285,9 +285,11 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         # Preserve tolerance-near contacts for the exact contact classifier;
         # a fast AABB rejection must not make them disappear.
         broadphase_pad = max(float(contact_tol), 4.0 * float(base_tol))
-    if chord_tol is None:
-        chord_tol = max(4.0 * float(base_tol), 1e-9)
-
+    # Keep an unspecified chord tolerance as None.  The intersection verifier
+    # can then derive a local sampling tolerance from the *actual* accepted
+    # OCCT edge/face tolerance.  Turning None into a global base_tol-derived
+    # number here caused severe over-sampling on otherwise well-bounded NURBS
+    # sections. Explicit caller values are still honored exactly.
     t_total = perf_counter()
     report = {
         "op": op,
@@ -444,7 +446,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     try:
         ix = intersect_models(
             a, b, broadphase_pad=float(broadphase_pad),
-            base_tol=float(base_tol), chord_tol=float(chord_tol),
+            base_tol=float(base_tol),
+            chord_tol=(None if chord_tol is None else float(chord_tol)),
             contact_tol=float(contact_tol), fuzzy=float(fuzzy),
             parallel=bool(parallel), use_obb=bool(use_obb),
             tangent_sin_tol=float(tangent_sin_tol),
