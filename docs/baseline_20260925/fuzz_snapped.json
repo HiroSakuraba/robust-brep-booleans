@@ -1,0 +1,3100 @@
+{
+ "args": {
+  "trials": 200,
+  "seed": 5,
+  "nurbs": false,
+  "snap": 0.5,
+  "points": 150,
+  "kinds": "box,cyl",
+  "out": "docs/baseline_20260925/fuzz_snapped.json"
+ },
+ "versions": "versions: numpy=2.5.3 cadquery-ocp=8.0.1.0.0 manifold3d=3.5.3",
+ "tally": {
+  "accept": 93,
+  "refuse:UnresolvedContact": 91,
+  "refuse:SectionOutsideTrim": 2,
+  "refuse:RiskySectionCurve": 13,
+  "refuse:FaceSplitAreaMismatch": 1
+ },
+ "rows": [
+  {
+   "trial": 0,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "volume": 2.202648277866245,
+   "oracle_volume": 2.2026482778662446,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.742
+  },
+  {
+   "trial": 1,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "volume": 4.155525550771713,
+   "oracle_volume": 4.155525550771713,
+   "audit": {
+    "checked": 149,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.44
+  },
+  {
+   "trial": 2,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A1/B0:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.585
+  },
+  {
+   "trial": 3,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B0:curve_near_tangent, A4/B2:point_contact, A5/B0:curve_near_tangent, A5/B2:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.468
+  },
+  {
+   "trial": 4,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 3.1259987948890036,
+   "oracle_volume": 3.1259987948890036,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.519
+  },
+  {
+   "trial": 5,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B5:curve_near_tangent, A3/B4:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.175
+  },
+  {
+   "trial": 6,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B3:curve_near_tangent, A0/B1:point_contact, A2/B3:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.026
+  },
+  {
+   "trial": 7,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B0:curve_near_tangent, A2/B1:point_contact, A3/B0:curve_near_tangent, A3/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.358
+  },
+  {
+   "trial": 8,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A3/B0:curve_near_tangent, A3/B1:point_contact, A2/B0:curve_near_tangent, A2/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.34
+  },
+  {
+   "trial": 9,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "intersection",
+    "type": "IntersectionError",
+    "kind": "SectionOutsideTrim",
+    "message": "section edge 0: p-curve left a trimmed input face"
+   },
+   "status": "refuse:SectionOutsideTrim",
+   "seconds": 0.518
+  },
+  {
+   "trial": 10,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 2: refusing local split on risk flags ['seam_on_b']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.153
+  },
+  {
+   "trial": 11,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B0:curve_near_tangent, A5/B1:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.18
+  },
+  {
+   "trial": 12,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.9999999999999997,
+   "oracle_volume": 0.9999999999999996,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.312
+  },
+  {
+   "trial": 13,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.009
+  },
+  {
+   "trial": 14,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A0/B2:curve_near_tangent, A1/B0:point_contact, A1/B2:point_contact, A2/B0:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.914
+  },
+  {
+   "trial": 15,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B0:curve_near_tangent, A1/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.264
+  },
+  {
+   "trial": 16,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 0: refusing local split on risk flags ['seam_on_a']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.336
+  },
+  {
+   "trial": 17,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A0/B1:point_contact, A2/B0:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.021
+  },
+  {
+   "trial": 18,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.23794543699920093,
+   "oracle_volume": 0.23794543699920093,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.403
+  },
+  {
+   "trial": 19,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.1532581284912974,
+   "oracle_volume": 0.15325812849129739,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.523
+  },
+  {
+   "trial": 20,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A5/B0:point_contact, A0/B0:curve_near_tangent, A0/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.03
+  },
+  {
+   "trial": 21,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A2/B2:curve_near_tangent, A3/B3:curve_near_tangent, A1/B1:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.289
+  },
+  {
+   "trial": 22,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B0:curve_near_tangent, A2/B1:point_contact, A3/B0:curve_near_tangent, A3/B1:point_contact, A4/B0:curve_near_tangent, A4/B1:point_contact, A5/B0:curve_near_tangent, A5/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.672
+  },
+  {
+   "trial": 23,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "volume": 2.796245294024817,
+   "oracle_volume": 2.796245294024817,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.057
+  },
+  {
+   "trial": 24,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.128
+  },
+  {
+   "trial": 25,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "volume": 2.089048622548084,
+   "oracle_volume": 2.089048622548084,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.575
+  },
+  {
+   "trial": 26,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B4:curve_near_tangent, A0/B2:point_contact, A1/B4:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.026
+  },
+  {
+   "trial": 27,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 4.124999999999999,
+   "oracle_volume": 4.125,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.273
+  },
+  {
+   "trial": 28,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A0/B2:curve_near_tangent, A0/B3:curve_near_tangent, A0/B1:curve_near_tangent, A1/B0:point_contact, A1/B2:point_contact, A1/B3:point_contact, A1/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.687
+  },
+  {
+   "trial": 29,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.39
+  },
+  {
+   "trial": 30,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.54
+  },
+  {
+   "trial": 31,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "volume": 0.7499999999999999,
+   "oracle_volume": 0.7499999999999999,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.243
+  },
+  {
+   "trial": 32,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.095
+  },
+  {
+   "trial": 33,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 2.9062499999999996,
+   "oracle_volume": 2.906249999999999,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.307
+  },
+  {
+   "trial": 34,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A0/B1:curve_near_tangent, A2/B0:point_contact, A2/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.438
+  },
+  {
+   "trial": 35,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.3926990816987236,
+   "oracle_volume": 0.3926990816987236,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.75
+  },
+  {
+   "trial": 36,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "volume": 3.962388980384679,
+   "oracle_volume": 3.962388980384679,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 3.68
+  },
+  {
+   "trial": 37,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "volume": 1.844522690047508,
+   "oracle_volume": 1.8445226900475085,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.052
+  },
+  {
+   "trial": 38,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A0/B2:point_contact, A2/B0:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.02
+  },
+  {
+   "trial": 39,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.808
+  },
+  {
+   "trial": 40,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 2.092037012232161,
+   "oracle_volume": 2.0920370122321605,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.486
+  },
+  {
+   "trial": 41,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B0:curve_near_tangent, A1/B2:point_contact, A2/B0:curve_near_tangent, A2/B2:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.732
+  },
+  {
+   "trial": 42,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B4:curve_near_tangent, A4/B2:curve_near_tangent, A5/B3:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.312
+  },
+  {
+   "trial": 43,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B2:point_contact, A3/B0:point_contact, A5/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.093
+  },
+  {
+   "trial": 44,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.7853981633974464,
+   "oracle_volume": 0.7853981633974464,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.266
+  },
+  {
+   "trial": 45,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B4:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.148
+  },
+  {
+   "trial": 46,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 2.5624999999999987,
+   "oracle_volume": 2.562499999999999,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.287
+  },
+  {
+   "trial": 47,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 2.374999999999999,
+   "oracle_volume": 2.374999999999999,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.351
+  },
+  {
+   "trial": 48,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.28124999999999994,
+   "oracle_volume": 0.28124999999999994,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.218
+  },
+  {
+   "trial": 49,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.24999999999999992,
+   "oracle_volume": 0.24999999999999992,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.167
+  },
+  {
+   "trial": 50,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "volume": 5.8088685006916085,
+   "oracle_volume": 5.808868500691609,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.495
+  },
+  {
+   "trial": 51,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B2:point_contact, A0/B3:point_contact, A1/B1:curve_near_tangent, A1/B2:point_contact, A1/B3:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.081
+  },
+  {
+   "trial": 52,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B0:curve_near_tangent, A4/B1:point_contact, A1/B0:curve_near_tangent, A1/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.302
+  },
+  {
+   "trial": 53,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "FaceSplitAreaMismatch",
+    "message": "face 0: split does not conserve area (3.14159265359 -> 3.14160260861, error 9.95502e-06, tol 6.28319e-06)"
+   },
+   "status": "refuse:FaceSplitAreaMismatch",
+   "seconds": 0.121
+  },
+  {
+   "trial": 54,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "volume": 5.61974910270719,
+   "oracle_volume": 5.61974910270719,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.893
+  },
+  {
+   "trial": 55,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B3:curve_near_tangent, A5/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.212
+  },
+  {
+   "trial": 56,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B2:curve_near_tangent, A5/B1:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.172
+  },
+  {
+   "trial": 57,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "volume": 1.886722302330569,
+   "oracle_volume": 1.886722302330569,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.743
+  },
+  {
+   "trial": 58,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B1:curve_near_tangent, A2/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.567
+  },
+  {
+   "trial": 59,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 0: refusing local split on risk flags ['seam_on_a']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.673
+  },
+  {
+   "trial": 60,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B1:curve_near_tangent, A3/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.817
+  },
+  {
+   "trial": 61,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B4:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.129
+  },
+  {
+   "trial": 62,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "volume": 4.7784844007331895,
+   "oracle_volume": 4.77848440073319,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.476
+  },
+  {
+   "trial": 63,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "volume": 2.7863969582864505,
+   "oracle_volume": 2.7863969582864505,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.567
+  },
+  {
+   "trial": 64,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B1:curve_near_tangent, A5/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.544
+  },
+  {
+   "trial": 65,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "volume": 1.5707963267948928,
+   "oracle_volume": 1.5707963267948928,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.307
+  },
+  {
+   "trial": 66,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.7116134469184762,
+   "oracle_volume": 0.7116134469184763,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.435
+  },
+  {
+   "trial": 67,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.8206353479705277,
+   "oracle_volume": 0.8206353479705276,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.389
+  },
+  {
+   "trial": 68,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "volume": 0.7809813879557024,
+   "oracle_volume": 0.7809813879557024,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.627
+  },
+  {
+   "trial": 69,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "volume": 3.1415926535897856,
+   "oracle_volume": 3.1415926535897856,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.254
+  },
+  {
+   "trial": 70,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "volume": 2.82535940073319,
+   "oracle_volume": 2.8253594007331895,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.444
+  },
+  {
+   "trial": 71,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "volume": 0.15354621232609408,
+   "oracle_volume": 0.15354621232609406,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.234
+  },
+  {
+   "trial": 72,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 0: refusing local split on risk flags ['seam_on_b']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.147
+  },
+  {
+   "trial": 73,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.7853981633974464,
+   "oracle_volume": 0.7853981633974464,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.238
+  },
+  {
+   "trial": 74,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B3:curve_near_tangent, A4/B5:curve_near_tangent, A5/B4:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.229
+  },
+  {
+   "trial": 75,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B2:curve_near_tangent, A1/B3:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.179
+  },
+  {
+   "trial": 76,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A5/B0:curve_near_tangent, A4/B1:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.173
+  },
+  {
+   "trial": 77,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B0:curve_near_tangent, A2/B1:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.86
+  },
+  {
+   "trial": 78,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 2.937499999999999,
+   "oracle_volume": 2.937499999999999,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.275
+  },
+  {
+   "trial": 79,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B2:curve_near_tangent, A0/B3:curve_near_tangent, A2/B2:point_contact, A2/B3:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.586
+  },
+  {
+   "trial": 80,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "volume": 0.7519357781851058,
+   "oracle_volume": 0.7519357781851057,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.422
+  },
+  {
+   "trial": 81,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "volume": 3.9640486225480838,
+   "oracle_volume": 3.9640486225480838,
+   "audit": {
+    "checked": 149,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.831
+  },
+  {
+   "trial": 82,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A5/B0:curve_near_tangent, A5/B1:point_contact, A4/B0:curve_near_tangent, A4/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.346
+  },
+  {
+   "trial": 83,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "volume": 1.3424825930666977,
+   "oracle_volume": 1.3424825930666975,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.432
+  },
+  {
+   "trial": 84,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.5196806815108587,
+   "oracle_volume": 0.5196806815108587,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.644
+  },
+  {
+   "trial": 85,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:point_contact, A0/B4:point_contact, A0/B1:point_contact, A0/B5:point_contact, A1/B2:curve_near_tangent, A1/B4:point_contact, A1/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.458
+  },
+  {
+   "trial": 86,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B4:curve_near_tangent, A0/B5:curve_near_tangent, A1/B2:curve_near_tangent, A1/B4:point_contact, A1/B5:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.687
+  },
+  {
+   "trial": 87,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 3.8749999999999996,
+   "oracle_volume": 3.875,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.248
+  },
+  {
+   "trial": 88,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.97
+  },
+  {
+   "trial": 89,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.12450060255549772,
+   "oracle_volume": 0.12450060255549772,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.475
+  },
+  {
+   "trial": 90,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B4:curve_near_tangent, A0/B5:curve_near_tangent, A1/B4:point_contact, A1/B5:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.451
+  },
+  {
+   "trial": 91,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.3070924246521884,
+   "oracle_volume": 0.30709242465218844,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.616
+  },
+  {
+   "trial": 92,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 1.9999999999999996,
+   "oracle_volume": 1.9999999999999991,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.32
+  },
+  {
+   "trial": 93,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B1:curve_near_tangent, A2/B2:curve_near_tangent, A2/B5:point_contact, A3/B3:curve_near_tangent, A3/B5:point_contact, A4/B2:point_contact, A4/B3:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.122
+  },
+  {
+   "trial": 94,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "volume": 0.9212452940248168,
+   "oracle_volume": 0.921245294024817,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.786
+  },
+  {
+   "trial": 95,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B2:curve_near_tangent, A2/B0:curve_near_tangent, A2/B2:point_contact, A3/B0:curve_near_tangent, A3/B2:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.684
+  },
+  {
+   "trial": 96,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.432
+  },
+  {
+   "trial": 97,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B1:curve_near_tangent, A5/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.499
+  },
+  {
+   "trial": 98,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:point_contact, A0/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.023
+  },
+  {
+   "trial": 99,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.663
+  },
+  {
+   "trial": 100,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B2:curve_near_tangent, A2/B1:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.809
+  },
+  {
+   "trial": 101,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "volume": 2.6957963267948926,
+   "oracle_volume": 2.6957963267948926,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.248
+  },
+  {
+   "trial": 102,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B1:curve_near_tangent, A1/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.182
+  },
+  {
+   "trial": 103,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.723
+  },
+  {
+   "trial": 104,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 1.1780972450961695,
+   "oracle_volume": 1.1780972450961695,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.242
+  },
+  {
+   "trial": 105,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B3:curve_near_tangent, A5/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.179
+  },
+  {
+   "trial": 106,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.154
+  },
+  {
+   "trial": 107,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B0:curve_near_tangent, A2/B1:point_contact, A2/B2:point_contact, A3/B0:curve_near_tangent, A3/B1:point_contact, A3/B2:point_contact, A4/B2:curve_near_tangent, A5/B1:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.21
+  },
+  {
+   "trial": 108,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:point_contact, A1/B0:curve_near_tangent, A1/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.027
+  },
+  {
+   "trial": 109,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A5/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.126
+  },
+  {
+   "trial": 110,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.038386553081523625,
+   "oracle_volume": 0.038386553081523625,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.335
+  },
+  {
+   "trial": 111,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 0: refusing local split on risk flags ['seam_on_a']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.305
+  },
+  {
+   "trial": 112,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 0: refusing local split on risk flags ['seam_on_a']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.387
+  },
+  {
+   "trial": 113,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B5:curve_near_tangent, A5/B4:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.171
+  },
+  {
+   "trial": 114,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B2:curve_near_tangent, A0/B3:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.162
+  },
+  {
+   "trial": 115,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B2:point_contact, A2/B2:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.187
+  },
+  {
+   "trial": 116,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B3:curve_near_tangent, A0/B4:curve_near_tangent, A0/B5:curve_near_tangent, A1/B3:point_contact, A1/B4:point_contact, A1/B5:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.593
+  },
+  {
+   "trial": 117,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.0789814938839191,
+   "oracle_volume": 0.0789814938839191,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.425
+  },
+  {
+   "trial": 118,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 2.062499999999999,
+   "oracle_volume": 2.062499999999999,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.281
+  },
+  {
+   "trial": 119,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "volume": 0.49999999999999983,
+   "oracle_volume": 0.49999999999999983,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.167
+  },
+  {
+   "trial": 120,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B2:curve_near_tangent, A3/B1:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.095
+  },
+  {
+   "trial": 121,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B4:curve_near_tangent, A0/B5:curve_near_tangent, A1/B4:point_contact, A1/B5:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.321
+  },
+  {
+   "trial": 122,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.11957643468631463,
+   "oracle_volume": 0.11957643468631463,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.478
+  },
+  {
+   "trial": 123,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "volume": 2.0491020655401506,
+   "oracle_volume": 2.0491020655401506,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.712
+  },
+  {
+   "trial": 124,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.126
+  },
+  {
+   "trial": 125,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B3:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.568
+  },
+  {
+   "trial": 126,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "volume": 5.451038755686954,
+   "oracle_volume": 5.451038755686954,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.329
+  },
+  {
+   "trial": 127,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 5: refusing local split on risk flags ['seam_on_b']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 1.015
+  },
+  {
+   "trial": 128,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A1/B0:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.555
+  },
+  {
+   "trial": 129,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A3/B0:point_contact, A5/B0:curve_near_tangent, A5/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.031
+  },
+  {
+   "trial": 130,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B2:curve_near_tangent, A0/B4:point_contact, A1/B2:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.027
+  },
+  {
+   "trial": 131,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "volume": 2.6780972450961693,
+   "oracle_volume": 2.6780972450961693,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.252
+  },
+  {
+   "trial": 132,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "volume": 1.8749999999999996,
+   "oracle_volume": 1.8749999999999996,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.236
+  },
+  {
+   "trial": 133,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B1:curve_near_tangent, A1/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.459
+  },
+  {
+   "trial": 134,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "volume": 0.7519357781851058,
+   "oracle_volume": 0.7519357781851058,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.441
+  },
+  {
+   "trial": 135,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 2.1710185061160807,
+   "oracle_volume": 2.1710185061160807,
+   "audit": {
+    "checked": 149,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.467
+  },
+  {
+   "trial": 136,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 4.624999999999998,
+   "oracle_volume": 4.624999999999999,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.276
+  },
+  {
+   "trial": 137,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.8090740244643235,
+   "oracle_volume": 0.8090740244643236,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.979
+  },
+  {
+   "trial": 138,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "volume": 0.24999999999999997,
+   "oracle_volume": 0.24999999999999992,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.232
+  },
+  {
+   "trial": 139,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "volume": 6.445835623298059,
+   "oracle_volume": 6.445835623298059,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.494
+  },
+  {
+   "trial": 140,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.5390803412290711,
+   "oracle_volume": 0.5390803412290711,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.975
+  },
+  {
+   "trial": 141,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 2.0190980406097894,
+   "oracle_volume": 2.01909804060979,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.426
+  },
+  {
+   "trial": 142,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B4:curve_near_tangent, A0/B5:curve_near_tangent, A1/B0:curve_near_tangent, A1/B4:point_contact, A1/B5:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.213
+  },
+  {
+   "trial": 143,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.057
+  },
+  {
+   "trial": 144,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 1.1780972450961698,
+   "oracle_volume": 1.1780972450961698,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.238
+  },
+  {
+   "trial": 145,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 0: refusing local split on risk flags ['seam_on_b']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.047
+  },
+  {
+   "trial": 146,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A3/B1:point_contact, A4/B0:curve_near_tangent, A4/B1:point_contact, A1/B0:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.047
+  },
+  {
+   "trial": 147,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 4.362272104670694,
+   "oracle_volume": 4.362272104670694,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.033
+  },
+  {
+   "trial": 148,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.4738889633035145,
+   "oracle_volume": 0.4738889633035145,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.612
+  },
+  {
+   "trial": 149,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 1.0069799082581166,
+   "oracle_volume": 1.0069799082581168,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.535
+  },
+  {
+   "trial": 150,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 2.874999999999999,
+   "oracle_volume": 2.874999999999999,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.291
+  },
+  {
+   "trial": 151,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 2.2499999999999996,
+   "oracle_volume": 2.2499999999999996,
+   "audit": {
+    "checked": 149,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.223
+  },
+  {
+   "trial": 152,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.616
+  },
+  {
+   "trial": 153,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B3:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.098
+  },
+  {
+   "trial": 154,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.6318519510713528,
+   "oracle_volume": 0.6318519510713528,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.286
+  },
+  {
+   "trial": 155,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A1/B0:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.877
+  },
+  {
+   "trial": 156,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B0:curve_near_tangent, A1/B2:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.255
+  },
+  {
+   "trial": 157,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 1: refusing local split on risk flags ['seam_on_b']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.378
+  },
+  {
+   "trial": 158,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "intersection",
+    "type": "IntersectionError",
+    "kind": "SectionOutsideTrim",
+    "message": "section edge 0: p-curve left a trimmed input face"
+   },
+   "status": "refuse:SectionOutsideTrim",
+   "seconds": 0.041
+  },
+  {
+   "trial": 159,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B0:curve_near_tangent, A1/B2:point_contact, A5/B0:curve_near_tangent, A5/B2:point_contact, A0/B0:curve_near_tangent, A0/B2:point_contact, A4/B0:curve_near_tangent, A4/B2:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.618
+  },
+  {
+   "trial": 160,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A5/B0:point_contact, A5/B1:point_contact, A3/B0:point_contact, A3/B1:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.024
+  },
+  {
+   "trial": 161,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A0/B2:point_contact, A2/B0:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.019
+  },
+  {
+   "trial": 162,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "volume": 5.379562602932762,
+   "oracle_volume": 5.379562602932762,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.531
+  },
+  {
+   "trial": 163,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B1:point_contact, A1/B1:point_contact, A3/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.088
+  },
+  {
+   "trial": 164,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent, A2/B0:point_contact, A2/B1:curve_near_tangent, A1/B0:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 1.1
+  },
+  {
+   "trial": 165,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A2/B1:curve_near_tangent, A3/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.731
+  },
+  {
+   "trial": 166,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:point_contact, A0/B2:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.011
+  },
+  {
+   "trial": 167,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 1.1874999999999996,
+   "oracle_volume": 1.1874999999999996,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.311
+  },
+  {
+   "trial": 168,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 2.061
+  },
+  {
+   "trial": 169,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 0: refusing local split on risk flags ['seam_on_a']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.566
+  },
+  {
+   "trial": 170,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "volume": 4.191902817522842,
+   "oracle_volume": 4.191902817522841,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.085
+  },
+  {
+   "trial": 171,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B2:curve_near_tangent, A5/B1:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.784
+  },
+  {
+   "trial": 172,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "volume": 5.227237316235216,
+   "oracle_volume": 5.227237316235217,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.577
+  },
+  {
+   "trial": 173,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "volume": 2.9542082817926545,
+   "oracle_volume": 2.9542082817926545,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.686
+  },
+  {
+   "trial": 174,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "volume": 4.060011007760424,
+   "oracle_volume": 4.060011007760425,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.471
+  },
+  {
+   "trial": 175,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "volume": 2.4999999999999996,
+   "oracle_volume": 2.4999999999999996,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.276
+  },
+  {
+   "trial": 176,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B1:curve_near_tangent, A5/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.826
+  },
+  {
+   "trial": 177,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.3159259755356762,
+   "oracle_volume": 0.3159259755356762,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.99
+  },
+  {
+   "trial": 178,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.14726215563702144,
+   "oracle_volume": 0.14726215563702144,
+   "audit": {
+    "checked": 149,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.406
+  },
+  {
+   "trial": 179,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.634
+  },
+  {
+   "trial": 180,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B2:curve_near_tangent, A5/B3:curve_near_tangent, A2/B4:curve_near_tangent, A3/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.291
+  },
+  {
+   "trial": 181,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.19634954084936188,
+   "oracle_volume": 0.19634954084936188,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.269
+  },
+  {
+   "trial": 182,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.128
+  },
+  {
+   "trial": 183,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.10038715563702141,
+   "oracle_volume": 0.10038715563702141,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.379
+  },
+  {
+   "trial": 184,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "volume": 5.5727939165729,
+   "oracle_volume": 5.5727939165729,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.588
+  },
+  {
+   "trial": 185,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B3:point_contact, A2/B1:point_contact, A4/B5:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.083
+  },
+  {
+   "trial": 186,
+   "A": "box",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 2: refusing local split on risk flags ['seam_on_b']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.306
+  },
+  {
+   "trial": 187,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.08561465202947212,
+   "oracle_volume": 0.0856146520294721,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.338
+  },
+  {
+   "trial": 188,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.1963495408493618,
+   "oracle_volume": 0.1963495408493618,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.504
+  },
+  {
+   "trial": 189,
+   "A": "box",
+   "B": "box",
+   "op": "union",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A4/B2:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.146
+  },
+  {
+   "trial": 190,
+   "A": "cyl",
+   "B": "box",
+   "op": "union",
+   "volume": 2.3207963267948926,
+   "oracle_volume": 2.3207963267948926,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.227
+  },
+  {
+   "trial": 191,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A1/B0:point_contact, A4/B0:curve_near_tangent, A0/B0:point_contact"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.024
+  },
+  {
+   "trial": 192,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.23794543700513687,
+   "oracle_volume": 0.23794543700513687,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.47
+  },
+  {
+   "trial": 193,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 2.884840340755428,
+   "oracle_volume": 2.884840340755428,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.292
+  },
+  {
+   "trial": 194,
+   "A": "cyl",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 0: refusing local split on risk flags ['seam_on_a']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.326
+  },
+  {
+   "trial": 195,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "refusal": {
+    "stage": "split",
+    "type": "SplitError",
+    "kind": "RiskySectionCurve",
+    "message": "face 1: refusing local split on risk flags ['seam_on_b']"
+   },
+   "status": "refuse:RiskySectionCurve",
+   "seconds": 0.257
+  },
+  {
+   "trial": 196,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.639016903867099,
+   "oracle_volume": 0.639016903867099,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.526
+  },
+  {
+   "trial": 197,
+   "A": "box",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.12875771359135663,
+   "oracle_volume": 0.12875771359135663,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.373
+  },
+  {
+   "trial": 198,
+   "A": "box",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 150,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 0.124
+  },
+  {
+   "trial": 199,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "UnresolvedContact",
+    "message": "global assembly blocked by unresolved contact(s): A0/B0:curve_near_tangent"
+   },
+   "status": "refuse:UnresolvedContact",
+   "seconds": 0.132
+  }
+ ]
+}

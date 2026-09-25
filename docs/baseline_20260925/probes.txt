@@ -1,0 +1,19 @@
+versions: numpy=2.5.3 cadquery-ocp=8.0.1.0.0 manifold3d=3.5.3
+REFUSE  expect=accept union: boxes sharing a full face                 0.19s  assembly/UnresolvedContact
+REFUSE  expect=accept union: boxes sharing a partial face              0.09s  assembly/UnresolvedContact
+REFUSE  expect=accept union: offset box stacked on top                 0.08s  assembly/UnresolvedContact
+REFUSE  expect=accept cut: slot flush with top face                    0.16s  assembly/UnresolvedContact
+REFUSE  expect=accept cut: pocket flush with top face                  0.08s  assembly/UnresolvedContact
+ACCEPT  expect=accept cut: slot overshooting top face                  0.15s  vol=6 ref=6
+ACCEPT  expect=accept cut: through-hole cylinder                       1.22s  vol=6.429203673 ref=6.429203673
+REFUSE  expect=accept cut: blind hole flush with top                   1.18s  assembly/UnresolvedContact
+REFUSE  expect=accept union: boss on top face                          1.16s  assembly/UnresolvedContact
+REFUSE  expect=accept common: sub-box sharing 3 faces                  0.24s  assembly/UnresolvedContact
+REFUSE  expect=accept cut: corner notch sharing 3 faces                0.31s  assembly/UnresolvedContact
+ACCEPT  expect=accept union: crossing cylinders r1 != r2               2.81s  vol=14.93530141 ref=14.93530141
+REFUSE  expect=refuse union: crossing cylinders equal r (singular)     2.27s  assembly/UnresolvedContact
+ACCEPT  expect=accept cut: sphere from box corner                      1.11s  vol=7.134662047 ref=7.134662047
+REFUSE  expect=either union: boxes touching along one edge             0.05s  assembly/UnresolvedContact
+REFUSE  expect=accept common: boxes sharing only a face                0.18s  assembly/UnresolvedContact
+REFUSE  expect=accept cut: tool sharing only a face                    0.23s  assembly/UnresolvedContact
+wrong=0 unmet_accepts=11
