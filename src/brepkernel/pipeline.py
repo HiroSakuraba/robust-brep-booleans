@@ -247,8 +247,8 @@ def _empty_brep_compound():
 def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                  broadphase_pad=None, chord_tol=None, contact_tol=None,
                  fuzzy=0.0, parallel=True, use_obb=True,
-                 tangent_sin_tol=1e-4, area_rel_tol=2e-6,
-                 sew_tol=None):
+                 tangent_sin_tol=1e-4, max_section_tol=None,
+                 area_rel_tol=2e-6, sew_tol=None):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
 
     Returns (TopoDS_Shape, report) and leaves the existing mesh/proxy
@@ -428,7 +428,9 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             base_tol=float(base_tol), chord_tol=float(chord_tol),
             contact_tol=float(contact_tol), fuzzy=float(fuzzy),
             parallel=bool(parallel), use_obb=bool(use_obb),
-            tangent_sin_tol=float(tangent_sin_tol))
+            tangent_sin_tol=float(tangent_sin_tol),
+            max_section_tol=(None if max_section_tol is None
+                             else float(max_section_tol)))
     except FreeformError as exc:
         refuse("intersection", exc)
 
