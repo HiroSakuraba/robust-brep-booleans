@@ -98,6 +98,9 @@ class SectionPayloadRecord:
     max_transversality: float
     risk_flags: tuple[str, ...]
     repaired_same_parameter: bool
+    shadow_crosschecked: bool
+    shadow_max_distance: Optional[float]
+    shadow_length_rel_error: Optional[float]
     result_edge_indices: tuple[int, ...]
 
 
@@ -880,6 +883,12 @@ def _build_section_payloads(split: ModelSplitResult,
             max_transversality=float(sec.max_transversality),
             risk_flags=tuple(sec.risk_flags),
             repaired_same_parameter=bool(sec.repaired_same_parameter),
+            shadow_crosschecked=bool(sec.shadow_crosschecked),
+            shadow_max_distance=(None if sec.shadow_max_distance is None
+                                 else float(sec.shadow_max_distance)),
+            shadow_length_rel_error=(
+                None if sec.shadow_length_rel_error is None
+                else float(sec.shadow_length_rel_error)),
             result_edge_indices=tuple(sorted(set(result_edges.get(key, [])))),
         ))
     return out
