@@ -371,14 +371,13 @@ def t4_pretrimmed_periodic_step_roundtrip():
     return ok
 
 
-def t5_two_loop_torus_completeness():
-    """One freeform face pair must preserve two disconnected loops.
+def t5_two_loop_torus_periodic_seam_boolean():
+    """Two disconnected loops, one periodic seam, must form a real Boolean.
 
-    At z=0 a torus with major radius 3 and minor radius 1 meets the plane in
-    two circles (r=2 and r=4). A large box below that plane contributes only
-    its top face to the interaction. The loops cross the torus parameter seam,
-    so global splitting is deliberately allowed to refuse; this test pins the
-    *intersection-completeness* invariant separately from seam splitting.
+    At z=0 a torus with major radius 3 and minor radius 1 meets the cutter's
+    top plane in two circles. One loop is already the torus's periodic seam,
+    so it is reused as existing topology on the torus side and remains a split
+    tool on the cutter side. The second loop splits both operands normally.
     """
     torus = to_nurbs(BRepPrimAPI_MakeTorus(3.0, 1.0).Shape())
     cutter = BRepPrimAPI_MakeBox(
@@ -403,38 +402,45 @@ def t5_two_loop_torus_completeness():
         and ixr.raw_unmatched_components == 0
         and ixr.ambiguous_contacts == 0,
         f"candidate_pairs={ixr.candidate_pairs} "
-        f"verified={ixr.verified_edges} "
-        f"raw={ixr.raw_curve_count} "
+        f"verified={ixr.verified_edges} raw={ixr.raw_curve_count} "
         f"trimmed={ixr.raw_trimmed_components} "
         f"unmatched={ixr.raw_unmatched_components} "
         f"max_d={ixr.completeness_max_distance:.3e}")
 
+    risks = [e.risk_flags for e in curve_pairs[0].edges]
     ok &= check(
-        "a5 both loops have exact bilateral surface validation",
-        all(
-            e.exact_curve_on_surface_checked
-            and e.exact_surface_error_a is not None
-            and e.exact_surface_error_b is not None
-            and e.exact_surface_error_a <= e.verify_tolerance
-            and e.exact_surface_error_b <= e.verify_tolerance
-            for e in curve_pairs[0].edges),
-        f"errors={[(e.exact_surface_error_a,e.exact_surface_error_b,e.verify_tolerance) for e in curve_pairs[0].edges]}")
+        "a5 exactly one loop reuses torus seam",
+        sum("seam_on_a" in r for r in risks) == 1,
+        f"risks={risks}")
 
-    # The current split policy intentionally refuses seam-bearing section
-    # curves rather than guessing torus topology. Pin that safe behavior too.
-    try:
-        boolean_brep(torus, cutter, "difference")
-    except BRepAmbiguousResult as exc:
-        refusal = exc.report.get("refusal", {})
-        ok &= check(
-            "a5 seam-bearing full Boolean refuses safely",
-            refusal.get("stage") == "split"
-            and "seam" in refusal.get("message", "").lower(),
-            f"refusal={refusal}")
-    else:
-        ok &= check(
-            "a5 seam-bearing full Boolean refuses safely",
-            False, "unexpectedly accepted seam-bearing torus split")
+    out, report = boolean_brep(torus, cutter, "difference")
+    oracle = cut_oracle(torus, cutter)
+    sp = report["stages"]["split"]
+    asm = report["stages"]["assembly"]
+    ver = report["stages"]["verification"]
+
+    ok &= check(
+        "a5 seam-aware split completes",
+        not sp["unresolved_contacts"]
+        and sp["affected_faces_A"] == 1
+        and sp["affected_faces_B"] == 1,
+        f"split={sp}")
+    ok &= check(
+        "a5 seam-aware result closed and auditable",
+        asm["free_edges"] == 0
+        and asm["multiple_edges"] == 0
+        and asm["edge_lineage"]["boolean_section_edges"] == 2
+        and asm["edge_lineage"]["unattributed_edges"] == 0
+        and ver["brep_valid"]
+        and ver["closed"]
+        and ver["manifold_edges"]
+        and ver["complete_edge_lineage"]
+        and ver["volume_bounds_ok"],
+        f"assembly={asm['edge_lineage']} verification={ver}")
+    ok &= assert_oracle_close(
+        "a5 periodic-seam torus oracle",
+        out, oracle, report,
+        rel=5e-6, abs_tol=1e-9)
     return ok
 
 def main():
@@ -443,7 +449,7 @@ def main():
     ok &= t2_sliver_scale_sweep()
     ok &= t3_oblique_imported_blend_cut()
     ok &= t4_pretrimmed_periodic_step_roundtrip()
-    ok &= t5_two_loop_torus_completeness()
+    ok &= t5_two_loop_torus_periodic_seam_boolean()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
