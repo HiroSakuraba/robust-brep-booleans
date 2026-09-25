@@ -1,14 +1,17 @@
 """Everyday CAD operations that exercise coincident (flush) faces.
 
-Review baseline (commit 5554713, 2026-09-25): 4 accepted and correct,
-10 refused. Nine refusals are coincident-face cases (finding F1); the
+Review baseline (main at 88d09eb, 2026-09-25): 17 cases, 4 accepted and
+13 refused. Eleven refusals are coincident-face cases (finding F1); the
 equal-radius crossing cylinders are a genuine singular intersection and
 SHOULD keep refusing.
 
 Every "expect" field is the target after Gate G2. Exit status is 1 if any
-case is accepted with a wrong volume (must never happen), or if any case
-marked expect="accept" is refused (G2 not yet met). Use --baseline to only
-fail on wrong answers.
+case is accepted with a wrong volume (must never happen), if any case
+marked expect="accept" is refused (G2 not yet met), or if any case marked
+expect="refuse" is accepted (needs human inspection: the kernel may have
+improved, or it may be wrongly accepting). Use --baseline to only fail on
+wrong answers and unexpected accepts, not on refusals of accept-expected
+cases.
 """
 from __future__ import annotations
 
@@ -74,9 +77,10 @@ CASES = [
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--baseline", action="store_true",
-                    help="fail only on wrong answers, not on refusals")
+                    help="fail only on wrong answers and unexpected accepts, "
+                         "not on refusals of accept-expected cases")
     args = ap.parse_args()
-    wrong = unmet = 0
+    wrong = unmet = unexpected_accept = 0
     from brepkernel.assembly import _shape_volume  # noqa: F401  (import check)
     from arbiter import version_banner  # noqa: E402
     print(version_banner(), flush=True)
@@ -95,14 +99,16 @@ def main():
             wrong += not ok
             if expect == "refuse":
                 detail += "  (accepted a case expected to refuse: inspect)"
+                unexpected_accept += 1
         except BRepAmbiguousResult as e:
             r = e.report.get("refusal", {})
             status = "REFUSE"
             detail = f"{r.get('stage')}/{r.get('kind')}"
             unmet += expect == "accept"
         print(f"{status:7s} expect={expect:6s} {name:46s} {time.perf_counter()-t:6.2f}s  {detail}", flush=True)
-    print(f"wrong={wrong} unmet_accepts={unmet}")
-    if wrong:
+    print(f"wrong={wrong} unmet_accepts={unmet} "
+          f"unexpected_accepts={unexpected_accept}")
+    if wrong or unexpected_accept:
         return 1
     return 0 if (args.baseline or unmet == 0) else 1
 

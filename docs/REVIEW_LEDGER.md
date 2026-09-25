@@ -1602,3 +1602,122 @@ Kept as is: the 24-cell keep table in brepkernel/assembly.py::keep_patch
 
 Deferred explicitly: curved/NURBS coincidence acceptance (see
 coincidence_deferred.py). No push, no merge; local branch only.
+
+---
+
+## Probe hardening - review probe pass/fail semantics (2026-09-25)
+
+- Date: 2026-09-25
+- Branch: probe-hardening (local only; never pushed, never merged to main)
+- Base: 88d09eb "Merge v0.9 verified periodic seam-aware NURBS splitting"
+- Commits:
+  - 555616f "tools: import review probe scripts and fixtures verbatim from G0"
+  - d6d2530 "probe: harden review probe pass/fail semantics"
+  - (this entry) "docs: probe-hardening ledger entry"
+- Environment: ~/workspace/brep-booleans/.venv (CPython 3.12.3),
+  numpy==2.5.3, manifold3d==3.5.3, cadquery-ocp==8.0.1.0.0 (OCCT 8.0.1).
+
+Notes on setup (deviations from a plain main checkout):
+- D1: tools/review_probes/ and tests/data/review_20260925/ are not on
+  main; they were imported verbatim from 3ab4426 (G0) in 555616f so this
+  branch is self-contained and the probes are runnable.
+- D2: work was done in a private git worktree at
+  ~/workspace/brep-probe-work because the shared ~/workspace/brep-gates
+  tree was being switched between gate branches by the coordinator
+  mid-task (observed branch flips gate/G7-seam-stress ->
+  gate/G2-planar -> gate/G3G4-rework during this item).
+- D3: main has 14 test files under tests/, not 20. The "20" count seen
+  elsewhere includes unmerged gate-branch tests (G1/G2/G3/G4/G6). The
+  full suite below is the 14 files on this branch; the 6 extra files
+  belong to other gates' unmerged code and were not run here.
+
+### Changes (d6d2530)
+
+tools/review_probes/common_cad_probes.py
+- Added unexpected_accept counter: an accepted case with expect="refuse"
+  now increments it and forces nonzero exit. Previously it only appended
+  "(accepted a case expected to refuse: inspect)" to the detail string and
+  the script could exit 0. Tally line now prints
+  wrong=.. unmet_accepts=.. unexpected_accepts=...; exit is 1 if wrong or
+  unexpected_accept is nonzero (in --baseline mode as well).
+- Docstring reconciled with the measured baseline on main: 17 cases,
+  4 accepted, 13 refused (was: "4 accepted and 10 refused"). Eleven of the
+  13 refusals are coincident-face cases (finding F1); the equal-radius
+  crossing cylinders stay refuse-expected (genuine singular).
+
+tools/review_probes/repro_findings.py
+- F2: on accept, asserts relative volume within 1e-6 of the
+  BRepAlgoAPI_Common oracle AND arbiter membership_audit kernel_errors
+  == 0 (seeded per-trial RNG 20260925). Typed refusal (BRepAmbiguousResult)
+  keeps old behavior: records the refusal, returns False, no assertions.
+- F4: asserts the kernel union winding-number verdict at
+  p=[1.3322189978645596, 1.1200289002934705, -0.8236295495693953] is OUT
+  (|w| < 0.05) and surface_distance from p to the kernel union exceeds 1.0;
+  records the OCCT BRepClass3d_SolidClassifier state at p for A, B, the
+  kernel union, and the OCCT fuse.
+
+No kernel code touched; boolean()/boolean_brep() contracts unchanged;
+typed refusals stay typed.
+
+### I4 evidence (hardened probe vs unmodified main code)
+
+common_cad_probes.py --baseline on main code (pre-hardening script):
+17 cases, 4 ACCEPT, 13 REFUSE, wrong=0, unmet_accepts=11, EXIT=0.
+Accepted: slot overshooting top face (vol=6 ref=6), through-hole cylinder
+(vol=6.429203673), crossing cylinders r1 != r2 (vol=14.93530141), sphere
+from box corner (vol=7.134662047). All 11 accept-expected refusals are
+assembly/UnresolvedContact (coincident faces, finding F1).
+
+Unexpected-accept enforcement demo (throwaway /tmp driver, forced
+expect="refuse" on the accepted case "cut: slot overshooting top face"):
+- old script: ACCEPT ... (accepted a case expected to refuse: inspect) /
+  wrong=0 unmet_accepts=0 / exit 0  <- the weakness
+- hardened script: same line / wrong=0 unmet_accepts=0
+  unexpected_accepts=1 / exit 1  <- fixed
+
+Hardened script on main code: --baseline gives
+wrong=0 unmet_accepts=11 unexpected_accepts=0, exit 0; without --baseline
+exit 1 (unmet accept-expected refusals; G2 not yet done, as designed).
+
+repro_findings.py (hardened) on main code, trimmed:
+versions: numpy=2.5.3 cadquery-ocp=8.0.1.0.0 manifold3d=3.5.3
+F2 OCCT common volume: 0.54081549348893
+F2 REFUSED: {'stage': 'intersection', 'type': 'IntersectionError',
+ 'kind': 'SectionCompletenessMismatch', 'message': 'lower-level
+ intersector exposes 1 trimmed curve component(s) not represented by
+ verified Section edges (raw=3, trimmed=2, max_distance=9.41089e-05,
+ tol=4e-05)'}
+F4 A             occt_state=TopAbs_State.TopAbs_OUT winding=-0.0000 surface_distance=1.5594
+F4 B             occt_state=TopAbs_State.TopAbs_OUT winding=-0.0000 surface_distance=1.0396
+F4 kernel union  occt_state=TopAbs_State.TopAbs_IN winding=+0.0000 surface_distance=1.0396
+F4 OCCT fuse     occt_state=TopAbs_State.TopAbs_IN winding=+0.0000 surface_distance=1.0396
+EXIT=1
+F2 still refuses with SectionCompletenessMismatch on main (G3 not done);
+recorded, not "fixed" here, per the task. Both new F4 asserts pass on
+main (winding +0.0000 < 0.05; distance 1.0396 > 1.0); the OCCT false IN on
+kernel union and OCCT fuse is reproduced exactly as documented.
+
+F2 accept-path assertion sanity (throwaway /tmp script; OCCT's own common
+as stand-in accepted output, since main refuses): relerr_vs_occt=0.0,
+arbiter checked=299 kernel_errors=0 classifier_disagreements=0; negative
+control (wrong volume) trips the 1e-6 assert. The new assertion code is
+sound; it is simply not exercised on main until G3 lands.
+
+### Criterion results
+
+| Criterion | Result |
+|---|---|
+| unexpected_accept counter forces nonzero exit | PASS (demo: old exit 0, new exit 1) |
+| Docstring reconciled with measured baseline | PASS (17 cases, 4 accepted, 13 refused) |
+| F2 asserts volume (1e-6) and arbiter (0 errors) on accept; refusal stays typed | PASS (asserts verified via stand-in; refusal recorded) |
+| F4 asserts winding OUT and distance > 1.0; OCCT states recorded | PASS (both asserts hold on main) |
+| Full suite green (I5) | PASS (14/14 exit 0, 0 [FAIL] lines; detached run after a /tmp wipe and a service restart killed two earlier attempts) |
+| I1-I9 invariants held | PASS (no kernel code touched; refusals typed; boolean()/boolean_brep() contracts unchanged; local branch only, no push/merge) |
+| No em dashes (I8) | PASS (grep over touched files, ledger, commit messages) |
+
+### Open
+
+- F2's hardened accept-path assertions are verified only via the OCCT
+  stand-in; they will first run for real when G3 makes F2 accept.
+- The 6 unmerged gate-branch test files (G1/G2/G3/G4/G6) were not run on
+  this branch; they test code that is not on main.
