@@ -26,7 +26,7 @@ from brepkernel.intersection import intersect_models
 from brepkernel.step_ingest import index_shape
 
 from OCP.BRepAdaptor import BRepAdaptor_Surface
-from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut
 from OCP.BRepBuilderAPI import (
     BRepBuilderAPI_NurbsConvert,
     BRepBuilderAPI_Transform,
@@ -76,6 +76,15 @@ def to_nurbs(shape):
 
 def cut_oracle(a, b):
     x = BRepAlgoAPI_Cut(a, b)
+    x.Build()
+    assert x.IsDone()
+    out = x.Shape()
+    assert BRepCheck_Analyzer(out, True).IsValid()
+    return out
+
+
+def common_oracle(a, b):
+    x = BRepAlgoAPI_Common(a, b)
     x.Build()
     assert x.IsDone()
     out = x.Shape()
@@ -443,6 +452,50 @@ def t5_two_loop_torus_periodic_seam_boolean():
         rel=5e-6, abs_tol=1e-9)
     return ok
 
+
+def t6_reversed_operand_torus_intersection():
+    """Prove seam routing through assembly when the torus is operand B."""
+    torus = to_nurbs(BRepPrimAPI_MakeTorus(3.0, 1.0).Shape())
+    cutter = BRepPrimAPI_MakeBox(
+        gp_Pnt(-5.0, -5.0, -2.0),
+        gp_Pnt(5.0, 5.0, 0.0)).Shape()
+
+    out, report = boolean_brep(cutter, torus, "intersection")
+    oracle = common_oracle(cutter, torus)
+
+    ix = report["stages"]["intersection"]
+    sp = report["stages"]["split"]
+    asm = report["stages"]["assembly"]
+    ver = report["stages"]["verification"]
+
+    ok = check(
+        "a6 reversed operand seam intersection workset",
+        ix["candidate_face_pairs"] == 1
+        and ix["verified_edges"] == 2
+        and ix["raw_trimmed_components"] >= 2
+        and ix["raw_unmatched_components"] == 0,
+        f"intersection={ix}")
+    ok &= check(
+        "a6 reversed operand split/assembly complete",
+        not sp["unresolved_contacts"]
+        and sp["affected_faces_A"] == 1
+        and sp["affected_faces_B"] == 1
+        and asm["free_edges"] == 0
+        and asm["multiple_edges"] == 0
+        and asm["edge_lineage"]["boolean_section_edges"] == 2
+        and asm["edge_lineage"]["unattributed_edges"] == 0
+        and ver["brep_valid"]
+        and ver["closed"]
+        and ver["manifold_edges"]
+        and ver["complete_edge_lineage"]
+        and ver["volume_bounds_ok"],
+        f"split={sp} lineage={asm['edge_lineage']} verification={ver}")
+    ok &= assert_oracle_close(
+        "a6 reversed operand torus oracle",
+        out, oracle, report,
+        rel=5e-6, abs_tol=1e-9)
+    return ok
+
 def main():
     ok = True
     ok &= t1_periodic_nurbs_cylinder_transverse_cut()
@@ -450,6 +503,7 @@ def main():
     ok &= t3_oblique_imported_blend_cut()
     ok &= t4_pretrimmed_periodic_step_roundtrip()
     ok &= t5_two_loop_torus_periodic_seam_boolean()
+    ok &= t6_reversed_operand_torus_intersection()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
