@@ -322,9 +322,10 @@ The dedicated Freeform NURBS CI currently runs:
 6. strict same-domain equivalence regressions;
 7. public one-call B-rep pipeline regressions;
 8. imported multi-face NURBS STEP regression;
-9. existing multi-shell semantic regressions.
+9. adversarial periodic/sliver/oblique/imported NURBS corpus;
+10. existing multi-shell semantic regressions.
 
-The latest strict code-bearing run passes all nine groups with current
+The latest strict code-bearing run passes all ten groups with pinned
 `cadquery-ocp 8.0.1.0.0`.
 
 ### Numerical checks
@@ -408,7 +409,22 @@ Its report includes:
 - unresolved contacts;
 - per-patch material decisions and input provenance;
 - selected faces, shells, solids, free/multiple edges and volume;
-- final validity/closed/manifold status.
+- complete result-edge lineage status;
+- operation-level volume bounds and measured input/result volumes;
+- final validity/closed/manifold status;
+- per-stage wall-clock diagnostics.
+
+Accepted ordinary results now require every final edge to have auditable
+lineage. Boolean-section edges must retain verified bilateral p-curve
+references. The final volume must also satisfy the basic mathematical bounds
+implied by the operation (union, intersection, or A-B), using a
+scale-aware tolerance. These checks are deliberately engine-independent and
+can catch gross patch-selection or shell-orientation failures.
+
+Passing `include_full_evidence=True` adds JSON-ready complete section
+payloads to the report: curve parameters, XYZ samples, UV samples on both
+input faces, tolerances, errors, transversality/risk data, SameParameter
+repair state, and final result-edge links. The default report remains compact.
 
 An exact oriented `TopoDS_Shape.IsEqual()` identity fast path handles
 literal A op A without intersection. Independently constructed but equivalent
@@ -426,7 +442,9 @@ Strict one-to-one face matching remains the preferred same-domain path, but
 equivalent material can legitimately be represented with extra coplanar seams.
 
 When strict matching fails, the optional second stage independently runs
-`ShapeUpgrade_UnifySameDomain` on safe copies of both operands. Before doing
+`ShapeUpgrade_UnifySameDomain` on **deep geometry copies** of both operands.
+The regression suite verifies that the original input keeps its pre-
+canonicalization face decomposition. Before doing
 that expensive normalization, invariant failures that canonicalization is
 required to preserve now terminate the equivalence attempt immediately:
 closed-solid availability, B-rep validity, model bounding box, adaptive volume,
@@ -554,6 +572,73 @@ This is a verified reduction in work, not a claimed wall-clock speedup:
 shared-runner timings remain noisy and OCCT Section / sewing still dominate
 many runs.
 
+## Adversarial NURBS corpus
+
+CI now includes a separate corpus intended to exercise geometry classes that
+were previously listed only as future work.
+
+### Periodic NURBS cylinder
+
+A cylinder is converted to NURBS and cut transversely by an analytic box.
+The periodic B-spline support is preserved on the authoritative input face.
+
+Measured run:
+
+```
+periodic input faces          1
+NURBS accelerators            3 / 3
+candidate face pairs          3
+verified section edges        4
+ambiguous contacts            0
+free / multiple edges         0 / 0
+unattributed result edges     0
+assembled volume       4.13107608215
+OCCT oracle volume     4.13107608215
+absolute error         8.88e-16
+```
+
+### Sliver / tiny-feature sweep
+
+A NURBS sphere is cut so only a spherical cap remains. Feature heights
+`1e-3`, `1e-4`, and `1e-5` are exercised at `base_tol=1e-7`.
+All three currently certify and agree with the independent OCCT oracle to the
+precision printed by the tests. The smallest accepted cap has volume about
+`3.14158e-10`.
+
+The test contract still allows the smallest regime to become a typed refusal
+if future tolerance changes make certification inappropriate; an inaccurate
+accepted solid is never allowed.
+
+### Oblique imported blend cut
+
+The 26-face all-NURBS filleted STEP solid is cut with a box rotated 11 degrees
+about the part center. The run keeps eight verified section edges, complete
+edge provenance, one closed material solid, and oracle-identical volume to the
+printed precision.
+
+### Pre-trimmed periodic STEP round-trip
+
+A cylinder is first notched by an OCCT Boolean, then the already-trimmed result
+is converted to NURBS, written to STEP, read back, and cut again on the
+opposite side. This exercises periodic parameter-frame recovery after previous
+topology work and data exchange rather than only a pristine primitive.
+
+Measured run:
+
+```
+imported NURBS faces          8
+periodic imported faces       1
+candidate face pairs          3
+verified section edges        4
+ambiguous contacts            0
+Boolean-section result edges  4
+free / multiple edges         0 / 0
+unattributed result edges     0
+assembled volume       4.20499408213
+OCCT oracle volume     4.20499408213
+absolute error         8.88e-16
+```
+
 ## Runtime profiling
 
 The public `boolean_brep()` report now records wall-clock timings (milliseconds)
@@ -573,6 +658,13 @@ intended to identify real production bottlenecks before introducing more
 aggressive patch subdivision or approximation machinery.
 
 Timings are diagnostics, not acceptance criteria, and can vary across machines.
+
+The profiling also exposed avoidable same-domain work. Canonicalization is now
+skipped when a preserved invariant already differs (for example model bounding
+box, volume, or global material orientation). On one shared-runner
+converted-sphere union this reduced the reported same-domain stage from roughly
+374 ms before the short-circuit to roughly 30 ms afterward. That is a measured
+example, not a stable benchmark.
 
 ## Performance boundary
 
@@ -607,16 +699,21 @@ The main remaining work is:
 
 - broader different-decomposition equivalence beyond cases reducible by
   same-domain face/edge unification;
-- harder imported STEP/NURBS corpus cases beyond the now-pinned all-edge
-  filleted rounded box: blends, trimmed periodic faces, sliver faces, tiny
-  features, near tangencies and mixed analytic/freeform surfaces;
-- serialization/export of the canonical result provenance payloads; complete
-  XYZ/UV evidence is now retained in memory but is intentionally summarized in
-  the ordinary public report;
+- larger and genuinely industrial STEP/NURBS corpora: G2 blends, complex
+  lofts/sweeps, pathological trim loops, imported tolerance damage, and
+  assemblies with hundreds or thousands of interacting faces;
+- more degenerate freeform contact classes: coincident seams, overlapping
+  same-surface trims, multiple curves meeting at one vertex, and features at
+  or below the configured tolerance scale;
+- a stronger mathematical/certification story for OCCT's approximate section
+  curves beyond the current tolerance ceiling, SameParameter requirement,
+  bilateral p-curve checks, adaptive sampling and trim verification;
 - deciding whether/when the legacy mesh/proxy `boolean()` and the new
   `boolean_brep()` should share a common dispatch surface; they are currently
   separate public routes so the stable Tier A contract is not silently changed;
-- a canonical `SolidComplex` result representation;
+- a canonical `SolidComplex` result representation and durable on-disk
+  evidence artifact format; full XYZ/UV evidence is now JSON-exportable from
+  the public report but not yet versioned as a standalone interchange schema;
 - certified local tessellation error bounds if tessellation is used for later
   acceleration or downstream consumers;
 - profiling on production-scale STEP assemblies before adding more subdivision
