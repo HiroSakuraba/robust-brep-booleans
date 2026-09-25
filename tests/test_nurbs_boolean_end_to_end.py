@@ -10,16 +10,17 @@ import sys
 
 sys.path.insert(0, "src")
 
+from brepkernel import BRepAmbiguousResult, boolean_brep
 from brepkernel.assembly import assemble_boolean
 from brepkernel.intersection import intersect_models
 from brepkernel.split import split_models
 from brepkernel.step_ingest import index_shape
 
-from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
 from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepGProp import BRepGProp
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeSphere
 from OCP.GProp import GProp_GProps
 from OCP.gp import gp_Pnt
 
@@ -42,6 +43,60 @@ def to_nurbs(shape):
     assert c.IsDone()
     return c.Shape()
 
+
+
+def t2_tiny_nurbs_cap_accepts_accurately_or_refuses():
+    """A 1e-4-high NURBS spherical cap must never become a silent wrong solid.
+
+    Acceptance requires a valid B-rep and close agreement with an independent
+    OCCT cut oracle. Refusal is also correct for this deliberately difficult
+    near-tangent/tiny-feature regime, but it must be a typed Tier B/C refusal.
+    """
+    sphere = to_nurbs(
+        BRepPrimAPI_MakeSphere(gp_Pnt(0, 0, 0), 1.0).Shape())
+    cutter = BRepPrimAPI_MakeBox(
+        gp_Pnt(-2.0, -2.0, -2.0),
+        gp_Pnt(2.0, 2.0, 0.9999)).Shape()
+
+    oracle = BRepAlgoAPI_Cut(sphere, cutter)
+    oracle.Build()
+    assert oracle.IsDone()
+    ov = volume(oracle.Shape())
+    assert ov > 0.0
+
+    try:
+        out, report = boolean_brep(
+            sphere, cutter, "difference",
+            base_tol=1e-7, chord_tol=2e-7,
+            contact_tol=4e-7)
+    except BRepAmbiguousResult as exc:
+        refusal = exc.report.get("refusal", {})
+        safe_kinds = {
+            "UnresolvedContact",
+            "SectionToleranceTooLoose",
+            "PatchClassificationInconsistent",
+            "InsufficientPatchWitnesses",
+            "InsufficientShellWitnesses",
+            "OpenAssembly",
+            "SewingInvalid",
+            "SolidInvalid",
+        }
+        return check(
+            "n2 tiny cap typed refusal",
+            refusal.get("kind") in safe_kinds
+            and not exc.report.get("accepted", False),
+            f"refusal={refusal}")
+
+    rv = volume(out)
+    abs_err = abs(rv - ov)
+    rel_err = abs_err / max(abs(ov), 1e-30)
+    return check(
+        "n2 tiny cap accepted accurately",
+        report["accepted"]
+        and BRepCheck_Analyzer(out, True).IsValid()
+        and abs_err <= max(5e-10, 5e-4 * abs(ov)),
+        f"assembled={rv:.12g} oracle={ov:.12g} "
+        f"abs_err={abs_err:.3e} rel_err={rel_err:.3e}")
 
 def main():
     analytic_a = BRepPrimAPI_MakeSphere(gp_Pnt(0, 0, 0), 1.0).Shape()
@@ -111,6 +166,7 @@ def main():
         and all(d.sewed_face is not None for d in kept_a + kept_b),
         f"keptA={len(kept_a)} keptB={len(kept_b)}")
 
+    ok &= t2_tiny_nurbs_cap_accepts_accurately_or_refuses()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
