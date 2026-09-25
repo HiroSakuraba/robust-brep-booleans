@@ -10,7 +10,9 @@ import numpy as np
 
 sys.path.insert(0, "src")
 
-from brepkernel.intersection import intersect_models, section_face_pair
+from brepkernel.intersection import (
+    IntersectionError, intersect_models, section_face_pair,
+)
 from brepkernel.step_ingest import index_shape
 
 from OCP.BRep import BRep_Builder
@@ -169,6 +171,30 @@ def t5_near_tangent_gap_is_ambiguous_not_disjoint():
                  f"statuses={statuses}")
 
 
+
+def t6_loose_section_tolerance_refuses():
+    """The verifier may not widen itself to an arbitrarily loose OCCT edge.
+
+    An unrealistically tight caller ceiling is used to pin the refusal path:
+    the ordinary section succeeds, but the same geometry must refuse when the
+    allowed section/face tolerance is below OCCT's B-rep tolerance.
+    """
+    bs = _bspline()
+    fa = BRepBuilderAPI_MakeFace(bs, 1e-7).Face()
+    fb = _vertical_plane()
+    a = index_shape(_shell(fa))
+    b = index_shape(_shell(fb))
+    try:
+        intersect_models(
+            a, b, base_tol=1e-7, chord_tol=1e-5,
+            max_section_tol=1e-12)
+    except IntersectionError as e:
+        return check(
+            "t6 loose section tolerance refuses",
+            getattr(e, "kind", "") == "SectionToleranceTooLoose",
+            f"kind={getattr(e, 'kind', '?')} message={e}")
+    return check("t6 loose section tolerance refuses", False, "no refusal")
+
 def main():
     ok = True
     ok &= t1_transverse_curve_has_verified_pcurves()
@@ -176,6 +202,7 @@ def main():
     ok &= t3_far_faces_cost_zero_section_calls()
     ok &= t4_tangent_contact_not_disjoint()
     ok &= t5_near_tangent_gap_is_ambiguous_not_disjoint()
+    ok &= t6_loose_section_tolerance_refuses()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
