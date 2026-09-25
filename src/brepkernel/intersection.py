@@ -89,8 +89,11 @@ def _adaptive_edge_samples(edge, chord_tol: float, *,
         return cache[t]
 
     # Mandatory global coverage protects against a sampler returning only
-    # endpoints on a geometrically simple curve.
-    seeds = [t0 + (t1 - t0) * q for q in (0.0, 0.25, 0.5, 0.75, 1.0)]
+    # endpoints on a geometrically simple curve and makes p-curve/surface
+    # agreement checks less dependent on the deflection sampler's placement.
+    # 33 points is intentionally modest: curvature-driven OCCT proposals and
+    # recursive chord checks may add more where geometry requires it.
+    seeds = [t0 + (t1 - t0) * (i / 32.0) for i in range(33)]
 
     try:
         proposed = GCPnts_QuasiUniformDeflection(
@@ -294,7 +297,13 @@ def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
     c3 = BRepAdaptor_Curve(edge)
     first = float(c3.FirstParameter())
     last = float(c3.LastParameter())
-    local_chord = (max(4.0 * verify_tol, 1e-9)
+    # For the default path, verification sampling should be commensurate
+    # with the geometric tolerance we are actually willing to accept.  Using
+    # base_tol here used to force thousands of samples even when OCCT had
+    # already bounded the section at ~1e-5.  A 2x verify-tolerance chord target
+    # remains stricter than the acceptance ceiling while avoiding that
+    # accidental over-sampling. Explicit caller chord_tol is never relaxed.
+    local_chord = (max(2.0 * verify_tol, 1e-9)
                    if chord_tol is None else float(chord_tol))
     ts, xyz = _adaptive_edge_samples(edge, local_chord)
 
