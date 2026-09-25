@@ -262,6 +262,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
 
     Difference means A - B.
     """
+    from time import perf_counter
     from OCP.BRepCheck import BRepCheck_Analyzer
 
     from .freeform import FreeformError
@@ -287,10 +288,12 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     if chord_tol is None:
         chord_tol = max(4.0 * float(base_tol), 1e-9)
 
+    t_total = perf_counter()
     report = {
         "op": op,
         "route": "Tier B/C exact trimmed B-rep",
         "stages": {},
+        "timings_ms": {},
         "accepted": False,
     }
 
@@ -304,11 +307,15 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         raise BRepAmbiguousResult(
             f"B-rep result refused in {stage}: {exc}", report, exc) from exc
 
+    t_stage = perf_counter()
     try:
         a = shapeA if isinstance(shapeA, BRepModel) else index_shape(shapeA)
         b = shapeB if isinstance(shapeB, BRepModel) else index_shape(shapeB)
     except FreeformError as exc:
+        report["timings_ms"]["ingest"] = (perf_counter() - t_stage) * 1000.0
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
         refuse("ingest", exc)
+    report["timings_ms"]["ingest"] = (perf_counter() - t_stage) * 1000.0
 
     report["stages"]["ingest"] = {
         "A": {
@@ -343,7 +350,9 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             "same_domain_equivalent": True,
             "resolution": resolution,
         }
-        report["stages"]["verification"] = {
+        report["timings_ms"]["verification"] = (
+        perf_counter() - t_stage) * 1000.0
+    report["stages"]["verification"] = {
             "brep_valid": True if op == "difference"
             else bool(BRepCheck_Analyzer(out, True).IsValid()),
             "identity_exact": True,
@@ -353,14 +362,18 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                                 "IdentityResultInvalid")
             refuse("verification", exc)
         report["accepted"] = True
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
         return out, report
 
     # Independently constructed B-reps can represent the same material
     # boundary without sharing a TShape. Use the strict optional recognizer;
     # failure means "not proven equivalent", never "different".
+    t_stage = perf_counter()
     sd = same_domain_models(
         a, b, base_tol=float(base_tol),
         fuzz=max(float(base_tol), float(fuzzy)))
+    report["timings_ms"]["same_domain"] = (
+        perf_counter() - t_stage) * 1000.0
     def canonical_report(ev):
         if ev is None:
             return None
@@ -420,8 +433,10 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                                 "SameDomainResultInvalid")
             refuse("verification", exc)
         report["accepted"] = True
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
         return out, report
 
+    t_stage = perf_counter()
     try:
         ix = intersect_models(
             a, b, broadphase_pad=float(broadphase_pad),
@@ -432,7 +447,12 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             max_section_tol=(None if max_section_tol is None
                              else float(max_section_tol)))
     except FreeformError as exc:
+        report["timings_ms"]["intersection"] = (
+            perf_counter() - t_stage) * 1000.0
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
         refuse("intersection", exc)
+    report["timings_ms"]["intersection"] = (
+        perf_counter() - t_stage) * 1000.0
 
     report["stages"]["intersection"] = {
         "candidate_face_pairs": ix.candidate_pairs,
@@ -443,13 +463,19 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "face_pairs_skipped": ix.skipped_by_broadphase,
     }
 
+    t_stage = perf_counter()
     try:
         sp = split_models(
             a, b, ix, base_tol=float(base_tol),
             area_rel_tol=float(area_rel_tol), fuzzy=float(fuzzy),
             parallel=bool(parallel), use_obb=bool(use_obb))
     except FreeformError as exc:
+        report["timings_ms"]["split"] = (
+            perf_counter() - t_stage) * 1000.0
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
         refuse("split", exc)
+    report["timings_ms"]["split"] = (
+        perf_counter() - t_stage) * 1000.0
 
     report["stages"]["split"] = {
         "split_calls": sp.split_calls,
@@ -458,12 +484,20 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "unresolved_contacts": list(sp.unresolved_contacts),
     }
 
+    t_stage = perf_counter()
     try:
         assembled = assemble_boolean(
             a, b, sp, op, base_tol=float(base_tol), sew_tol=sew_tol)
     except FreeformError as exc:
+        report["timings_ms"]["assembly"] = (
+            perf_counter() - t_stage) * 1000.0
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
         refuse("assembly", exc)
+    report["timings_ms"]["assembly"] = (
+        perf_counter() - t_stage) * 1000.0
 
+    section_sample_counts = [
+        int(len(p.parameters)) for p in assembled.section_payloads]
     report["stages"]["assembly"] = {
         "selected_faces": assembled.selected_faces,
         "shells": len(assembled.shells),
@@ -472,6 +506,14 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "multiple_edges": assembled.multiple_edges,
         "volume": assembled.volume,
         "empty": assembled.is_empty,
+        "section_sampling": {
+            "sections": len(section_sample_counts),
+            "total_samples": int(sum(section_sample_counts)),
+            "max_samples": int(max(section_sample_counts, default=0)),
+            "mean_samples": (float(sum(section_sample_counts))
+                             / len(section_sample_counts)
+                             if section_sample_counts else 0.0),
+        },
         "section_payloads": [
             {
                 "ref": [p.face_a, p.face_b, p.section_edge_index],
@@ -526,6 +568,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         ],
     }
 
+    t_stage = perf_counter()
     valid = (True if assembled.is_empty
              else bool(BRepCheck_Analyzer(assembled.shape, True).IsValid()))
     report["stages"]["verification"] = {
@@ -540,4 +583,5 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         refuse("verification", exc)
 
     report["accepted"] = True
+    report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
     return assembled.shape, report
