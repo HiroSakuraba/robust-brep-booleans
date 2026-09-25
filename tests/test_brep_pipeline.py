@@ -66,6 +66,8 @@ def t1_one_call_true_nurbs_union():
         "p1 conservative exact workset",
         ix["candidate_face_pairs"] == 1 and ix["section_calls"] == 1
         and ix["verified_edges"] >= 1
+        and ix["shadow_section_calls"] == 1
+        and ix["shadow_verified_edges"] >= 1
         and ix["ambiguous_contacts"] == 0,
         f"intersection={ix}")
     want = 9.0 * math.pi / 4.0
@@ -81,6 +83,7 @@ def t1_one_call_true_nurbs_union():
         and ver["closed"]
         and ver["manifold_edges"]
         and ver["complete_edge_lineage"]
+        and ver["shadow_section_crosscheck_complete"]
         and ver["volume_bounds_ok"]
         and not ver["unattributed_edges"]
         and not ver["section_edges_missing_verified_pcurves"],
@@ -99,6 +102,9 @@ def t1_one_call_true_nurbs_union():
         "p1 section payload summaries",
         bool(payloads)
         and all(p["samples"] >= 2 and p["verify_tolerance"] > 0
+                and p["shadow_crosschecked"]
+                and p["shadow_max_distance"] is not None
+                and p["shadow_length_rel_error"] is not None
                 for p in payloads)
         and any(p["result_edges"] for p in payloads),
         f"section_payloads={payloads}")
