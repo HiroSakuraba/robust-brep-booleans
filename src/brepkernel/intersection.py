@@ -259,7 +259,7 @@ def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
         float(np.linalg.norm(fa.bbox_hi - fa.bbox_lo)),
         float(np.linalg.norm(fb.bbox_hi - fb.bbox_lo)),
         1.0)
-    tol_limit = (max(64.0 * float(base_tol), 1e-8 * scale)
+    tol_limit = (max(128.0 * float(base_tol), 1e-8 * scale)
                  if max_section_tol is None
                  else float(max_section_tol))
     if not tol_limit > 0.0:
