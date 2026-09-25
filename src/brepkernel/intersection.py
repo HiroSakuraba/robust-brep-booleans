@@ -659,6 +659,9 @@ def _raw_intersector_completeness_probe(
             f"lower-level face/face intersector failed for "
             f"{fa.face_id}/{fb.face_id}",
             kind="IntersectionCompletenessProbeFailed")
+    # Mirror BOPAlgo_PaveFiller: it prepares the IntTools curves with
+    # bSplitCurve=False before storing them in the face/face interference DS.
+    raw.PrepareLines3D(False)
 
     lines = raw.Lines()
     raw_count = int(lines.Length())
