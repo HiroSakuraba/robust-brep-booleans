@@ -127,6 +127,10 @@ def t1_one_call_true_nurbs_union():
             and all(len(x) == 3 for x in p["xyz"])
             and all(len(x) == 2 for x in p["uv_A"])
             and all(len(x) == 2 for x in p["uv_B"])
+            and p["exact_curve_on_surface_checked"]
+            and p["exact_surface_error_A"] is not None
+            and p["exact_surface_error_B"] is not None
+            and p["shadow_crosschecked"]
             for p in full)
         and isinstance(json.dumps(report), str),
         f"full_payloads={len(full)}")
