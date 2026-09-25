@@ -688,8 +688,12 @@ def _raw_intersector_completeness_probe(
                 f"raw intersection curve {i} is unbounded",
                 kind="IntersectionCompletenessProbeFailed")
 
-        c2a = ic.FirstCurve2d()
-        c2b = ic.SecondCurve2d()
+        c2first = ic.FirstCurve2d()
+        c2second = ic.SecondCurve2d()
+        if raw.Face1().IsSame(fa.face):
+            c2a, c2b = c2first, c2second
+        else:
+            c2a, c2b = c2second, c2first
         if c2a is None or c2b is None:
             raise IntersectionError(
                 f"raw intersection curve {i} lacks bilateral p-curves",
