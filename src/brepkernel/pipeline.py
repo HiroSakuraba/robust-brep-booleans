@@ -224,3 +224,520 @@ def boolean(solidA, solidB, op, proxy_tol=1e-3, allow_skips=True):
             f"tol={check_tol:g}); near-degenerate region, refusing",
             mesh, report)
     return mesh, report
+
+
+class BRepAmbiguousResult(Exception):
+    """Tier B/C B-rep refusal with the completed stage report attached."""
+
+    def __init__(self, message, report, cause=None):
+        super().__init__(message)
+        self.report = report
+        self.cause = cause
+
+
+def _empty_brep_compound():
+    from OCP.BRep import BRep_Builder
+    from OCP.TopoDS import TopoDS_Compound
+    c = TopoDS_Compound()
+    b = BRep_Builder()
+    b.MakeCompound(c)
+    return c
+
+
+def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
+                 broadphase_pad=None, chord_tol=None, contact_tol=None,
+                 fuzzy=0.0, parallel=True, use_obb=True,
+                 tangent_sin_tol=1e-4, max_section_tol=None,
+                 area_rel_tol=2e-6, sew_tol=None,
+                 include_full_evidence=False,
+                 shadow_section_crosscheck=False):
+    """Run the exact trimmed-B-rep Tier B/C pipeline.
+
+    Returns (TopoDS_Shape, report) and leaves the existing mesh/proxy
+    boolean() API unchanged.
+
+    shapeA and shapeB may be OCCT TopoDS shapes or already-indexed BRepModel
+    objects. Ambiguous contacts, failed p-curve verification, split
+    inconsistencies, open/non-manifold sewing, and boundary-only patch
+    classifications refuse through BRepAmbiguousResult rather than being
+    converted into a guessed result.
+
+    Difference means A - B.
+
+    If include_full_evidence is True, the report also contains the complete
+    verified section sample payloads (parameters, XYZ, and UV on both input
+    faces) converted to ordinary Python lists so the report can be serialized
+    directly to JSON. The default remains a compact summary.
+
+    shadow_section_crosscheck=True additionally runs OCCT's alternative
+    non-approximated section construction and requires geometric agreement.
+    It is an optional stress mode, not part of the default certification path:
+    on difficult freeform walking intersections that alternative construction
+    can be less accurate than the primary representation.
+    """
+    from time import perf_counter
+    from OCP.BRepCheck import BRepCheck_Analyzer
+
+    from .freeform import FreeformError
+    from .step_ingest import BRepModel, index_shape
+    from .intersection import intersect_models
+    from .split import split_models
+    from .assembly import assemble_boolean, _shape_volume
+    from .same_domain import same_domain_models
+
+    if op not in ("union", "intersection", "difference"):
+        raise ValueError(f"unknown op {op!r}")
+    if not base_tol > 0:
+        raise ValueError("base_tol must be positive")
+    if fuzzy < 0:
+        raise ValueError("fuzzy must be >= 0")
+
+    if contact_tol is None:
+        contact_tol = 4.0 * float(base_tol)
+    if broadphase_pad is None:
+        # Preserve tolerance-near contacts for the exact contact classifier;
+        # a fast AABB rejection must not make them disappear.
+        broadphase_pad = max(float(contact_tol), 4.0 * float(base_tol))
+    # Keep an unspecified chord tolerance as None.  The intersection verifier
+    # can then derive a local sampling tolerance from the *actual* accepted
+    # OCCT edge/face tolerance.  Turning None into a global base_tol-derived
+    # number here caused severe over-sampling on otherwise well-bounded NURBS
+    # sections. Explicit caller values are still honored exactly.
+    t_total = perf_counter()
+    report = {
+        "op": op,
+        "route": "Tier B/C exact trimmed B-rep",
+        "stages": {},
+        "timings_ms": {},
+        "accepted": False,
+    }
+
+    def refuse(stage, exc):
+        report["refusal"] = {
+            "stage": stage,
+            "type": type(exc).__name__,
+            "kind": getattr(exc, "kind", type(exc).__name__),
+            "message": str(exc),
+        }
+        raise BRepAmbiguousResult(
+            f"B-rep result refused in {stage}: {exc}", report, exc) from exc
+
+    t_stage = perf_counter()
+    try:
+        a = shapeA if isinstance(shapeA, BRepModel) else index_shape(shapeA)
+        b = shapeB if isinstance(shapeB, BRepModel) else index_shape(shapeB)
+    except FreeformError as exc:
+        report["timings_ms"]["ingest"] = (perf_counter() - t_stage) * 1000.0
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
+        refuse("ingest", exc)
+    report["timings_ms"]["ingest"] = (perf_counter() - t_stage) * 1000.0
+
+    report["stages"]["ingest"] = {
+        "A": {
+            "solids": len(a.solids), "shells": len(a.shells),
+            "faces": len(a.faces), "freeform_accels": len(a.nurbs_faces),
+            "local_patches": sum(
+                len(fr.freeform.index.records)
+                for fr in a.faces if fr.freeform is not None),
+        },
+        "B": {
+            "solids": len(b.solids), "shells": len(b.shells),
+            "faces": len(b.faces), "freeform_accels": len(b.nurbs_faces),
+            "local_patches": sum(
+                len(fr.freeform.index.records)
+                for fr in b.faces if fr.freeform is not None),
+        },
+    }
+
+    # Exact oriented topological equality is the cheapest identity path.
+    # IsSame() is intentionally NOT used: OCCT documents that IsSame ignores
+    # orientation, so a reversed view of the same TShape would otherwise be
+    # accepted as identical material.
+    if a.shape.IsEqual(b.shape):
+        if op == "difference":
+            out = _empty_brep_compound()
+            resolution = "empty"
+        else:
+            out = a.shape
+            resolution = "A"
+        report["stages"]["identity"] = {
+            "exact_topological_identity": True,
+            "same_domain_equivalent": True,
+            "resolution": resolution,
+        }
+        t_verify = perf_counter()
+        report["stages"]["verification"] = {
+            "brep_valid": True if op == "difference"
+            else bool(BRepCheck_Analyzer(out, True).IsValid()),
+            "identity_exact": True,
+        }
+        report["timings_ms"]["verification"] = (
+            perf_counter() - t_verify) * 1000.0
+        if not report["stages"]["verification"]["brep_valid"]:
+            exc = FreeformError("exact-identity result is not B-rep valid",
+                                "IdentityResultInvalid")
+            refuse("verification", exc)
+        report["accepted"] = True
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
+        return out, report
+
+    # Independently constructed B-reps can represent the same material
+    # boundary without sharing a TShape. Use the strict optional recognizer;
+    # failure means "not proven equivalent", never "different".
+    t_stage = perf_counter()
+    sd = same_domain_models(
+        a, b, base_tol=float(base_tol),
+        fuzz=max(float(base_tol), float(fuzzy)))
+    report["timings_ms"]["same_domain"] = (
+        perf_counter() - t_stage) * 1000.0
+    def canonical_report(ev):
+        if ev is None:
+            return None
+        return {
+            "changed": ev.changed,
+            "faces_before": ev.faces_before,
+            "faces_after": ev.faces_after,
+            "shells_before": ev.shells_before,
+            "shells_after": ev.shells_after,
+            "solids_before": ev.solids_before,
+            "solids_after": ev.solids_after,
+            "bbox_error": ev.bbox_error,
+            "volume_before": ev.volume_before,
+            "volume_after": ev.volume_after,
+            "volume_rel_error": ev.volume_rel_error,
+        }
+
+    report["stages"]["same_domain"] = {
+        "equivalent": sd.equivalent,
+        "reason": sd.reason,
+        "matched_faces": len(sd.matches),
+        "candidate_counts": list(sd.candidate_counts),
+        "signed_volume_A": sd.signed_volume_a,
+        "signed_volume_B": sd.signed_volume_b,
+        "bbox_error": sd.bbox_error,
+        "canonicalized": sd.canonicalized,
+        "canonical_A": canonical_report(sd.canonical_a),
+        "canonical_B": canonical_report(sd.canonical_b),
+    }
+    if sd.equivalent:
+        if op == "difference":
+            out = _empty_brep_compound()
+            resolution = "empty"
+        else:
+            out = a.shape
+            resolution = "A"
+        report["stages"]["same_domain"]["resolution"] = resolution
+        report["stages"]["same_domain"]["face_matches"] = [
+            {
+                "A": ev.face_a,
+                "B": ev.face_b,
+                "bbox_error": ev.bbox_error,
+                "area_rel_error": ev.area_rel_error,
+                "perimeter_rel_error": ev.perimeter_rel_error,
+                "edges": ev.edge_count,
+                "wires": ev.wire_count,
+            }
+            for ev in sd.matches
+        ]
+        t_verify = perf_counter()
+        report["stages"]["verification"] = {
+            "brep_valid": True if op == "difference"
+            else bool(BRepCheck_Analyzer(out, True).IsValid()),
+            "strict_same_domain": True,
+        }
+        report["timings_ms"]["verification"] = (
+            perf_counter() - t_verify) * 1000.0
+        if not report["stages"]["verification"]["brep_valid"]:
+            exc = FreeformError("same-domain fast-path result is invalid",
+                                "SameDomainResultInvalid")
+            refuse("verification", exc)
+        report["accepted"] = True
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
+        return out, report
+
+    t_stage = perf_counter()
+    try:
+        ix = intersect_models(
+            a, b, broadphase_pad=float(broadphase_pad),
+            base_tol=float(base_tol),
+            chord_tol=(None if chord_tol is None else float(chord_tol)),
+            contact_tol=float(contact_tol), fuzzy=float(fuzzy),
+            parallel=bool(parallel), use_obb=bool(use_obb),
+            tangent_sin_tol=float(tangent_sin_tol),
+            max_section_tol=(None if max_section_tol is None
+                             else float(max_section_tol)),
+            crosscheck_nonapprox=bool(shadow_section_crosscheck))
+    except FreeformError as exc:
+        report["timings_ms"]["intersection"] = (
+            perf_counter() - t_stage) * 1000.0
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
+        refuse("intersection", exc)
+    report["timings_ms"]["intersection"] = (
+        perf_counter() - t_stage) * 1000.0
+
+    report["stages"]["intersection"] = {
+        "candidate_face_pairs": ix.candidate_pairs,
+        "section_calls": ix.section_calls,
+        "verified_edges": ix.verified_edges,
+        "point_contacts": ix.point_contacts,
+        "ambiguous_contacts": ix.ambiguous_contacts,
+        "face_pairs_skipped": ix.skipped_by_broadphase,
+        "shadow_section_calls": ix.shadow_section_calls,
+        "shadow_verified_edges": ix.shadow_verified_edges,
+        "max_shadow_distance": ix.max_shadow_distance,
+        "completeness_probes": ix.completeness_probes,
+        "raw_curve_count": ix.raw_curve_count,
+        "raw_trimmed_components": ix.raw_trimmed_components,
+        "raw_unmatched_components": ix.raw_unmatched_components,
+        "completeness_max_distance": ix.completeness_max_distance,
+    }
+
+    t_stage = perf_counter()
+    try:
+        sp = split_models(
+            a, b, ix, base_tol=float(base_tol),
+            area_rel_tol=float(area_rel_tol), fuzzy=float(fuzzy),
+            parallel=bool(parallel), use_obb=bool(use_obb))
+    except FreeformError as exc:
+        report["timings_ms"]["split"] = (
+            perf_counter() - t_stage) * 1000.0
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
+        refuse("split", exc)
+    report["timings_ms"]["split"] = (
+        perf_counter() - t_stage) * 1000.0
+
+    report["stages"]["split"] = {
+        "split_calls": sp.split_calls,
+        "affected_faces_A": sp.affected_faces_a,
+        "affected_faces_B": sp.affected_faces_b,
+        "unresolved_contacts": list(sp.unresolved_contacts),
+    }
+
+    t_stage = perf_counter()
+    try:
+        assembled = assemble_boolean(
+            a, b, sp, op, base_tol=float(base_tol), sew_tol=sew_tol)
+    except FreeformError as exc:
+        report["timings_ms"]["assembly"] = (
+            perf_counter() - t_stage) * 1000.0
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
+        refuse("assembly", exc)
+    report["timings_ms"]["assembly"] = (
+        perf_counter() - t_stage) * 1000.0
+
+    section_sample_counts = [
+        int(len(p.parameters)) for p in assembled.section_payloads]
+    report["stages"]["assembly"] = {
+        "selected_faces": assembled.selected_faces,
+        "shells": len(assembled.shells),
+        "solids": len(assembled.solids),
+        "free_edges": assembled.free_edges,
+        "multiple_edges": assembled.multiple_edges,
+        "volume": assembled.volume,
+        "empty": assembled.is_empty,
+        "section_sampling": {
+            "sections": len(section_sample_counts),
+            "total_samples": int(sum(section_sample_counts)),
+            "max_samples": int(max(section_sample_counts, default=0)),
+            "mean_samples": (float(sum(section_sample_counts))
+                             / len(section_sample_counts)
+                             if section_sample_counts else 0.0),
+        },
+        "section_payloads": [
+            {
+                "ref": [p.face_a, p.face_b, p.section_edge_index],
+                "samples": int(len(p.parameters)),
+                "result_edges": list(p.result_edge_indices),
+                "edge_tolerance": p.edge_tolerance,
+                "verify_tolerance": p.verify_tolerance,
+                "max_surface_error_A": p.max_surface_error_a,
+                "max_surface_error_B": p.max_surface_error_b,
+                "max_cross_surface_error": p.max_cross_surface_error,
+                "min_transversality": p.min_transversality,
+                "max_transversality": p.max_transversality,
+                "risk_flags": list(p.risk_flags),
+                "repaired_same_parameter": p.repaired_same_parameter,
+                "exact_curve_on_surface_checked":
+                    p.exact_curve_on_surface_checked,
+                "exact_surface_error_A": p.exact_surface_error_a,
+                "exact_surface_error_B": p.exact_surface_error_b,
+                "shadow_crosschecked": p.shadow_crosschecked,
+                "shadow_max_distance": p.shadow_max_distance,
+                "shadow_length_rel_error": p.shadow_length_rel_error,
+            }
+            for p in assembled.section_payloads
+        ],
+        "edge_lineage": {
+            "result_edges": len(assembled.edge_lineage),
+            "boolean_section_edges": sum(
+                1 for e in assembled.edge_lineage
+                if e.provenance_kind == "boolean_section"),
+            "source_boundary_edges": sum(
+                1 for e in assembled.edge_lineage
+                if e.provenance_kind == "source_boundary"),
+            "unattributed_edges": sum(
+                1 for e in assembled.edge_lineage
+                if e.provenance_kind == "unattributed"),
+            "records": [
+                {
+                    "edge": e.result_edge_index,
+                    "kind": e.provenance_kind,
+                    "operands": list(e.operands),
+                    "parent_faces": [list(x) for x in e.parent_faces],
+                    "piece_refs": [list(x) for x in e.piece_refs],
+                    "intersection_refs": [list(x) for x in e.intersection_refs],
+                    "verified_pcurves": e.verified_pcurves,
+                }
+                for e in assembled.edge_lineage
+            ],
+        },
+        "decisions": [
+            {
+                "operand": d.operand,
+                "parent_face_id": d.parent_face_id,
+                "piece_index": d.piece_index,
+                "classification": d.classification,
+                "keep": d.keep,
+                "reversed": d.reverse_for_difference,
+            }
+            for d in assembled.decisions
+        ],
+    }
+
+    if include_full_evidence:
+        report["stages"]["assembly"]["full_section_payloads"] = [
+            {
+                "ref": [p.face_a, p.face_b, p.section_edge_index],
+                "parameters": p.parameters.tolist(),
+                "xyz": p.xyz.tolist(),
+                "uv_A": p.uv_a.tolist(),
+                "uv_B": p.uv_b.tolist(),
+                "edge_tolerance": p.edge_tolerance,
+                "verify_tolerance": p.verify_tolerance,
+                "max_surface_error_A": p.max_surface_error_a,
+                "max_surface_error_B": p.max_surface_error_b,
+                "max_cross_surface_error": p.max_cross_surface_error,
+                "min_transversality": p.min_transversality,
+                "max_transversality": p.max_transversality,
+                "risk_flags": list(p.risk_flags),
+                "repaired_same_parameter": p.repaired_same_parameter,
+                "exact_curve_on_surface_checked":
+                    p.exact_curve_on_surface_checked,
+                "exact_surface_error_A": p.exact_surface_error_a,
+                "exact_surface_error_B": p.exact_surface_error_b,
+                "shadow_crosschecked": p.shadow_crosschecked,
+                "shadow_max_distance": p.shadow_max_distance,
+                "shadow_length_rel_error": p.shadow_length_rel_error,
+                "result_edges": list(p.result_edge_indices),
+            }
+            for p in assembled.section_payloads
+        ]
+
+    t_stage = perf_counter()
+    valid = (True if assembled.is_empty
+             else bool(BRepCheck_Analyzer(assembled.shape, True).IsValid()))
+
+    # Provenance is part of the Tier B/C acceptance contract, not optional
+    # debugging metadata. A final edge that cannot be traced to a selected
+    # patch/source boundary or a verified section curve means topology changed
+    # somewhere in splitting/sewing without an auditable cause.
+    unattributed = [
+        e.result_edge_index for e in assembled.edge_lineage
+        if e.provenance_kind == "unattributed"]
+    bad_sections = [
+        e.result_edge_index for e in assembled.edge_lineage
+        if e.provenance_kind == "boolean_section"
+        and (not e.verified_pcurves or not e.intersection_refs)]
+    complete_lineage = not unattributed and not bad_sections
+    exact_curve_surface_complete = all(
+        p.exact_curve_on_surface_checked
+        and p.exact_surface_error_a is not None
+        and p.exact_surface_error_b is not None
+        and p.exact_surface_error_a <= p.verify_tolerance
+        and p.exact_surface_error_b <= p.verify_tolerance
+        for p in assembled.section_payloads)
+    shadow_complete = (
+        all(p.shadow_crosschecked for p in assembled.section_payloads)
+        if shadow_section_crosscheck else None)
+
+    # Cheap operation-level volume invariants catch catastrophic selection or
+    # shell-orientation errors without using a second Boolean engine.
+    va = abs(float(_shape_volume(a.shape)))
+    vb = abs(float(_shape_volume(b.shape)))
+    vr = abs(float(assembled.volume))
+    all_faces = a.faces + b.faces
+    if all_faces:
+        lo = np.min(np.vstack([fr.bbox_lo for fr in all_faces]), axis=0)
+        hi = np.max(np.vstack([fr.bbox_hi for fr in all_faces]), axis=0)
+        volume_scale = max(float(np.linalg.norm(hi - lo)), 1.0)
+    else:
+        volume_scale = 1.0
+    volume_tol = max(
+        1e-10,
+        256.0 * float(base_tol) * volume_scale * volume_scale,
+        2e-8 * max(va, vb, vr, 1.0))
+    if op == "union":
+        volume_bounds_ok = (
+            vr + volume_tol >= max(va, vb)
+            and vr <= va + vb + volume_tol)
+        volume_bounds = [max(va, vb), va + vb]
+    elif op == "intersection":
+        volume_bounds_ok = vr <= min(va, vb) + volume_tol
+        volume_bounds = [0.0, min(va, vb)]
+    else:
+        volume_bounds_ok = vr <= va + volume_tol
+        volume_bounds = [0.0, va]
+
+    report["stages"]["verification"] = {
+        "brep_valid": valid,
+        "closed": assembled.free_edges == 0,
+        "manifold_edges": assembled.multiple_edges == 0,
+        "unresolved_contacts": len(sp.unresolved_contacts),
+        "complete_edge_lineage": complete_lineage,
+        "unattributed_edges": unattributed,
+        "section_edges_missing_verified_pcurves": bad_sections,
+        "exact_curve_on_surface_complete": exact_curve_surface_complete,
+        "shadow_section_crosscheck_requested":
+            bool(shadow_section_crosscheck),
+        "shadow_section_crosscheck_complete": shadow_complete,
+        "volume_bounds_ok": volume_bounds_ok,
+        "volume_bounds": volume_bounds,
+        "volume_tolerance": volume_tol,
+        "input_volume_A": va,
+        "input_volume_B": vb,
+        "result_volume": vr,
+    }
+    report["timings_ms"]["verification"] = (
+        perf_counter() - t_stage) * 1000.0
+    if not valid:
+        exc = FreeformError("final B-rep validity check failed",
+                            "FinalBRepInvalid")
+        refuse("verification", exc)
+    if not complete_lineage:
+        exc = FreeformError(
+            f"final B-rep has unaudited edge lineage: "
+            f"unattributed={unattributed}, bad_sections={bad_sections}",
+            "IncompleteEdgeLineage")
+        refuse("verification", exc)
+    if not exact_curve_surface_complete:
+        exc = FreeformError(
+            "one or more accepted section edges lack exact bilateral "
+            "curve-on-surface validation evidence",
+            "ExactCurveOnSurfaceValidationMissing")
+        refuse("verification", exc)
+    if shadow_section_crosscheck and not shadow_complete:
+        exc = FreeformError(
+            "one or more accepted section edges lack requested "
+            "approx/nonapprox construction cross-check evidence",
+            "SectionConstructionCrosscheckMissing")
+        refuse("verification", exc)
+    if not volume_bounds_ok:
+        exc = FreeformError(
+            f"result volume {vr:.12g} violates {op} bounds "
+            f"{volume_bounds} with tolerance {volume_tol:.6g}",
+            "OperationVolumeInvariantFailed")
+        refuse("verification", exc)
+
+    report["accepted"] = True
+    report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
+    return assembled.shape, report
