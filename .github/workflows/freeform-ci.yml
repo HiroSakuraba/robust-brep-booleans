@@ -38,7 +38,7 @@ jobs:
       - name: Install geometry dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy manifold3d cadquery-ocp
+          python -m pip install numpy manifold3d cadquery-ocp==8.0.1.0.0
       - name: NURBS evaluator / broadphase regressions
         run: python tests/test_freeform_nurbs.py
       - name: Trimmed surface intersection regressions
