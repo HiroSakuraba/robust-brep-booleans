@@ -336,6 +336,10 @@ The latest strict code-bearing run passes all nine groups with current
 - Far freeform faces can produce zero expensive section calls.
 - Periodic converted sphere: 1/1 accelerators built on each operand,
   8 local patch records per face.
+- Default converted-sphere section verification: 614 samples total across two
+  section edges (max 377), down from 4,098 before local-tolerance sampling.
+- Imported 26-face rounded STEP case: 392 verification samples total across
+  eight section edges (33–65 each).
 
 ### End-to-end analytic B-rep assembly
 
@@ -422,7 +426,15 @@ Strict one-to-one face matching remains the preferred same-domain path, but
 equivalent material can legitimately be represented with extra coplanar seams.
 
 When strict matching fails, the optional second stage independently runs
-`ShapeUpgrade_UnifySameDomain` on safe copies of both operands. A canonical
+`ShapeUpgrade_UnifySameDomain` on safe copies of both operands. Before doing
+that expensive normalization, invariant failures that canonicalization is
+required to preserve now terminate the equivalence attempt immediately:
+closed-solid availability, B-rep validity, model bounding box, adaptive volume,
+and global material orientation. Topology-count or face-matching failures are
+*not* terminal because canonicalization exists specifically to remove redundant
+same-domain decomposition.
+
+`ShapeUpgrade_UnifySameDomain` is then run only when it can plausibly help. A canonical
 shape is accepted for comparison only if it preserves:
 
 - B-rep validity;
@@ -525,11 +537,22 @@ This case is useful because the imported shape is genuinely multi-face and
 trimmed: all 26 imported faces are B-spline surfaces, eight separate source
 faces intersect the cutter, and final edge lineage remains complete.
 
-The run also exposes a future performance target. Four curved section records
-needed 513 adaptive verification samples each while simpler sections needed
-five. Correctness is currently preferred over reducing that sampling cost;
-profiling can determine whether certified/curvature-aware section sampling is
-worth implementing next.
+The default sampler has now been retuned so an unspecified public
+`chord_tol` is derived from the section's accepted local OCCT tolerance
+instead of the much smaller global base tolerance. Explicit caller
+`chord_tol` values are still honored exactly, and every section retains 33
+mandatory global verification parameters plus OCCT deflection proposals and
+recursive local chord checks.
+
+On the current imported rounded-box STEP regression the eight verified
+sections use 33 or 65 samples each (392 total, maximum 65), replacing the older
+513-sample curved-section pattern. On the converted-sphere union the two
+sections dropped from 4,098 total samples to 614 total (maximum 377) while the
+analytic/oracle, p-curve, lineage and validity checks remained green.
+
+This is a verified reduction in work, not a claimed wall-clock speedup:
+shared-runner timings remain noisy and OCCT Section / sewing still dominate
+many runs.
 
 ## Runtime profiling
 
