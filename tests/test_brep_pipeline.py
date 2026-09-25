@@ -94,6 +94,23 @@ def t1_one_call_true_nurbs_union():
                 for p in payloads)
         and any(p["result_edges"] for p in payloads),
         f"section_payloads={payloads}")
+    sampling = asm["section_sampling"]
+    ok &= check(
+        "p1 section sampling summary",
+        sampling["sections"] == len(payloads)
+        and sampling["total_samples"] == sum(p["samples"] for p in payloads)
+        and sampling["max_samples"] == max(p["samples"] for p in payloads)
+        and sampling["mean_samples"] >= 2.0,
+        f"sampling={sampling}")
+    timings = report["timings_ms"]
+    required = {"ingest", "same_domain", "intersection",
+                "split", "assembly", "verification", "total"}
+    ok &= check(
+        "p1 stage timings",
+        required.issubset(timings)
+        and all(timings[k] >= 0.0 for k in required)
+        and timings["total"] >= max(timings[k] for k in required - {"total"}),
+        f"timings={timings}")
     return ok
 
 
