@@ -172,8 +172,10 @@ touch.
 - Unaffected faces pass through unchanged.
 - All verified tools affecting one parent face are applied in one local
   `BRepAlgoAPI_Splitter` call.
-- Near-tangent/seam-risk and unresolved contacts are not forced through by
-  default.
+- Near-tangent and unresolved contacts are not forced through by default.
+- A verified one-sided seam curve reuses the existing closing boundary on the
+  seam-side operand and remains a splitter on the opposite operand.
+- A curve that is a seam on both operands remains unresolved by default.
 - Every result is checked with OCCT validity.
 - Child faces retain their parent-face ID.
 - A child UV witness is checked against the original parent trim/support.
@@ -672,11 +674,39 @@ max raw -> final distance      2.27e-15
 Both final loops independently pass exact bilateral curve-on-surface
 validation.
 
-The torus loops touch the torus parameter seam. The intersection stage is
-therefore accepted, but the full Boolean currently refuses later with
-`RiskySectionCurve` / `seam_on_a` rather than guessing how to split the
-periodic face. This is intentional: intersection completeness and safe seam
-splitting are separate problems.
+One torus loop is the torus's existing periodic closing boundary. The
+v0.9 seam-aware split path now treats that topology asymmetrically:
+
+- on the seam-side torus face, the seam loop is **not** added as a new split
+  tool because that boundary already exists;
+- the other, interior torus loop splits the torus normally;
+- on the opposite cutter face, both verified loops remain split tools.
+
+The resulting torus face partitions into two pieces while the cutter face
+partitions into three. Adaptive area errors in the current regression are
+about `2.84e-14` and `-1.42e-14`, respectively.
+
+The full NURBS torus difference now certifies:
+
+```
+candidate face pairs          1
+verified section loops        2
+raw trimmed components        2
+reused seam edges on A        1
+reused seam edges on B        0
+split calls                   2
+free / multiple edges         0 / 0
+unattributed result edges     0
+result volume          29.6088132033
+OCCT oracle            29.6088132033
+printed error           0
+```
+
+The reversed-operand intersection (`box ∩ torus`) also passes with the torus
+as operand B, reporting one reused seam on B and the same oracle-exact volume.
+A synthetic policy regression marks one edge as a seam on **both** operands;
+that case remains unresolved as `shared_seam_curve` because there is no
+unique opposite face that can safely receive the cut.
 
 A negative regression deliberately gives the completeness checker only one of
 the two verified loops. It refuses with:
@@ -774,6 +804,47 @@ assembled volume       4.20499408213
 OCCT oracle volume     4.20499408213
 absolute error         8.88e-16
 ```
+
+## Periodic seam-aware splitting (v0.9)
+
+The intersection verifier uses `BRep_Tool.IsClosed(edge, face)` only for its
+documented seam meaning: the section edge has two p-curves on that face and
+lies on the closed surface's closing curve.
+
+A one-sided verified seam is therefore not treated as a generic risky curve.
+It is existing topology on one operand and a physical intersection contour on
+the other. `split_models()` routes such edges per operand instead of either
+forcing the seam through both splitters or refusing the whole face pair.
+
+For an edge with `seam_on_a`:
+
+```
+face A: reuse existing seam boundary; do not add a new split tool
+face B: use the verified edge as a normal split tool
+```
+
+and symmetrically for `seam_on_b`.
+
+The public split report records:
+
+- `reused_seam_edges_A`;
+- `reused_seam_edges_B`;
+- `shared_seam_refusals`.
+
+This keeps the optimization auditable and allows downstream provenance to
+retain the original section record even though one operand did not need a new
+local cut.
+
+Safety boundary:
+
+- near-tangent curves are still refused by default;
+- seam edges still require all existing intersection checks (SameParameter,
+  exact bilateral curve-on-surface validation, trim checks and completeness
+  probing);
+- shared seams on both operands remain unresolved unless a later dedicated
+  same-seam topology rule proves them safe;
+- every accepted result still has to pass area conservation, multi-witness
+  classification, sewing, complete edge lineage, validity and volume checks.
 
 ## Runtime profiling
 
