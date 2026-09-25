@@ -572,6 +572,66 @@ This is a verified reduction in work, not a claimed wall-clock speedup:
 shared-runner timings remain noisy and OCCT Section / sewing still dominate
 many runs.
 
+## Exact bilateral curve-on-surface validation
+
+The normal Tier B/C acceptance path now uses OCCT's
+`BRepLib_ValidateEdge` in its exact mode after SameParameter repair.
+
+For every accepted section edge, the kernel independently validates the 3D
+edge curve against its p-curve lifted through **each** authoritative input
+surface. OCP documents this mode as computing the maximum curve-on-surface
+distance rather than checking only a finite control-point set.
+
+Acceptance therefore requires, on both faces:
+
+- a p-curve exists;
+- SameParameter is true;
+- exact curve-on-surface validation completes;
+- the exact maximum distance is no larger than the section's verification
+  tolerance;
+- the underlying edge/face tolerance remains under the configured
+  `max_section_tol` ceiling.
+
+The previous adaptive XYZ/UV sampling remains in place for trim membership,
+cross-surface comparison, transversality and risk classification. It is now a
+complement to the exact curve-on-surface distance check rather than the only
+3D/p-curve fidelity test.
+
+On the current converted-sphere union, representative exact distances are
+approximately:
+
+```
+section 0
+  exact error on A  8.66003e-6
+  exact error on B  8.66008e-6
+  verification tol  1.73202e-5
+
+section 1
+  exact error on A  1.63152e-6
+  exact error on B  1.63196e-6
+  verification tol  1.0e-5
+```
+
+This materially strengthens the section-curve check, but it is not a proof
+that OCCT discovered every connected component of the mathematical
+surface/surface intersection. Completeness of the intersection set remains a
+separate correctness problem.
+
+### Alternative non-approximated shadow mode
+
+`boolean_brep(..., shadow_section_crosscheck=True)` is an optional stress
+mode. It builds the same face pair again with `Section.Approximation(False)`,
+verifies that representation independently, and compares the two curve sets
+bidirectionally in 3D plus total length.
+
+This is **not** part of normal acceptance. OCCT's own source shows that
+`Approximation(False)` can still turn a walking intersection into a B-spline;
+it is not an exact analytic oracle. In the tiny NURBS-cap experiment that
+alternative representation differed from the accurate primary section by
+about `4.65e-5`, even though the primary result matched the independent OCCT
+Boolean oracle. That experiment is why the shadow mode remains diagnostic
+instead of vetoing ordinary accepted results.
+
 ## Adversarial NURBS corpus
 
 CI now includes a separate corpus intended to exercise geometry classes that
@@ -705,9 +765,10 @@ The main remaining work is:
 - more degenerate freeform contact classes: coincident seams, overlapping
   same-surface trims, multiple curves meeting at one vertex, and features at
   or below the configured tolerance scale;
-- a stronger mathematical/certification story for OCCT's approximate section
-  curves beyond the current tolerance ceiling, SameParameter requirement,
-  bilateral p-curve checks, adaptive sampling and trim verification;
+- stronger guarantees on **intersection completeness**: exact bilateral
+  curve-on-surface distance is now checked for every returned section edge,
+  but that does not prove OCCT found every connected component of the true
+  surface/surface intersection;
 - deciding whether/when the legacy mesh/proxy `boolean()` and the new
   `boolean_brep()` should share a common dispatch surface; they are currently
   separate public routes so the stable Tier A contract is not silently changed;
