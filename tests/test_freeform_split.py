@@ -163,14 +163,12 @@ def t4_near_tangent_gap_blocks_speculative_split():
 
 
 
-def t5_torus_seam_trial_with_risky_split_enabled():
-    """Characterize OCCT behavior before changing seam policy.
+def t5_torus_seam_routes_existing_boundary_operand_specifically():
+    """A seam loop is not a new cut on the seam-side face.
 
-    One torus/plane section loop lies on the torus's existing periodic seam.
-    The other is an interior loop.  Forcing both verified edges through the
-    current splitter tells us whether OCCT itself can produce a valid local
-    partition; production policy remains conservative until this test is
-    understood.
+    The torus/plane pair has two verified loops. One lies on the torus's
+    existing periodic seam; the other is interior. Default splitting must use
+    only the interior loop on the torus while using both loops on the cutter.
     """
     tor0 = BRepPrimAPI_MakeTorus(3.0, 1.0).Shape()
     conv = BRepBuilderAPI_NurbsConvert(tor0, True)
@@ -191,27 +189,30 @@ def t5_torus_seam_trial_with_risky_split_enabled():
             f"pairs={[(p.face_a,p.face_b,len(p.edges)) for p in ix.pairs]}")
 
     risks = [e.risk_flags for e in curve_pairs[0].edges]
+    seam_edges = sum("seam_on_a" in r for r in risks)
     ok = check(
-        "t5 setup includes one torus seam loop",
-        any("seam_on_a" in r for r in risks),
+        "t5 setup has exactly one torus seam loop",
+        seam_edges == 1,
         f"risks={risks}")
 
-    try:
-        sp = split_models(a, b, ix, base_tol=1e-7, allow_risky=True)
-    except Exception as exc:
-        return check(
-            "t5 forced seam split trial completes",
-            False,
-            f"{type(exc).__name__}: {exc}; risks={risks}")
-
+    sp = split_models(a, b, ix, base_tol=1e-7)
     ra = [r for r in sp.faces_a if r.source_edges]
     rb = [r for r in sp.faces_b if r.source_edges]
+
     ok &= check(
-        "t5 forced seam split trial completes",
-        not sp.unresolved_contacts and bool(ra) and bool(rb),
-        f"A={[(r.status,len(r.pieces),r.area_error,r.notes) for r in ra]} "
-        f"B={[(r.status,len(r.pieces),r.area_error,r.notes) for r in rb]} "
+        "t5 seam-side torus uses only interior loop",
+        not sp.unresolved_contacts
+        and len(ra) == 1
+        and ra[0].source_edges == 1
+        and len(ra[0].pieces) >= 2,
+        f"A={[(r.status,len(r.pieces),r.source_edges,r.area_error) for r in ra]} "
         f"unresolved={sp.unresolved_contacts}")
+    ok &= check(
+        "t5 opposite cutter uses both loops",
+        len(rb) == 1
+        and rb[0].source_edges == 2
+        and len(rb[0].pieces) >= 3,
+        f"B={[(r.status,len(r.pieces),r.source_edges,r.area_error) for r in rb]}")
     return ok
 
 def main():
@@ -220,7 +221,7 @@ def main():
     ok &= t2_far_faces_are_bit_identical_passthrough()
     ok &= t3_point_tangency_blocks_speculative_split()
     ok &= t4_near_tangent_gap_blocks_speculative_split()
-    ok &= t5_torus_seam_trial_with_risky_split_enabled()
+    ok &= t5_torus_seam_routes_existing_boundary_operand_specifically()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
