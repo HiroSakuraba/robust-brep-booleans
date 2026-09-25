@@ -632,6 +632,82 @@ about `4.65e-5`, even though the primary result matched the independent OCCT
 Boolean oracle. That experiment is why the shadow mode remains diagnostic
 instead of vetoing ordinary accepted results.
 
+## Intersection component completeness probe
+
+Exact bilateral curve-on-surface validation certifies the geometric fidelity
+of each **returned** section edge. A different failure mode is possible: a
+lower-level surface/surface intersector can find several disconnected
+components, while later Boolean post-processing accidentally drops one.
+
+For every candidate pair involving at least one freeform face, the Tier B/C
+path now reruns OCCT's lower-level `IntTools_FaceFace` intersector using the
+same approximation tolerance used by `BOPAlgo_PaveFiller` (`1e-7`) and
+calls `PrepareLines3D(False)`, matching the preparation step used by the
+Boolean data structure.
+
+Each bounded raw curve that has several samples lying IN/ON both trimmed input
+faces is treated as a trimmed intersection component. Those raw components
+must be geometrically represented by the verified final `Section` edge set.
+If not, the operation refuses with `SectionCompletenessMismatch`.
+
+This specifically protects against losing a curve branch between the
+face/face intersector and final section-edge construction.
+
+### Two-loop regression
+
+A radius-`3` / tube-radius-`1` NURBS torus intersected by its equatorial
+plane has two disconnected circular components from **one face pair**.
+
+Current measured result:
+
+```
+candidate face pairs          1
+final verified section edges  2
+raw IntTools curves           2
+raw trimmed components        2
+raw unmatched components      0
+max raw -> final distance      2.27e-15
+```
+
+Both final loops independently pass exact bilateral curve-on-surface
+validation.
+
+The torus loops touch the torus parameter seam. The intersection stage is
+therefore accepted, but the full Boolean currently refuses later with
+`RiskySectionCurve` / `seam_on_a` rather than guessing how to split the
+periodic face. This is intentional: intersection completeness and safe seam
+splitting are separate problems.
+
+A negative regression deliberately gives the completeness checker only one of
+the two verified loops. It refuses with:
+
+```
+SectionCompletenessMismatch
+raw=2, trimmed=2, unmatched=1
+```
+
+The missing outer/inner loop is approximately distance `2` from the surviving
+loop, so this is a real disconnected-component omission rather than a
+parameterization difference.
+
+### What this does and does not certify
+
+OCCT's own `BOPAlgo_PaveFiller` contains special re-processing of
+"potentially problematic Face-Face intersections" explicitly to avoid missing
+section edges. The new probe adds another check around that post-processing.
+
+It does **not** prove that `IntTools_FaceFace` itself found every connected
+component of the mathematical intersection. The certification boundary is now:
+
+1. conservative face-pair broad phase cannot drop a true candidate;
+2. the lower-level OCCT face/face curve set is checked against final Section
+   edges so post-processing cannot silently drop an observed branch;
+3. each final edge gets exact bilateral curve-on-surface validation;
+4. trims, transversality, lineage, splitting, sewing and final volume/topology
+   are independently checked;
+5. completeness of the *lower-level numerical surface intersector itself*
+   remains an open certification problem.
+
 ## Adversarial NURBS corpus
 
 CI now includes a separate corpus intended to exercise geometry classes that
@@ -765,10 +841,11 @@ The main remaining work is:
 - more degenerate freeform contact classes: coincident seams, overlapping
   same-surface trims, multiple curves meeting at one vertex, and features at
   or below the configured tolerance scale;
-- stronger guarantees on **intersection completeness**: exact bilateral
-  curve-on-surface distance is now checked for every returned section edge,
-  but that does not prove OCCT found every connected component of the true
-  surface/surface intersection;
+- stronger guarantees on the **lower-level numerical intersector itself**:
+  final Section post-processing is now checked against raw
+  `IntTools_FaceFace` curve components and every returned edge gets exact
+  bilateral curve-on-surface validation, but neither check proves that
+  `IntTools_FaceFace` found every mathematical component;
 - deciding whether/when the legacy mesh/proxy `boolean()` and the new
   `boolean_brep()` should share a common dispatch surface; they are currently
   separate public routes so the stable Tier A contract is not silently changed;
