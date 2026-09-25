@@ -269,7 +269,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     from .step_ingest import BRepModel, index_shape
     from .intersection import intersect_models
     from .split import split_models
-    from .assembly import assemble_boolean
+    from .assembly import assemble_boolean, _shape_volume
     from .same_domain import same_domain_models
 
     if op not in ("union", "intersection", "difference"):
@@ -578,17 +578,80 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     t_stage = perf_counter()
     valid = (True if assembled.is_empty
              else bool(BRepCheck_Analyzer(assembled.shape, True).IsValid()))
+
+    # Provenance is part of the Tier B/C acceptance contract, not optional
+    # debugging metadata. A final edge that cannot be traced to a selected
+    # patch/source boundary or a verified section curve means topology changed
+    # somewhere in splitting/sewing without an auditable cause.
+    unattributed = [
+        e.result_edge_index for e in assembled.edge_lineage
+        if e.provenance_kind == "unattributed"]
+    bad_sections = [
+        e.result_edge_index for e in assembled.edge_lineage
+        if e.provenance_kind == "boolean_section"
+        and (not e.verified_pcurves or not e.intersection_refs)]
+    complete_lineage = not unattributed and not bad_sections
+
+    # Cheap operation-level volume invariants catch catastrophic selection or
+    # shell-orientation errors without using a second Boolean engine.
+    va = abs(float(_shape_volume(a.shape)))
+    vb = abs(float(_shape_volume(b.shape)))
+    vr = abs(float(assembled.volume))
+    all_faces = a.faces + b.faces
+    if all_faces:
+        lo = np.min(np.vstack([fr.bbox_lo for fr in all_faces]), axis=0)
+        hi = np.max(np.vstack([fr.bbox_hi for fr in all_faces]), axis=0)
+        volume_scale = max(float(np.linalg.norm(hi - lo)), 1.0)
+    else:
+        volume_scale = 1.0
+    volume_tol = max(
+        1e-10,
+        256.0 * float(base_tol) * volume_scale * volume_scale,
+        2e-8 * max(va, vb, vr, 1.0))
+    if op == "union":
+        volume_bounds_ok = (
+            vr + volume_tol >= max(va, vb)
+            and vr <= va + vb + volume_tol)
+        volume_bounds = [max(va, vb), va + vb]
+    elif op == "intersection":
+        volume_bounds_ok = vr <= min(va, vb) + volume_tol
+        volume_bounds = [0.0, min(va, vb)]
+    else:
+        volume_bounds_ok = vr <= va + volume_tol
+        volume_bounds = [0.0, va]
+
     report["stages"]["verification"] = {
         "brep_valid": valid,
         "closed": assembled.free_edges == 0,
         "manifold_edges": assembled.multiple_edges == 0,
         "unresolved_contacts": len(sp.unresolved_contacts),
+        "complete_edge_lineage": complete_lineage,
+        "unattributed_edges": unattributed,
+        "section_edges_missing_verified_pcurves": bad_sections,
+        "volume_bounds_ok": volume_bounds_ok,
+        "volume_bounds": volume_bounds,
+        "volume_tolerance": volume_tol,
+        "input_volume_A": va,
+        "input_volume_B": vb,
+        "result_volume": vr,
     }
     report["timings_ms"]["verification"] = (
         perf_counter() - t_stage) * 1000.0
     if not valid:
         exc = FreeformError("final B-rep validity check failed",
                             "FinalBRepInvalid")
+        refuse("verification", exc)
+    if not complete_lineage:
+        exc = FreeformError(
+            f"final B-rep has unaudited edge lineage: "
+            f"unattributed={unattributed}, bad_sections={bad_sections}",
+            "IncompleteEdgeLineage")
+        refuse("verification", exc)
+    if not volume_bounds_ok:
+        exc = FreeformError(
+            f"result volume {vr:.12g} violates {op} bounds "
+            f"{volume_bounds} with tolerance {volume_tol:.6g}",
+            "OperationVolumeInvariantFailed")
         refuse("verification", exc)
 
     report["accepted"] = True
