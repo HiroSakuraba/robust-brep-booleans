@@ -14,6 +14,9 @@ import math
 import sys
 
 sys.path.insert(0, "src")
+sys.path.insert(0, "tests")
+
+import _arbiter
 
 from brepkernel.assembly import (
     assemble_boolean, AssemblyError, _build_nested_solids,
@@ -106,7 +109,7 @@ def t1_overlap_spheres_all_ops():
             and r.selected_faces == sum(int(d.keep) for d in r.decisions)
             and any(d.operand == "A" and d.keep for d in r.decisions)
             and any(d.operand == "B" and d.keep for d in r.decisions)
-            and all(d.classification in ("inside", "outside")
+            and all(d.classification in ("IN", "OUT")
                     for d in r.decisions)
             and (op != "difference"
                  or any(d.operand == "B" and d.keep
@@ -142,6 +145,8 @@ def t1_overlap_spheres_all_ops():
                 for p in r.section_payloads)
             and any(p.result_edge_indices for p in r.section_payloads),
             f"payloads={[(p.face_a,p.face_b,p.section_edge_index,len(p.parameters),p.result_edge_indices) for p in r.section_payloads]}")
+        ok &= _arbiter.check_accepted(
+            f"t1 {op}", check, a, b, r.shape, op)[0]
     return ok
 
 
@@ -166,6 +171,8 @@ def t2_disjoint_union_two_solids():
     ok &= check("t2 no invented section payloads",
                 len(r.section_payloads) == 0,
                 f"payloads={len(r.section_payloads)}")
+    ok &= _arbiter.check_accepted(
+        "t2", check, a, b, r.shape, "union")[0]
     return ok
 
 
@@ -190,6 +197,8 @@ def t3_contained_difference_builds_cavity():
     ok &= check("t3 cavity agrees OCCT oracle",
                 abs(r.volume - ov) < 3e-6,
                 f"assembled={r.volume:.12g} oracle={ov:.12g}")
+    ok &= _arbiter.check_accepted(
+        "t3", check, outer, inner, r.shape, "difference")[0]
     return ok
 
 
@@ -197,9 +206,12 @@ def t4_disjoint_intersection_is_empty():
     a = BRepPrimAPI_MakeSphere(gp_Pnt(-2, 0, 0), 1.0).Shape()
     b = BRepPrimAPI_MakeSphere(gp_Pnt(2, 0, 0), 1.0).Shape()
     ma, mb, ix, sp, r = pipeline(a, b, "intersection")
-    return check("t4 disjoint intersection empty",
-                 r.is_empty and r.volume == 0.0 and len(r.solids) == 0,
-                 f"selected={r.selected_faces} volume={r.volume}")
+    ok = check("t4 disjoint intersection empty",
+               r.is_empty and r.volume == 0.0 and len(r.solids) == 0,
+               f"selected={r.selected_faces} volume={r.volume}")
+    ok &= _arbiter.check_accepted(
+        "t4", check, a, b, r.shape, "intersection")[0]
+    return ok
 
 
 def t5_exact_tangency_refuses_global_assembly():

@@ -69,7 +69,10 @@ def _shape_bbox(shape) -> tuple[np.ndarray, np.ndarray]:
     b = Bnd_Box()
     # Geometry-aware bounding; does not require us to create a fine
     # triangulation merely to decide that two faces are far apart.
-    BRepBndLib.AddOptimal_s(shape, b, False, False)
+    # G6: useShapeTolerance=True so a high-tolerance face cannot hide
+    # inside a tight geometric box and vanish from the broad phase.
+    # This only ever enlarges boxes, never shrinks them.
+    BRepBndLib.AddOptimal_s(shape, b, False, True)
     if b.IsVoid():
         z = np.zeros(3, dtype=np.float64)
         return z, z
@@ -192,6 +195,28 @@ def load_step(path: str, *, build_freeform: bool = True,
                             "StepReadFailed")
     return index_shape(r.OneShape(), build_freeform=build_freeform,
                        trim_tol=trim_tol)
+
+
+def model_max_tolerance(model: "BRepModel") -> float:
+    """Maximum OCCT tolerance over every vertex, edge, and face.
+
+    G6: the per-model pad is derived from this quantity, so the broad
+    phase can never treat a high-tolerance face as disjoint from a
+    nearby solid.
+    """
+    from OCP.BRep import BRep_Tool
+    from OCP.TopAbs import TopAbs_VERTEX, TopAbs_EDGE, TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    tol = 0.0
+    for ttype, cast in ((TopAbs_VERTEX, TopoDS.Vertex),
+                        (TopAbs_EDGE, TopoDS.Edge),
+                        (TopAbs_FACE, TopoDS.Face)):
+        ex = TopExp_Explorer(model.shape, ttype)
+        while ex.More():
+            tol = max(tol, float(BRep_Tool.Tolerance_s(cast(ex.Current()))))
+            ex.Next()
+    return tol
 
 
 def _face_pairs_aabb(a: BRepModel, b: BRepModel,

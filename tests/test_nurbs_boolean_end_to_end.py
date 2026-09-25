@@ -9,6 +9,9 @@ import math
 import sys
 
 sys.path.insert(0, "src")
+sys.path.insert(0, "tests")
+
+import _arbiter
 
 from brepkernel import BRepAmbiguousResult, boolean_brep
 from brepkernel.assembly import assemble_boolean
@@ -90,13 +93,18 @@ def t2_tiny_nurbs_cap_accepts_accurately_or_refuses():
     rv = volume(out)
     abs_err = abs(rv - ov)
     rel_err = abs_err / max(abs(ov), 1e-30)
-    return check(
+    ok = check(
         "n2 tiny cap accepted accurately",
         report["accepted"]
         and BRepCheck_Analyzer(out, True).IsValid()
         and abs_err <= max(5e-10, 5e-4 * abs(ov)),
         f"assembled={rv:.12g} oracle={ov:.12g} "
         f"abs_err={abs_err:.3e} rel_err={rel_err:.3e}")
+    # The arbiter only applies on the acceptance branch; a typed refusal
+    # takes the early return above and must NOT be audited.
+    ok &= _arbiter.check_accepted(
+        "n2", check, sphere, cutter, out, "difference")[0]
+    return ok
 
 def main():
     analytic_a = BRepPrimAPI_MakeSphere(gp_Pnt(0, 0, 0), 1.0).Shape()
@@ -165,6 +173,8 @@ def main():
         bool(kept_a) and bool(kept_b)
         and all(d.sewed_face is not None for d in kept_a + kept_b),
         f"keptA={len(kept_a)} keptB={len(kept_b)}")
+    ok &= _arbiter.check_accepted(
+        "n1", check, a, b, r.shape, "union")[0]
 
     ok &= t2_tiny_nurbs_cap_accepts_accurately_or_refuses()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
