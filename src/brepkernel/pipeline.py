@@ -248,7 +248,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                  broadphase_pad=None, chord_tol=None, contact_tol=None,
                  fuzzy=0.0, parallel=True, use_obb=True,
                  tangent_sin_tol=1e-4, max_section_tol=None,
-                 area_rel_tol=2e-6, sew_tol=None):
+                 area_rel_tol=2e-6, sew_tol=None,
+                 include_full_evidence=False):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
 
     Returns (TopoDS_Shape, report) and leaves the existing mesh/proxy
@@ -261,6 +262,11 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     converted into a guessed result.
 
     Difference means A - B.
+
+    If include_full_evidence is True, the report also contains the complete
+    verified section sample payloads (parameters, XYZ, and UV on both input
+    faces) converted to ordinary Python lists so the report can be serialized
+    directly to JSON. The default remains a compact summary.
     """
     from time import perf_counter
     from OCP.BRepCheck import BRepCheck_Analyzer
@@ -574,6 +580,28 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             for d in assembled.decisions
         ],
     }
+
+    if include_full_evidence:
+        report["stages"]["assembly"]["full_section_payloads"] = [
+            {
+                "ref": [p.face_a, p.face_b, p.section_edge_index],
+                "parameters": p.parameters.tolist(),
+                "xyz": p.xyz.tolist(),
+                "uv_A": p.uv_a.tolist(),
+                "uv_B": p.uv_b.tolist(),
+                "edge_tolerance": p.edge_tolerance,
+                "verify_tolerance": p.verify_tolerance,
+                "max_surface_error_A": p.max_surface_error_a,
+                "max_surface_error_B": p.max_surface_error_b,
+                "max_cross_surface_error": p.max_cross_surface_error,
+                "min_transversality": p.min_transversality,
+                "max_transversality": p.max_transversality,
+                "risk_flags": list(p.risk_flags),
+                "repaired_same_parameter": p.repaired_same_parameter,
+                "result_edges": list(p.result_edge_indices),
+            }
+            for p in assembled.section_payloads
+        ]
 
     t_stage = perf_counter()
     valid = (True if assembled.is_empty
