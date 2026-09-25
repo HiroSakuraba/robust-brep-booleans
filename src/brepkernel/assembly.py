@@ -40,6 +40,8 @@ class PatchDecision:
     keep: bool
     reverse_for_difference: bool
     witness_xyz: np.ndarray
+    witness_xyz_all: np.ndarray
+    witness_classifications: tuple[str, ...]
     source_face: object
     selected_face: Optional[object] = None
     sewed_face: Optional[object] = None
@@ -137,15 +139,29 @@ def _bbox(shape) -> tuple[np.ndarray, np.ndarray]:
     return _p3(p0), _p3(p1)
 
 
-def _face_point(face, tol: float) -> np.ndarray:
-    """Find a deterministic point strictly in a trimmed face."""
+def _face_points(face, tol: float, *, max_points: int = 7,
+                 min_points: int = 3) -> np.ndarray:
+    """Find several deterministic points strictly inside a trimmed face.
+
+    One centroid-like witness can silently misclassify a patch that still
+    straddles the other solid because of a missed or degenerate split.  The
+    Tier B/C path therefore samples several well-separated *face-interior*
+    points and requires them all to have the same material classification.
+
+    Failure to find enough stable interior witnesses is a refusal, not
+    permission to fall back to one-point classification.
+    """
     from OCP.BRepClass3d import BRepClass3d_SolidExplorer
     from OCP.gp import gp_Pnt
 
+    if max_points < min_points or min_points < 1:
+        raise ValueError("invalid face witness count")
+
+    candidates: list[np.ndarray] = []
     p = gp_Pnt()
     try:
         if BRepClass3d_SolidExplorer.FindAPointInTheFace_s(face, p):
-            return _p3(p)
+            candidates.append(_p3(p))
     except Exception:
         pass
 
@@ -160,21 +176,59 @@ def _face_point(face, tol: float) -> np.ndarray:
         raise AssemblyError("cannot obtain finite face UV bounds",
                             kind="NoInteriorFaceWitness")
     surf = BRepAdaptor_Surface(face)
-    frac = (0.5, 0.25, 0.75, 0.125, 0.875,
-            0.375, 0.625, 0.0625, 0.9375,
-            0.1875, 0.3125, 0.4375, 0.5625,
-            0.6875, 0.8125)
-    for fu in frac:
-        u = u0 + (u1 - u0) * fu
-        for fv in frac:
-            v = v0 + (v1 - v0) * fv
-            c = BRepClass_FaceClassifier(
-                face, gp_Pnt2d(float(u), float(v)), float(tol), True)
-            if c.State() == TopAbs_IN:
-                return _p3(surf.Value(float(u), float(v)))
-    raise AssemblyError("could not find a stable point inside trimmed face",
-                        kind="NoInteriorFaceWitness")
 
+    # Center-biased low-discrepancy-ish sequence.  Pairing the U/V fractions
+    # through two permutations avoids filling only one diagonal of UV space.
+    fu = (0.5, 0.25, 0.75, 0.125, 0.875,
+          0.375, 0.625, 0.0625, 0.9375,
+          0.1875, 0.6875, 0.4375, 0.8125,
+          0.3125, 0.5625)
+    fv = (0.5, 0.75, 0.25, 0.375, 0.625,
+          0.875, 0.125, 0.6875, 0.3125,
+          0.9375, 0.4375, 0.1875, 0.5625,
+          0.8125, 0.0625)
+
+    lo, hi = _bbox(face)
+    scale = max(float(np.linalg.norm(hi - lo)), 1.0)
+    sep = max(8.0 * float(tol), 1e-10 * scale)
+
+    def add_point(x: np.ndarray):
+        if all(float(np.linalg.norm(x - q)) > sep for q in candidates):
+            candidates.append(x)
+
+    # First use the paired sequence, then a small Cartesian fallback for thin
+    # or oddly trimmed regions.
+    for a, b in zip(fu, fv):
+        u = u0 + (u1 - u0) * a
+        v = v0 + (v1 - v0) * b
+        cl = BRepClass_FaceClassifier(
+            face, gp_Pnt2d(float(u), float(v)), float(tol), True)
+        if cl.State() == TopAbs_IN:
+            add_point(_p3(surf.Value(float(u), float(v))))
+            if len(candidates) >= max_points:
+                break
+
+    if len(candidates) < min_points:
+        grid = (0.2, 0.4, 0.6, 0.8)
+        for a in grid:
+            if len(candidates) >= max_points:
+                break
+            for b in grid:
+                u = u0 + (u1 - u0) * a
+                v = v0 + (v1 - v0) * b
+                cl = BRepClass_FaceClassifier(
+                    face, gp_Pnt2d(float(u), float(v)), float(tol), True)
+                if cl.State() == TopAbs_IN:
+                    add_point(_p3(surf.Value(float(u), float(v))))
+                    if len(candidates) >= max_points:
+                        break
+
+    if len(candidates) < min_points:
+        raise AssemblyError(
+            f"only {len(candidates)} stable interior witness(es) found; "
+            f"{min_points} required",
+            kind="InsufficientPatchWitnesses")
+    return np.vstack(candidates[:max_points])
 
 def _classify_point_in_model(point: np.ndarray, model: BRepModel,
                              tol: float) -> str:
@@ -248,8 +302,27 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                 tol = max(
                     float(base_tol),
                     2.0 * float(BRep_Tool.Tolerance_s(piece.face)))
-                p = _face_point(piece.face, tol)
-                cls = _classify_point_in_model(p, other, tol)
+                points = _face_points(piece.face, tol)
+                classes = tuple(
+                    _classify_point_in_model(p, other, tol)
+                    for p in points)
+                invalid = sorted(set(
+                    x for x in classes
+                    if x not in ("inside", "outside")))
+                if invalid:
+                    raise AssemblyError(
+                        f"{operand} face {piece.parent_face_id} piece "
+                        f"{piece.piece_index}: witness classification "
+                        f"contains {invalid}",
+                        kind="BoundaryOrUnknownPatch")
+                unique = set(classes)
+                if len(unique) != 1:
+                    raise AssemblyError(
+                        f"{operand} face {piece.parent_face_id} piece "
+                        f"{piece.piece_index}: supposedly split patch "
+                        f"straddles material states {sorted(unique)}",
+                        kind="PatchClassificationInconsistent")
+                cls = classes[0]
                 keep, rev = _decision_rule(operation, operand, cls)
                 source = piece.face
                 selected = _reverse_face(source) if keep and rev else (
@@ -261,7 +334,9 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                     classification=cls,
                     keep=keep,
                     reverse_for_difference=rev,
-                    witness_xyz=p,
+                    witness_xyz=points[0],
+                    witness_xyz_all=points,
+                    witness_classifications=classes,
                     source_face=source,
                     selected_face=selected,
                 ))
