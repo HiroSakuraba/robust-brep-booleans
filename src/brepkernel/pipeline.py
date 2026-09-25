@@ -616,6 +616,13 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                 "max_transversality": p.max_transversality,
                 "risk_flags": list(p.risk_flags),
                 "repaired_same_parameter": p.repaired_same_parameter,
+                "exact_curve_on_surface_checked":
+                    p.exact_curve_on_surface_checked,
+                "exact_surface_error_A": p.exact_surface_error_a,
+                "exact_surface_error_B": p.exact_surface_error_b,
+                "shadow_crosschecked": p.shadow_crosschecked,
+                "shadow_max_distance": p.shadow_max_distance,
+                "shadow_length_rel_error": p.shadow_length_rel_error,
                 "result_edges": list(p.result_edge_indices),
             }
             for p in assembled.section_payloads
