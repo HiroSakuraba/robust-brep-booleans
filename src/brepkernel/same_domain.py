@@ -236,6 +236,7 @@ def _canonicalize_same_domain_shape(shape, *, base_tol: float,
                                     ) -> tuple[object, CanonicalizationEvidence]:
     """Merge neighbouring same-domain faces/edges without changing material."""
     from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
     from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
 
     if not BRepCheck_Analyzer(shape, True).IsValid():
@@ -247,7 +248,17 @@ def _canonicalize_same_domain_shape(shape, *, base_tol: float,
     v0 = _signed_volume(shape)
     scale = _shape_scale(shape)
 
-    un = ShapeUpgrade_UnifySameDomain(shape, True, True, False)
+    # ShapeUpgrade_UnifySameDomain is a modifying algorithm.  Even though
+    # SafeInputMode is enabled below, canonicalization is intentionally run on
+    # a deep geometry copy so the caller's authoritative B-rep and its p-curves
+    # cannot be mutated as a side effect of an optional equivalence fast path.
+    cp = BRepBuilderAPI_Copy(shape, True, False)
+    if not cp.IsDone():
+        raise SameDomainError("could not copy B-rep for canonicalization",
+                              kind="CanonicalizationCopyFailed")
+    work = cp.Shape()
+
+    un = ShapeUpgrade_UnifySameDomain(work, True, True, False)
     un.SetSafeInputMode(True)
     un.SetLinearTolerance(max(float(base_tol), 1e-10 * scale))
     un.SetAngularTolerance(1e-10)
