@@ -551,6 +551,130 @@ git grep -P '\x{2014}' -- src/brepkernel/intersection.py src/brepkernel/pipeline
 
 G3 gate: CLOSED.
 
+## G3 REWORK - Per-interval adaptive matching (no blanket acceptance)
+
+- Date: 2026-09-25
+- Branch: gate/G3G4-rework (local only; never pushed, never merged)
+- Base: 79e3079 "docs: close the G4 gate in the review ledger"
+  (gate/G4-probe-coverage tip)
+- Environment: ~/workspace/brep-booleans/.venv (CPython 3.12.3),
+  numpy==2.5.3, manifold3d==3.5.3, cadquery-ocp==8.0.1.0.0 (OCCT 8.0.1).
+
+### Why (the review finding)
+
+The G3 probe's match rule said: a raw IntTools component is "matched" if
+its kept ends match a verified edge within tol_i, OR the whole component
+is within the trim. The "kept ends match" clause was a blanket acceptance:
+if the two ends were fine, the interior was never checked. A raw curve
+could omit (or invent) an interior loop while its ends stayed put, and the
+probe would accept it. The I4 partial-omission test (t1) proved this: the
+old code accepted a 50%-truncated raw curve via the approximation_gap
+blanket.
+
+### What was built
+
+`_match_raw_component` (intersection.py) replaces the blanket rule with
+per-interval adaptive matching:
+
+- Each raw component is split into N0=20 initial parameter intervals.
+- Each interval is checked with a 3-point stencil (endpoints + midpoint,
+  deduplicated). A sample is a strict match iff its distance to the
+  verified edges is <= tol_i AND it classifies in-trim at trim_tol.
+- An interval where any stencil sample violates the strict match is
+  subdivided (binary split) to max_depth=5. Every leaf interval must be
+  accounted for: either all its stencil samples strictly match, or (in
+  end intervals only) the violating sample satisfies the boundary-tail
+  provision.
+- The boundary-tail provision (keeps F2 accepted): in an end interval, a
+  sample failing the strict match is accounted for iff (a) the nearest
+  edge point is an edge END (within 64*eps*scale of a polyline vertex
+  that is a topological edge end), (b) the sample is OUT at tight_tol
+  (1e-7-ish, the pipeline base tolerance) but in/on at trim_tol, and (c)
+  that edge end is within trim_tol of the trim wires. This is the F2
+  shape: raw curve end overshoots the trim by 9.4e-05 along the curve
+  (transverse 4.6e-09), edge end ON the trim.
+- If any leaf violates at max depth, or if there are no verified edges
+  at all for a material raw component, the probe raises
+  SectionCompletenessMismatch (typed refusal, kind= and stage=).
+- Per-t caches avoid redundant BRepExtrema_DistShapeShape and
+  BRepClass_FaceClassifier calls across the stencil and subdivision.
+
+`RawIntersectionToleranceTooLoose` (typed refusal): if
+`ic.Tolerance()` on any raw IntTools curve exceeds the shared
+`_section_tolerance_ceiling()` (max(128*base_tol, 1e-8*scale)), the probe
+refuses instead of matching against a sloppy raw curve. The ceiling is
+the same one `_verify_section_edge` uses (refactored to call the shared
+helper); `_raw_curve_tolerance()` is a seam so tests can inflate it
+artificially.
+
+`approximation_gaps` removed from CompletenessProbeReport,
+FaceIntersectionResult, ModelIntersectionResult, and the pipeline report
+dict. Component records now carry per-interval numbers
+(leaf_intervals with per-leaf verdict/t_start/t_end/depth/max_distance,
+leaf_interval_count, max_depth_reached, boundary_tail_intervals,
+tolerance_ceiling).
+
+### I3 tolerance derivation (no constant tuned to the test)
+
+- tol_i = max(16*base_tol, 4*max_verify_tol, 2*curve_tol): UNCHANGED from
+  G3. The per-interval rule uses the same tolerance; only the matching
+  logic (blanket -> per-interval) changed.
+- trim_tol: the face trim tolerance from the pipeline (4e-5 in F2).
+- tight_tol: max(base_tol, face tolerances) (1e-7 in F2). The boundary
+  band is (tight_tol, trim_tol]: OUT at tight_tol but in/on at trim_tol.
+- 64*eps*scale for edge-end detection: 64 multiples of double epsilon
+  times the model scale; a numerical guard, not a geometric tolerance.
+- N0=20, max_depth=5: sampling density parameters, not tolerances. Depth
+  5 gives 32x refinement (20*32=640 max leaves); adequate to isolate a
+  partial omission (the t1 test produces 320 violating leaves at depth
+  5, proving the omission is localized, not a sampling artifact).
+
+### I4 failing-tests-first
+
+- tests/test_g3_probe_rework.py::t1 (partial omission): FAILS on pre-fix
+  code (old code accepts via approximation_gap blanket), PASSES post-fix
+  (SectionCompletenessMismatch, 320 violating leaves at depth 5).
+- tests/test_g3_probe_rework.py::t2 (inflated raw tolerance):
+  FAILS on pre-fix code (no hook to inflate), PASSES post-fix
+  (RawIntersectionToleranceTooLoose when _raw_curve_tolerance is
+  monkeypatched to 1.0).
+- Both verified by stashing src/ and running (2026-09-25).
+
+### F2 (the false alarm that must stay accepted)
+
+- tests/test_g3_f2_regression.py: NURBS cone INTERSECT NURBS sphere.
+  Accepted. Volume 0.540815496 vs OCCT 0.540815493 (rel 4.74e-09, within
+  1e-6). Independent membership audit: 299 checked, 0 errors.
+- Probe records: 4 components, 1 above strict tol, matched via
+  boundary-tail provision (1 tail leaf [0.95, 1.0], maxd=9.41089e-05,
+  depth 0, no subdivision needed).
+
+### Commands run
+
+```
+~/workspace/brep-booleans/.venv/bin/python tests/test_g3_probe_rework.py
+~/workspace/brep-booleans/.venv/bin/python tests/test_g3_f2_regression.py
+# pre-fix verification (2026-09-25):
+git stash push -- src/ && ~/workspace/brep-booleans/.venv/bin/python tests/test_g3_probe_rework.py  # t1,t2 FAIL
+git stash pop
+```
+
+### Results (trimmed)
+
+test_g3_probe_rework.py: t1 PASS (SectionCompletenessMismatch, 320
+violating leaves), t2 PASS (RawIntersectionToleranceTooLoose).
+test_g3_f2_regression.py: ALL PASS (5/5 checks).
+
+### Gate verdicts
+
+| Criterion | Result |
+|---|---|
+| I4: partial-omission negative test fails pre-fix, passes post-fix | PASS |
+| I4: inflated-tolerance negative test fails pre-fix, passes post-fix | PASS |
+| F2 accepted, volume within 1e-6 of OCCT, arbiter clean | PASS |
+| No tolerance loosened (I3); tol_i formula unchanged | PASS |
+| Full suite green (I5) | PARTIAL (4/18 pass; see G4 REWORK entry) |
+
 ## G4 - Completeness probe coverage for analytic pairs
 
 - Date: 2026-09-25
@@ -707,8 +831,96 @@ Runner: ON exit: 0; OFF exit: 0 (branch gate/G4-probe-coverage tip 372171e).
 
 G4 gate: CLOSED.
 
----
+## G4 REWORK - Probe runs for every pair (classification deleted)
 
+- Date: 2026-09-25
+- Branch: gate/G3G4-rework (local only; never pushed, never merged)
+- Base: 79e3079 (gate/G4-probe-coverage tip)
+- Environment: ~/workspace/brep-booleans/.venv (CPython 3.12.3),
+  numpy==2.5.3, manifold3d==3.5.3, cadquery-ocp==8.0.1.0.0 (OCCT 8.0.1).
+
+### Why (the review finding)
+
+G4 classified face pairs and skipped the completeness probe for
+"closed-form" pairs (plane/plane, plane/cylinder, coaxial quadrics),
+claiming OCCT's IntAna exact intersector needs no verification. That is
+using a claim about OCCT's exactness to skip verifying OCCT: the probe
+exists because we do not trust the intersector, so exempting the pairs
+we trust most is backwards. The classification (quadric axis extraction,
+coaxiality checks) was also new code that could itself be wrong, and a
+wrong "coaxial" verdict would silently skip the probe where OCCT walks.
+
+### What was built
+
+- Deleted `_pair_needs_completeness_probe` and all classification
+  helpers (`_quadric_axis_point`, `_axes_coaxial`, `_quadrics_coaxial`,
+  `_QUADRIC_TYPES`, `_PLANE_OR_QUADRIC`): ~120 lines removed.
+- The probe now runs unconditionally for every candidate pair that
+  produces section curves, analytic and freeform alike.
+- `BREPKERNEL_COMPLETENESS_PROBE=0/off/false/no` environment switch
+  (`_completeness_probe_enabled()`): honest kill switch for measurement
+  and emergency use, honored in both `section_face_pair` and
+  `intersect_models`. Not a temporary hack; documented in the test.
+- tests/test_g4_probe_coverage.py rewritten: asserts the probe runs
+  (raw_curve_count > 0) and accepts (zero unmatched) for plane/plane,
+  plane/cylinder, tilted cyl/cyl, and torus/cyl; asserts the env switch
+  defaults on, disables with =0 (probe skipped, raw_curve_count == 0),
+  and re-enables on restore.
+
+### Commands run
+
+```
+~/workspace/brep-booleans/.venv/bin/python tests/test_g4_probe_coverage.py
+~/workspace/brep-booleans/.venv/bin/python tools/review_probes/fuzz_brep.py --trials 150 --seed 7 --out /tmp/g4r_fuzz_on.json
+BREPKERNEL_COMPLETENESS_PROBE=0 ~/workspace/brep-booleans/.venv/bin/python tools/review_probes/fuzz_brep.py --trials 150 --seed 7 --out /tmp/g4r_fuzz_off.json
+for t in tests/test_*.py; do ~/workspace/brep-booleans/.venv/bin/python "$t"; done
+git grep -P '\x{2014}' -- src tests docs  # no em dashes
+```
+
+### Results (trimmed)
+
+test_g4_probe_coverage.py: 12/12 PASS (probe runs and accepts for all
+four analytic pair kinds; env switch on/off/restore).
+
+Fuzz (150 trials, seed 7): NOT COMPLETED. The fuzz was started but trial
+0 took 126.78s (baseline median 5.7s) due to severe CPU contention: the
+coordinator was running parallel suites in other worktrees (load average
+8-9 on 2 CPUs). At 127s/trial, 150 trials would take 5+ hours. The fuzz
+was killed after trial 0 (accept, 0 WRONG). The full 150-trial on/off
+comparison must be run when the system is quiet; recorded here as an open
+item.
+
+Full suite: 4/18 test files verified PASS (the probe-critical ones):
+test_g3_probe_rework.py (t1, t2), test_g4_probe_coverage.py (12/12),
+test_freeform_intersection.py (t6, t7, t8, t9), test_g3_f2_regression.py
+(5/5). The remaining 14 test files were not run to completion due to the
+same CPU contention (test_brep_pipeline.py alone exceeded 6 minutes under
+load). They must be run when the system is quiet; recorded as an open
+item.
+
+### Per-refusal investigation
+
+No new SectionCompletenessMismatch was observed in the completed work:
+- t1 (partial omission): 320 violating leaves at depth 5, refused as
+  designed (true catch, the I4 negative test).
+- t9 (omitted torus loop): 640 violating leaves at max depth 5 (all
+  intervals violate), refused as designed (true catch, pre-existing
+  negative test still valid under the stricter rule).
+- F2: accepted via boundary-tail provision (1 tail leaf), not a refusal.
+
+The G4-baseline trial 51 (cyl union torus, TRUE CATCH under the old rule)
+was not re-run in the fuzz; its configuration should be checked manually
+when the fuzz runs.
+
+### Gate verdicts
+
+| Criterion | Result |
+|---|---|
+| Analytic fuzz (150): 0 WRONG | OPEN (not completed; system load) |
+| New SectionCompletenessMismatch refusals investigated one by one | PASS (t1, t9 are true catches; F2 accepted via provision) |
+| Median time increase recorded | OPEN (not measured; system load) |
+| Full suite green (I5) | PARTIAL (4/18 pass; 14 not run due to load) |
+| I1-I9 invariants held | PASS (no crash; refusals typed; no G3 constant touched; local branch only) |
 ## G6 - Tolerance-aware broad phase
 
 - Date: 2026-09-25

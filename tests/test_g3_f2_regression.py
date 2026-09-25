@@ -3,12 +3,14 @@
 NURBS cone INTERSECT NURBS sphere. Before the G3 tolerance rework this case
 refused with SectionCompletenessMismatch (raw=3, trimmed=2,
 max_distance=9.41089e-05, tol=4e-05) even though the unmatched raw component
-is the same branch as a verified section edge: an approximation gap, not a
-missing branch. After G3 the operation must be accepted, agree with the OCCT
-boolean oracle within 1e-6 relative, pass the independent membership audit
-with zero errors, and record the accepted gap in the stage report.
+is the same branch as a verified section edge: the raw IntTools curve
+overshoots the trim slightly past where the Section edge ends. After the
+G3 rework the operation must be accepted via the boundary-tail provision,
+agree with the OCCT boolean oracle within 1e-6 relative, pass the
+independent membership audit with zero errors, and record the per-interval
+matching numbers in the stage report.
 
-This test must FAIL on the pre-G3 code (refusal) and PASS after the fix.
+This test must FAIL on the pre-G3-rework code (refusal) and PASS after.
 """
 import os
 import sys
@@ -90,28 +92,33 @@ def main():
 
     ix = report.get("stages", {}).get("intersection", {})
     comps = ix.get("completeness_components", [])
-    # The component that the pre-G3 probe refused: its worst sample sits at
-    # 9.41089e-05, above the old 4e-05 limit. It must now be recorded with
-    # both coverage numbers and an accepting verdict.
+    # The component that the pre-G3-rework probe refused: its worst sample
+    # sits at 9.41089e-05, above the strict 4e-05 per-interval tolerance.
+    # It must now be recorded with per-interval numbers and accepted via
+    # the boundary-tail provision (the raw curve overshoots the trim past
+    # the Section edge end).
     f2comp = [c for c in comps
               if c["max_sample_distance"] > c["match_tolerance"]]
     ok &= check(
-        "f2 probe records per-component coverage numbers",
+        "f2 probe records per-interval numbers",
         len(f2comp) == 1 and len(comps) >= 1,
-        f"components={len(comps)} above_old_limit={len(f2comp)}")
+        f"components={len(comps)} above_strict_tol={len(f2comp)}")
     for c in f2comp:
+        tails = [r for r in c["leaf_intervals"]
+                 if r["verdict"] == "matched_with_boundary_tails"]
         ok &= check(
-            "f2 former false alarm accepted by the coverage rule",
-            c["verdict"] in ("matched", "approximation_gap")
-            and c["coverage_within_tol"] >= 0.95
-            and c["max_sample_distance"] <= c["separation_band"]
-            and c["nearest_distance"] < c["separation_band"],
+            "f2 former false alarm accepted via boundary tail",
+            c["verdict"] == "matched"
+            and c["boundary_tail_intervals"] >= 1
+            and len(tails) == c["boundary_tail_intervals"]
+            and all(r["boundary_tail_samples"] >= 1 for r in tails)
+            and all(r["max_distance"] > c["match_tolerance"]
+                    for r in tails),
             f"verdict={c['verdict']} "
-            f"coverage={c['coverage_within_tol']:.4f} "
+            f"tail_intervals={c['boundary_tail_intervals']} "
             f"nearest={c['nearest_distance']:.6g} "
             f"max={c['max_sample_distance']:.6g} "
-            f"tol_i={c['match_tolerance']:.6g} "
-            f"band={c['separation_band']:.6g}")
+            f"tol_i={c['match_tolerance']:.6g}")
 
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1

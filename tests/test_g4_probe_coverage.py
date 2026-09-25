@@ -1,30 +1,25 @@
-"""G4 regression: completeness-probe coverage for analytic pairs.
+"""G4 rework: the completeness probe runs for EVERY face pair.
 
-The probe must run wherever OCCT uses a numerical walking intersector,
-not only for NURBS pairs. Classification rule under test
-(intersection._pair_needs_completeness_probe):
+The G4 classification (IntAna closed-form pairs skip the probe) is gone:
+it used a claim about OCCT's exactness to skip verifying OCCT. The probe
+now runs unconditionally for every candidate pair that produces section
+curves, for analytic and freeform pairs alike.
 
-- probe ON: freeform pairs (pre-G4 behavior, unchanged), non-coaxial
-  quadric/quadric pairs, anything involving a torus or another
-  non-quadric surface;
-- probe OFF: plane/plane, plane/cylinder, plane/sphere, plane/cone, and
-  coaxial quadric pairs (closed form via IntAna).
-
-Coaxiality is conservative on purpose: a missed coaxial verdict only
-costs an extra probe run, while a wrong one would skip the probe where
-OCCT walks (I1).
-
-The test also checks the behavior end to end through section_face_pair:
-a plane/cylinder pair must report raw_curve_count == 0 (probe off) while
-a tilted cylinder/cylinder pair must run the probe (raw_curve_count > 0)
-and accept with zero unmatched components.
+This test checks end to end through section_face_pair that the probe runs
+(raw_curve_count > 0) and accepts (zero unmatched components) for
+representative analytic pair kinds: plane/plane, plane/cylinder,
+tilted cylinder/cylinder, and torus/cylinder. It also checks the
+BREPKERNEL_COMPLETENESS_PROBE environment kill switch: with it set to 0
+the probe is skipped everywhere (raw_curve_count == 0), and by default
+it is on.
 """
+import os
 import sys
 
 sys.path.insert(0, "src")
 
 from brepkernel.intersection import (
-    _pair_needs_completeness_probe,
+    _completeness_probe_enabled,
     section_face_pair,
 )
 from brepkernel.step_ingest import index_shape
@@ -32,9 +27,7 @@ from brepkernel.step_ingest import index_shape
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
 from OCP.BRepPrimAPI import (
     BRepPrimAPI_MakeBox,
-    BRepPrimAPI_MakeCone,
     BRepPrimAPI_MakeCylinder,
-    BRepPrimAPI_MakeSphere,
     BRepPrimAPI_MakeTorus,
 )
 from OCP.gp import gp_Ax1, gp_Ax2, gp_Dir, gp_Pnt, gp_Trsf, gp_Vec
@@ -48,86 +41,80 @@ def check(name, cond, detail=""):
         failures.append(name)
 
 
-def pick(shape, want):
+def pick(shape, want, skip=0):
+    seen = 0
     for f in index_shape(shape).faces:
         if want in f.surface_type:
-            return f
+            if seen == skip:
+                return f
+            seen += 1
     raise AssertionError(f"no {want} face found")
-
-
-def moved(shape, dx=0.0, dy=0.0, dz=0.0):
-    t = gp_Trsf()
-    t.SetTranslation(gp_Vec(dx, dy, dz))
-    return BRepBuilderAPI_Transform(shape, t, True).Shape()
 
 
 box = BRepPrimAPI_MakeBox(4, 4, 4).Shape()
 cyl = BRepPrimAPI_MakeCylinder(
     gp_Ax2(gp_Pnt(0, 0, -2), gp_Dir(0, 0, 1)), 1.0, 6.0).Shape()
-sph = BRepPrimAPI_MakeSphere(
-    gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), 2.0).Shape()
-cone = BRepPrimAPI_MakeCone(
-    gp_Ax2(gp_Pnt(0, 0, -2), gp_Dir(0, 0, 1)), 1.0, 2.0, 6.0).Shape()
 tor = BRepPrimAPI_MakeTorus(
     gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), 2.0, 0.7).Shape()
+# Shift the cylinder through the torus tube so the pair intersects.
+t = gp_Trsf()
+t.SetTranslation(gp_Vec(2.0, 0, 0))
+cyl_in_tor = BRepBuilderAPI_Transform(cyl, t, True).Shape()
 
-fp = pick(box, "Plane")
+# Two intersecting (non-parallel, adjacent) box planes: search the
+# deterministic face order for a pair whose section is a curve.
+planes = [f for f in index_shape(box).faces if "Plane" in f.surface_type]
+fp0, fp1 = None, None
+for i in range(len(planes)):
+    for j in range(i + 1, len(planes)):
+        r = section_face_pair(planes[i], planes[j])
+        if r.status == "curve" and r.raw_curve_count > 0:
+            fp0, fp1 = planes[i], planes[j]
+            break
+    if fp0 is not None:
+        break
+assert fp0 is not None, "no intersecting plane pair on the box"
 fc = pick(cyl, "Cylinder")
-fs = pick(sph, "Sphere")
-fk = pick(cone, "Cone")
 ft = pick(tor, "Torus")
-
-fc_off = pick(moved(cyl, 1.2, 0, 0), "Cylinder")
-fs_off = pick(moved(sph, 1.5, 0, 0), "Sphere")
+fc_in_tor = pick(cyl_in_tor, "Cylinder")
 
 tilt = gp_Trsf()
 tilt.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 1, 0)), 0.35)
 fc_tilt = pick(BRepBuilderAPI_Transform(cyl, tilt, True).Shape(), "Cylinder")
-fk_tilt = pick(BRepBuilderAPI_Transform(cone, tilt, True).Shape(), "Cone")
 
-CASES = [
-    # (name, face_a, face_b, probe_expected)
-    ("plane/plane", fp, fp, False),
-    ("plane/cylinder", fp, fc, False),
-    ("plane/sphere", fp, fs, False),
-    ("plane/cone", fp, fk, False),
-    ("plane/torus", fp, ft, True),
-    ("cyl/cyl coaxial", fc, fc, False),
-    ("cyl/cone coaxial", fc, fk, False),
-    ("cyl/sph coaxial", fc, fs, False),
-    ("sph/sph", fs, fs, False),
-    ("sph/sph offset", fs, fs_off, False),
-    ("cyl/cyl offset", fc, fc_off, True),
-    ("cyl/cyl tilted", fc, fc_tilt, True),
-    ("cone/cone tilted", fk, fk_tilt, True),
-    ("cone/cyl tilted", fk_tilt, fc, True),
-    ("cyl/sph offset", fc_off, fs, True),
-    ("torus/torus", ft, ft, True),
-    ("torus/cyl", ft, fc, True),
+PAIRS = [
+    ("plane/plane", fp0, fp1),
+    ("plane/cylinder", fp0, fc),
+    ("cyl/cyl tilted", fc, fc_tilt),
+    ("torus/cyl", ft, fc_in_tor),
 ]
 
-for name, a, b, want in CASES:
-    got = _pair_needs_completeness_probe(a, b, base_tol=1e-7)
-    check(f"classify {name}", got == want, f"want={want} got={got}")
-    # Classification is symmetric in the pair order.
-    got_rev = _pair_needs_completeness_probe(b, a, base_tol=1e-7)
-    check(f"classify {name} reversed", got_rev == want,
-          f"want={want} got={got_rev}")
+for name, a, b in PAIRS:
+    r = section_face_pair(a, b)
+    check(f"{name}: probe ran",
+          r.raw_curve_count > 0,
+          f"status={r.status} raw={r.raw_curve_count}")
+    check(f"{name}: probe accepts",
+          r.raw_unmatched_components == 0,
+          f"unmatched={r.raw_unmatched_components} "
+          f"status={r.status}")
 
-# End to end through section_face_pair.
-r_off = section_face_pair(fp, fc)
-check("plane/cyl probe off end-to-end",
-      r_off.raw_curve_count == 0 and r_off.status == "curve",
-      f"status={r_off.status} raw={r_off.raw_curve_count}")
-
-r_on = section_face_pair(fc, fc_tilt)
-check("tilted cyl/cyl probe on end-to-end",
-      r_on.raw_curve_count > 0,
-      f"raw={r_on.raw_curve_count}")
-check("tilted cyl/cyl probe accepts",
-      r_on.raw_unmatched_components == 0,
-      f"unmatched={r_on.raw_unmatched_components} "
-      f"status={r_on.status}")
+# The kill switch defaults to on ...
+check("probe enabled by default", _completeness_probe_enabled(),
+      f"env={os.environ.get('BREPKERNEL_COMPLETENESS_PROBE')!r}")
+# ... and BREPKERNEL_COMPLETENESS_PROBE=0 disables it everywhere.
+os.environ["BREPKERNEL_COMPLETENESS_PROBE"] = "0"
+try:
+    check("probe disabled by env switch",
+          not _completeness_probe_enabled(), "")
+    r = section_face_pair(fc, fc_tilt)
+    check("env switch skips probe end-to-end",
+          r.raw_curve_count == 0 and r.status.startswith("curve"),
+          f"status={r.status} raw={r.raw_curve_count}")
+finally:
+    del os.environ["BREPKERNEL_COMPLETENESS_PROBE"]
+check("probe re-enabled after env restore",
+      _completeness_probe_enabled(), "")
 
 print(f"{len(failures)} failures")
 sys.exit(1 if failures else 0)
