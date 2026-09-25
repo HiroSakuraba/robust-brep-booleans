@@ -485,6 +485,11 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "shadow_section_calls": ix.shadow_section_calls,
         "shadow_verified_edges": ix.shadow_verified_edges,
         "max_shadow_distance": ix.max_shadow_distance,
+        "completeness_probes": ix.completeness_probes,
+        "raw_curve_count": ix.raw_curve_count,
+        "raw_trimmed_components": ix.raw_trimmed_components,
+        "raw_unmatched_components": ix.raw_unmatched_components,
+        "completeness_max_distance": ix.completeness_max_distance,
     }
 
     t_stage = perf_counter()
