@@ -654,7 +654,12 @@ def split_models(a: BRepModel, b: BRepModel,
     """
     edges_a: dict[int, list[SectionEdgeRecord]] = {}
     edges_b: dict[int, list[SectionEdgeRecord]] = {}
-    unresolved: list[tuple[int, int, str]] = []
+    # Shared-seam refusals are per-edge, not per-pair-status, so
+    # _resolve_contacts cannot reconstruct them: they are carried in a
+    # dedicated list and prepended to the final unresolved contacts.
+    # Dropping them would silently bypass the UnresolvedContact gate in
+    # assembly (I1).
+    shared_seam_unresolved: list[tuple[int, int, str]] = []
     used_sections: list[SectionEdgeRecord] = []
     reused_seam_a = 0
     reused_seam_b = 0
@@ -682,7 +687,7 @@ def split_models(a: BRepModel, b: BRepModel,
                 # seam while preserving the physical intersection contour.
                 if seam_a and seam_b and not allow_risky:
                     shared_seam_refusals += 1
-                    unresolved.append(
+                    shared_seam_unresolved.append(
                         (pair.face_a, pair.face_b, "shared_seam_curve"))
                     continue
                 if seam_a and not allow_risky:
@@ -709,7 +714,9 @@ def split_models(a: BRepModel, b: BRepModel,
                 edges_b.setdefault(pair.face_b, []).append(e)
                 used_sections.append(e)
         else:
-            unresolved.append((pair.face_a, pair.face_b, pair.status))
+            # Unhandled pair statuses are surfaced by _resolve_contacts
+            # below; nothing to record here.
+            pass
 
     # G2.4: coincident tools. For each coincident pair, each face is cut
     # by the partner face's boundary edges.
@@ -774,9 +781,11 @@ def split_models(a: BRepModel, b: BRepModel,
             base_tol=base_tol)
 
     # G2.5: resolve boundary/point contacts against verified section
-    # edges and coincident-region boundaries.
-    unresolved = _resolve_contacts(
-        intersections, out_a, out_b, base_tol=base_tol)
+    # edges and coincident-region boundaries. Shared-seam refusals are
+    # prepended: they are per-edge and _resolve_contacts cannot see them.
+    unresolved = (shared_seam_unresolved
+                  + _resolve_contacts(
+                      intersections, out_a, out_b, base_tol=base_tol))
 
     return ModelSplitResult(
         faces_a=out_a,
