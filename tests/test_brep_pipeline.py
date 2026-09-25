@@ -3,6 +3,7 @@
 These tests exercise the one-call API rather than manually chaining the
 internal stages.
 """
+import json
 import math
 import sys
 
@@ -48,7 +49,8 @@ def t1_one_call_true_nurbs_union():
     a = BRepBuilderAPI_NurbsConvert(a0, True).Shape()
     b = BRepBuilderAPI_NurbsConvert(b0, True).Shape()
 
-    out, report = boolean_brep(a, b, "union")
+    out, report = boolean_brep(
+        a, b, "union", include_full_evidence=True)
     ing = report["stages"]["ingest"]
     ix = report["stages"]["intersection"]
     asm = report["stages"]["assembly"]
@@ -100,6 +102,20 @@ def t1_one_call_true_nurbs_union():
                 for p in payloads)
         and any(p["result_edges"] for p in payloads),
         f"section_payloads={payloads}")
+    full = asm.get("full_section_payloads", [])
+    ok &= check(
+        "p1 full evidence JSON export",
+        len(full) == len(payloads)
+        and all(
+            len(p["parameters"]) == len(p["xyz"])
+            == len(p["uv_A"]) == len(p["uv_B"])
+            and len(p["parameters"]) >= 2
+            and all(len(x) == 3 for x in p["xyz"])
+            and all(len(x) == 2 for x in p["uv_A"])
+            and all(len(x) == 2 for x in p["uv_B"])
+            for p in full)
+        and isinstance(json.dumps(report), str),
+        f"full_payloads={len(full)}")
     sampling = asm["section_sampling"]
     ok &= check(
         "p1 section sampling summary",
@@ -208,6 +224,34 @@ def t5_different_decomposition_public_fast_path():
         and solid_count(out) == 1,
         f"same_domain={sd}")
 
+
+def t6_public_volume_invariants_intersection_and_difference():
+    a0 = BRepPrimAPI_MakeSphere(gp_Pnt(0, 0, 0), 1.0).Shape()
+    b0 = BRepPrimAPI_MakeSphere(gp_Pnt(1, 0, 0), 1.0).Shape()
+    a = BRepBuilderAPI_NurbsConvert(a0, True).Shape()
+    b = BRepBuilderAPI_NurbsConvert(b0, True).Shape()
+
+    expected = {
+        "intersection": 5.0 * math.pi / 12.0,
+        "difference": 11.0 * math.pi / 12.0,
+    }
+    ok = True
+    for op in ("intersection", "difference"):
+        out, report = boolean_brep(a, b, op)
+        ver = report["stages"]["verification"]
+        got = volume(out)
+        ok &= check(
+            f"p6 {op} operation invariants",
+            report["accepted"]
+            and ver["brep_valid"]
+            and ver["complete_edge_lineage"]
+            and ver["volume_bounds_ok"]
+            and not ver["unattributed_edges"]
+            and abs(got - expected[op]) < 3e-6,
+            f"volume={got:.12g} expected={expected[op]:.12g} "
+            f"verification={ver}")
+    return ok
+
 def main():
     ok = True
     ok &= t1_one_call_true_nurbs_union()
@@ -215,6 +259,7 @@ def main():
     ok &= t3_tangent_contact_structured_refusal()
     ok &= t4_independent_same_domain_fast_path()
     ok &= t5_different_decomposition_public_fast_path()
+    ok &= t6_public_volume_invariants_intersection_and_difference()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
