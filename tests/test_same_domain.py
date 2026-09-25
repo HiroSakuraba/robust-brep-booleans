@@ -97,16 +97,18 @@ def t5_different_face_decomposition_matches_after_canonicalization():
     ca, cb = face_count(a), face_count(b)
     r = same_domain_shapes(a, b)
     canon = r.canonical_b
+    cb_after = face_count(b)
     return check(
-        "sd5 different decomposition canonicalized",
+        "sd5 different decomposition canonicalized on copy",
         ca != cb
         and r.equivalent
         and r.canonicalized
         and canon is not None
         and canon.faces_before == cb
-        and canon.faces_after == ca,
-        f"faces={ca}/{cb} equivalent={r.equivalent} "
-        f"canonicalized={r.canonicalized} "
+        and canon.faces_after == ca
+        and cb_after == cb,
+        f"faces={ca}/{cb} original_after={cb_after} "
+        f"equivalent={r.equivalent} canonicalized={r.canonicalized} "
         f"canonB={canon}")
 
 
