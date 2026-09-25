@@ -625,6 +625,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         if e.provenance_kind == "boolean_section"
         and (not e.verified_pcurves or not e.intersection_refs)]
     complete_lineage = not unattributed and not bad_sections
+    shadow_complete = all(
+        p.shadow_crosschecked for p in assembled.section_payloads)
 
     # Cheap operation-level volume invariants catch catastrophic selection or
     # shell-orientation errors without using a second Boolean engine.
@@ -662,6 +664,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "complete_edge_lineage": complete_lineage,
         "unattributed_edges": unattributed,
         "section_edges_missing_verified_pcurves": bad_sections,
+        "shadow_section_crosscheck_complete": shadow_complete,
         "volume_bounds_ok": volume_bounds_ok,
         "volume_bounds": volume_bounds,
         "volume_tolerance": volume_tol,
@@ -680,6 +683,12 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             f"final B-rep has unaudited edge lineage: "
             f"unattributed={unattributed}, bad_sections={bad_sections}",
             "IncompleteEdgeLineage")
+        refuse("verification", exc)
+    if not shadow_complete:
+        exc = FreeformError(
+            "one or more accepted section edges lack approx/nonapprox "
+            "construction cross-check evidence",
+            "SectionConstructionCrosscheckMissing")
         refuse("verification", exc)
     if not volume_bounds_ok:
         exc = FreeformError(
