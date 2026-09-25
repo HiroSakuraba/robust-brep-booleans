@@ -444,12 +444,15 @@ def _make_outward_solid(shell):
     return solid, outward_shell
 
 
-def _solid_interior_point(solid, tol: float) -> np.ndarray:
-    """Find a point just inside this shell, preferably near its boundary.
+def _solid_interior_points(solid, tol: float, *,
+                           max_points: int = 7,
+                           min_points: int = 3) -> np.ndarray:
+    """Find several points just inside one closed shell.
 
-    A near-boundary witness is essential for shell nesting: the center of a
-    large outer shell may also lie inside a nested cavity shell, which would
-    falsely make the two shells appear to contain one another.
+    Shell nesting must not depend on a single center/grid witness: a point in
+    the center of a large outer shell may also lie inside a nested cavity.  We
+    therefore prefer several near-boundary inward offsets distributed across
+    the shell and require containment decisions to agree for all of them.
     """
     from OCP.BRepClass3d import BRepClass3d_SolidClassifier
     from OCP.BRepGProp import BRepGProp
@@ -462,6 +465,9 @@ def _solid_interior_point(solid, tol: float) -> np.ndarray:
     from OCP.BRepTools import BRepTools
     from OCP.gp import gp_Pnt, gp_Pnt2d, gp_Vec
 
+    if max_points < min_points or min_points < 1:
+        raise ValueError("invalid solid witness count")
+
     clf = BRepClass3d_SolidClassifier(solid)
 
     def is_in(x: np.ndarray) -> bool:
@@ -471,14 +477,20 @@ def _solid_interior_point(solid, tol: float) -> np.ndarray:
 
     lo, hi = _bbox(solid)
     scale = max(float(np.linalg.norm(hi - lo)), 1.0)
+    sep = max(16.0 * float(tol), 1e-9 * scale)
+    points: list[np.ndarray] = []
 
-    # First preference: a tiny inward offset from a genuine interior point
-    # of one boundary face. Test both normal directions so this does not rely
-    # on imported face orientation.
+    def add(q: np.ndarray):
+        if all(float(np.linalg.norm(q - p)) > sep for p in points):
+            points.append(q)
+
     frac = (0.5, 0.25, 0.75, 0.125, 0.875,
             0.375, 0.625, 0.0625, 0.9375)
+
+    # Prefer points just inside different boundary locations.  Test both
+    # normal directions rather than trusting imported face orientation.
     ex = TopExp_Explorer(solid, TopAbs_FACE)
-    while ex.More():
+    while ex.More() and len(points) < max_points:
         face = TopoDS.Face(ex.Current())
         try:
             u0, u1, v0, v1 = map(float, BRepTools.UVBounds_s(face))
@@ -486,9 +498,8 @@ def _solid_interior_point(solid, tol: float) -> np.ndarray:
                 ex.Next()
                 continue
             surf = BRepAdaptor_Surface(face)
-            found = False
             for fu in frac:
-                if found:
+                if len(points) >= max_points:
                     break
                 u = u0 + (u1 - u0) * fu
                 for fv in frac:
@@ -509,23 +520,25 @@ def _solid_interior_point(solid, tol: float) -> np.ndarray:
                         continue
                     n /= nn
                     x = _p3(p)
-                    # Start close to the shell so a witness for an outer
-                    # boundary does not accidentally fall inside a nested
-                    # inner shell. Expand only if tolerance requires it.
+                    accepted = False
                     for eps in (1e-7, 1e-6, 1e-5, 1e-4):
                         d = max(16.0 * tol, eps * scale)
                         for sign in (-1.0, 1.0):
                             q = x + sign * d * n
                             if is_in(q):
-                                return q
-                    found = True
+                                add(q)
+                                accepted = True
+                                break
+                        if accepted:
+                            break
+                    if len(points) >= max_points:
+                        break
         except Exception:
             pass
         ex.Next()
 
-    # Fallback for pathological parameterizations: center of mass, then a
-    # deterministic interior grid. These are valid solid witnesses but are
-    # less suitable for detecting nesting, hence they come second.
+    # Fallback points are allowed to fill out the witness set, but never
+    # replace the requirement for multiple consistent witnesses.
     props = GProp_GProps()
     err = BRepGProp.VolumePropertiesGK_s(
         solid, props, 1e-9, True, True, True, False, False)
@@ -534,19 +547,31 @@ def _solid_interior_point(solid, tol: float) -> np.ndarray:
                             kind="VolumeIntegrationFailed")
     cm = _p3(props.CentreOfMass())
     if is_in(cm):
-        return cm
+        add(cm)
 
-    for fx in frac:
-        x = lo[0] + (hi[0] - lo[0]) * fx
-        for fy in frac:
-            y = lo[1] + (hi[1] - lo[1]) * fy
-            for fz in frac:
-                z = lo[2] + (hi[2] - lo[2]) * fz
-                q = np.array([x, y, z], dtype=np.float64)
-                if is_in(q):
-                    return q
-    raise AssemblyError("could not find interior point of assembled shell",
-                        kind="NoSolidInteriorWitness")
+    if len(points) < min_points:
+        for fx in frac:
+            x = lo[0] + (hi[0] - lo[0]) * fx
+            for fy in frac:
+                y = lo[1] + (hi[1] - lo[1]) * fy
+                for fz in frac:
+                    z = lo[2] + (hi[2] - lo[2]) * fz
+                    q = np.array([x, y, z], dtype=np.float64)
+                    if is_in(q):
+                        add(q)
+                    if len(points) >= max_points:
+                        break
+                if len(points) >= max_points:
+                    break
+            if len(points) >= max_points:
+                break
+
+    if len(points) < min_points:
+        raise AssemblyError(
+            f"only {len(points)} stable shell interior witness(es) found; "
+            f"{min_points} required",
+            kind="InsufficientShellWitnesses")
+    return np.vstack(points[:max_points])
 
 def _shell_records(shells: list[object], tol: float
                    ) -> list[ShellAssemblyRecord]:
@@ -561,22 +586,40 @@ def _shell_records(shells: list[object], tol: float
         if not vol > 0:
             raise AssemblyError("assembled shell has non-positive volume",
                                 kind="ZeroVolumeShell")
-        p = _solid_interior_point(solid, tol)
+        points = _solid_interior_points(solid, tol)
         tmp.append({
             "index": i, "shell": sh, "outward": outward,
-            "solid": solid, "volume": vol, "point": p,
-            "containers": []
+            "solid": solid, "volume": vol, "points": points,
+            "point": points[0], "containers": []
         })
 
+    from OCP.TopAbs import TopAbs_IN, TopAbs_ON, TopAbs_OUT
     for child in tmp:
-        p = gp_Pnt(*map(float, child["point"]))
         for parent in tmp:
             if parent is child:
                 continue
-            c = BRepClass3d_SolidClassifier(parent["solid"])
-            c.Perform(p, float(tol))
-            if c.State() == TopAbs_IN:
+            classifier = BRepClass3d_SolidClassifier(parent["solid"])
+            states = []
+            for q in child["points"]:
+                classifier.Perform(
+                    gp_Pnt(float(q[0]), float(q[1]), float(q[2])),
+                    float(tol))
+                states.append(classifier.State())
+
+            if any(st == TopAbs_ON for st in states):
+                raise AssemblyError(
+                    f"shell {child['index']} has a nesting witness on "
+                    f"candidate parent {parent['index']} boundary",
+                    kind="ShellContainmentAmbiguous")
+            if all(st == TopAbs_IN for st in states):
                 child["containers"].append(parent["index"])
+            elif all(st == TopAbs_OUT for st in states):
+                pass
+            else:
+                raise AssemblyError(
+                    f"shell {child['index']} has inconsistent containment "
+                    f"against shell {parent['index']}",
+                    kind="ShellContainmentAmbiguous")
 
     parents: dict[int, Optional[int]] = {}
     for child in tmp:
