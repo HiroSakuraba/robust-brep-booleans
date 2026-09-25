@@ -72,11 +72,17 @@ def t1_one_call_true_nurbs_union():
         abs(volume(out) - want) < 3e-6
         and abs(asm["volume"] - want) < 3e-6,
         f"shape={volume(out):.12g} report={asm['volume']:.12g}")
+    ver = report["stages"]["verification"]
     ok &= check(
         "p1 final verification",
-        report["stages"]["verification"]["brep_valid"]
-        and report["stages"]["verification"]["closed"]
-        and report["stages"]["verification"]["manifold_edges"])
+        ver["brep_valid"]
+        and ver["closed"]
+        and ver["manifold_edges"]
+        and ver["complete_edge_lineage"]
+        and ver["volume_bounds_ok"]
+        and not ver["unattributed_edges"]
+        and not ver["section_edges_missing_verified_pcurves"],
+        f"verification={ver}")
     lin = asm["edge_lineage"]
     ok &= check(
         "p1 final edge/p-curve lineage",
