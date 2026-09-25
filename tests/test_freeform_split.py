@@ -215,6 +215,85 @@ def t5_torus_seam_routes_existing_boundary_operand_specifically():
         f"B={[(r.status,len(r.pieces),r.source_edges,r.area_error) for r in rb]}")
     return ok
 
+
+def _torus_and_cutter_models():
+    tor0 = BRepPrimAPI_MakeTorus(3.0, 1.0).Shape()
+    conv = BRepBuilderAPI_NurbsConvert(tor0, True)
+    assert conv.IsDone()
+    torus = conv.Shape()
+    cutter = BRepPrimAPI_MakeBox(
+        gp_Pnt(-5.0, -5.0, -2.0),
+        gp_Pnt(5.0, 5.0, 0.0)).Shape()
+    return index_shape(torus), index_shape(cutter)
+
+
+def t6_torus_seam_routing_is_operand_symmetric():
+    """The same seam policy must work when the torus is operand B."""
+    tor, cut = _torus_and_cutter_models()
+    ix = intersect_models(cut, tor, base_tol=1e-7)
+    curve_pairs = [p for p in ix.pairs if p.edges]
+    if len(curve_pairs) != 1 or len(curve_pairs[0].edges) != 2:
+        return check(
+            "t6 setup has two reversed-order torus loops",
+            False,
+            f"pairs={[(p.face_a,p.face_b,len(p.edges)) for p in ix.pairs]}")
+
+    risks = [e.risk_flags for e in curve_pairs[0].edges]
+    ok = check(
+        "t6 setup has exactly one seam_on_b loop",
+        sum("seam_on_b" in r for r in risks) == 1,
+        f"risks={risks}")
+
+    sp = split_models(cut, tor, ix, base_tol=1e-7)
+    ra = [r for r in sp.faces_a if r.source_edges]
+    rb = [r for r in sp.faces_b if r.source_edges]
+    ok &= check(
+        "t6 cutter A uses both loops",
+        not sp.unresolved_contacts
+        and len(ra) == 1
+        and ra[0].source_edges == 2
+        and len(ra[0].pieces) >= 3,
+        f"A={[(r.status,len(r.pieces),r.source_edges,r.area_error) for r in ra]}")
+    ok &= check(
+        "t6 torus B reuses seam and uses interior loop",
+        len(rb) == 1
+        and rb[0].source_edges == 1
+        and len(rb[0].pieces) >= 2,
+        f"B={[(r.status,len(r.pieces),r.source_edges,r.area_error) for r in rb]}")
+    return ok
+
+
+def t7_shared_seam_still_refuses():
+    """An edge marked as seam on both operands is not auto-consumed.
+
+    There is no unique 'opposite face to split' in that case. Keep it
+    unresolved unless a later dedicated same-seam topology rule proves safety.
+    """
+    tor, cut = _torus_and_cutter_models()
+    ix = intersect_models(tor, cut, base_tol=1e-7)
+    curve_pairs = [p for p in ix.pairs if p.edges]
+    if len(curve_pairs) != 1:
+        return check("t7 setup has one curve pair", False,
+                     f"pairs={len(curve_pairs)}")
+
+    seam = next(
+        (e for e in curve_pairs[0].edges if "seam_on_a" in e.risk_flags),
+        None)
+    if seam is None:
+        return check("t7 setup has a seam edge", False)
+
+    original = seam.risk_flags
+    seam.risk_flags = tuple(sorted(set(original) | {"seam_on_b"}))
+    try:
+        sp = split_models(tor, cut, ix, base_tol=1e-7)
+    finally:
+        seam.risk_flags = original
+
+    return check(
+        "t7 shared seam remains unresolved",
+        any(x[2] == "shared_seam_curve" for x in sp.unresolved_contacts),
+        f"unresolved={sp.unresolved_contacts}")
+
 def main():
     ok = True
     ok &= t1_only_affected_trimmed_face_splits()
@@ -222,6 +301,8 @@ def main():
     ok &= t3_point_tangency_blocks_speculative_split()
     ok &= t4_near_tangent_gap_blocks_speculative_split()
     ok &= t5_torus_seam_routes_existing_boundary_operand_specifically()
+    ok &= t6_torus_seam_routing_is_operand_symmetric()
+    ok &= t7_shared_seam_still_refuses()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
