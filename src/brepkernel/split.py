@@ -11,7 +11,10 @@ Performance:
 - no global solid boolean is run merely to create local face patches.
 
 Accuracy / refusal:
-- near-tangent or seam-risk section edges are refused by default;
+- near-tangent section edges are refused by default;
+- a verified one-sided seam curve reuses the existing closing boundary on
+  that operand and remains a split tool on the opposite operand;
+- a curve that is a seam on both operands remains unresolved by default;
 - every split result must be OCCT-valid;
 - child face areas must partition the parent area within a scale-aware bound;
 - deterministic interior UV witnesses from child pieces must also classify
@@ -65,6 +68,9 @@ class ModelSplitResult:
     affected_faces_b: int
     unresolved_contacts: list[tuple[int, int, str]]
     section_edges: list[SectionEdgeRecord] = field(default_factory=list)
+    reused_seam_edges_a: int = 0
+    reused_seam_edges_b: int = 0
+    shared_seam_refusals: int = 0
 
     @property
     def certified_local_split(self) -> bool:
@@ -159,7 +165,9 @@ def split_face(face_rec: FaceRecord,
                fuzzy: float = 0.0,
                parallel: bool = True,
                use_obb: bool = True,
-               allow_risky: bool = False) -> FaceSplitResult:
+               allow_risky: bool = False,
+               ignored_risk_flags: frozenset[str] = frozenset()
+               ) -> FaceSplitResult:
     """Split one face once by all verified section edges that lie on it."""
     from OCP.BRep import BRep_Tool
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Splitter
@@ -190,7 +198,9 @@ def split_face(face_rec: FaceRecord,
                             before, None, True)],
             0, before, before, 0.0)
 
-    bad = sorted(set(flag for e in section_edges for flag in e.risk_flags))
+    bad = sorted(set(
+        flag for e in section_edges for flag in e.risk_flags
+        if flag not in ignored_risk_flags))
     if bad and not allow_risky:
         raise SplitError(
             f"face {face_rec.face_id}: refusing local split on risk flags "
@@ -294,20 +304,44 @@ def split_models(a: BRepModel, b: BRepModel,
                  allow_risky: bool = False) -> ModelSplitResult:
     """Split only faces touched by verified transverse section curves.
 
-    All point contacts, near contacts, distance failures, and (by default)
-    near-tangent/seam curves are surfaced as unresolved rather than being
-    converted into guessed face topology.
+    All point contacts, near contacts, distance failures, and near-tangent
+    curves are surfaced as unresolved rather than guessed. Verified one-sided
+    seam curves reuse the existing seam topology on that operand and split the
+    opposite operand; shared seams remain unresolved by default.
     """
     edges_a: dict[int, list[SectionEdgeRecord]] = {}
     edges_b: dict[int, list[SectionEdgeRecord]] = {}
     unresolved: list[tuple[int, int, str]] = []
     used_sections: list[SectionEdgeRecord] = []
+    reused_seam_a = 0
+    reused_seam_b = 0
+    shared_seam_refusals = 0
 
     for pair in intersections.pairs:
         if pair.status == "curve":
             for e in pair.edges:
-                edges_a.setdefault(pair.face_a, []).append(e)
-                edges_b.setdefault(pair.face_b, []).append(e)
+                flags = set(e.risk_flags)
+                seam_a = "seam_on_a" in flags
+                seam_b = "seam_on_b" in flags
+
+                # A section edge that is a seam on one operand already lies on
+                # that face's existing closing boundary. It is not a new cut
+                # there, but it remains a valid verified splitting tool on the
+                # opposite operand. This avoids duplicating/re-splitting the
+                # seam while preserving the physical intersection contour.
+                if seam_a and seam_b and not allow_risky:
+                    shared_seam_refusals += 1
+                    unresolved.append(
+                        (pair.face_a, pair.face_b, "shared_seam_curve"))
+                    continue
+                if seam_a and not allow_risky:
+                    reused_seam_a += 1
+                if seam_b and not allow_risky:
+                    reused_seam_b += 1
+                if not seam_a or allow_risky:
+                    edges_a.setdefault(pair.face_a, []).append(e)
+                if not seam_b or allow_risky:
+                    edges_b.setdefault(pair.face_b, []).append(e)
                 used_sections.append(e)
         elif pair.status == "disjoint":
             continue
@@ -330,7 +364,8 @@ def split_models(a: BRepModel, b: BRepModel,
         out_a.append(split_face(
             fr, es, base_tol=base_tol, area_rel_tol=area_rel_tol,
             fuzzy=fuzzy, parallel=parallel, use_obb=use_obb,
-            allow_risky=allow_risky))
+            allow_risky=allow_risky,
+            ignored_risk_flags=frozenset({"seam_on_b"})))
 
     for fr in b.faces:
         es = edges_b.get(fr.face_id, [])
@@ -339,7 +374,8 @@ def split_models(a: BRepModel, b: BRepModel,
         out_b.append(split_face(
             fr, es, base_tol=base_tol, area_rel_tol=area_rel_tol,
             fuzzy=fuzzy, parallel=parallel, use_obb=use_obb,
-            allow_risky=allow_risky))
+            allow_risky=allow_risky,
+            ignored_risk_flags=frozenset({"seam_on_a"})))
 
     return ModelSplitResult(
         faces_a=out_a,
@@ -349,4 +385,7 @@ def split_models(a: BRepModel, b: BRepModel,
         affected_faces_b=len(edges_b),
         unresolved_contacts=unresolved,
         section_edges=used_sections,
+        reused_seam_edges_a=reused_seam_a,
+        reused_seam_edges_b=reused_seam_b,
+        shared_seam_refusals=shared_seam_refusals,
     )

@@ -510,6 +510,9 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "split_calls": sp.split_calls,
         "affected_faces_A": sp.affected_faces_a,
         "affected_faces_B": sp.affected_faces_b,
+        "reused_seam_edges_A": sp.reused_seam_edges_a,
+        "reused_seam_edges_B": sp.reused_seam_edges_b,
+        "shared_seam_refusals": sp.shared_seam_refusals,
         "unresolved_contacts": list(sp.unresolved_contacts),
     }
 
