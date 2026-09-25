@@ -236,23 +236,17 @@ def _face_points(face, tol: float, *, max_points: int = 7,
             kind="InsufficientPatchWitnesses")
     return np.vstack(candidates[:max_points])
 
-def _classify_point_in_model(point: np.ndarray, model: BRepModel,
-                             tol: float) -> str:
-    """Classify a point against the union of the model's OCCT solids."""
+def _occt_point_verdict(point: np.ndarray, solids: list,
+                        tol: float) -> str:
+    """Raw BRepClass3d_SolidClassifier verdict against a list of solids."""
     from OCP.BRepClass3d import BRepClass3d_SolidClassifier
     from OCP.TopAbs import TopAbs_IN, TopAbs_ON, TopAbs_OUT
     from OCP.gp import gp_Pnt
 
-    if not model.solids:
-        raise AssemblyError(
-            "material patch classification requires closed OCCT solids; "
-            "shell-only input is unsupported at this stage",
-            kind="ShellOnlyClassificationUnsupported")
-
     p = gp_Pnt(float(point[0]), float(point[1]), float(point[2]))
     saw_on = False
-    for sr in model.solids:
-        c = BRepClass3d_SolidClassifier(sr.solid)
+    for solid in solids:
+        c = BRepClass3d_SolidClassifier(solid)
         c.Perform(p, float(tol))
         st = c.State()
         if st == TopAbs_IN:
@@ -262,6 +256,398 @@ def _classify_point_in_model(point: np.ndarray, model: BRepModel,
         elif st != TopAbs_OUT:
             return "unknown"
     return "boundary" if saw_on else "outside"
+
+
+def _classify_point_in_model(point: np.ndarray, model: BRepModel,
+                             tol: float) -> str:
+    """Classify a point against the union of the model's OCCT solids."""
+    if not model.solids:
+        raise AssemblyError(
+            "material patch classification requires closed OCCT solids; "
+            "shell-only input is unsupported at this stage",
+            kind="ShellOnlyClassificationUnsupported")
+    return _occt_point_verdict(
+        point, [sr.solid for sr in model.solids], tol)
+
+
+# ---------------------------------------------------------------------------
+# G5: second independent point classifier (multi-ray parity).
+#
+# Review finding F4: BRepClass3d_SolidClassifier returned a false IN for a
+# point more than 1.0 from both input surfaces, and the kernel's patch and
+# shell classification depended on that same classifier.  The second
+# classifier below never calls the OCCT solid classifier; it casts rays with
+# IntCurvesFace_ShapeIntersector (the face/ray intersector, a different OCCT
+# subsystem with a different failure mode) and counts transverse surface
+# crossings per solid: odd = inside, even = outside.  Per-solid parity
+# (rather than one count over the union) keeps cavity shells correct: a
+# point in a cavity sees an even crossing count and classifies outside.
+# ---------------------------------------------------------------------------
+
+# Fixed, deterministic, non-axis-aligned, well-spread ray directions.
+# Direction choice, documented:
+# - deterministic (no RNG): identical inputs give identical verdicts, and
+#   fault-injection tests are reproducible;
+# - no zero components: a ray can never run parallel to a coordinate plane,
+#   the common degenerate case for axis-aligned CAD geometry;
+# - components drawn from {1, 2, 3} with varied signs: keeps every direction
+#   away from face diagonals of axis-aligned boxes while spreading the set
+#   across all octants;
+# - 12 candidates: up to 7 degenerate rays (edge/vertex hits, grazing hits,
+#   near-origin hits) can be discarded while still seating the 5 valid rays
+#   the verdict requires (minimum 3 to decide at all).
+_RAY_DIRECTIONS = tuple(
+    _d / np.linalg.norm(_d)
+    for _d in (
+        (1, 2, 3), (-2, 1, 3), (3, -1, 2), (1, -3, -2),
+        (-3, 2, -1), (2, 3, -1), (-1, -2, 3), (3, 1, -2),
+        (-1, 3, -2), (2, -1, -3), (-3, -2, 1), (1, -2, -3),
+    )
+)
+
+_N_RAYS_TARGET = 5   # valid rays seated before deciding
+_N_RAYS_MIN = 3      # minimum valid agreeing rays for a verdict
+# |n.d| below this: grazing hit, ray discarded.  A near-tangent pass is
+# the one configuration where the intersector demonstrably drops a
+# crossing: observed on a NURBS sphere, a ray with a single reported hit
+# at |n.d| = 0.023 whose paired near-tangent hit (0.045 further along the
+# ray) was missed, flipping parity from even to odd.  The found hit of a
+# near-tangent pass is itself near-tangent, so discarding the ray on the
+# found hit's |n.d| removes the whole failure mode; 0.05 (~3 degrees)
+# keeps about 2x margin over the observed case.  Discarding is always the
+# safe direction: 12 fixed directions feed a 3-ray minimum.
+_TANGENT_COS = 0.05
+_RAY_PMAX = 1e100
+
+
+class _MultiRayClassifier:
+    """Independent point-in-solid classifier via ray parity.
+
+    Crossing-count rule: for one ray, each solid contributes its transverse
+    surface-crossing count; the point is inside a solid iff that count is
+    odd, and inside the model iff inside at least one solid.  A ray is
+    discarded (never counted) when any hit is degenerate:
+    - the hit parameter is within tol of the ray origin (too close to call);
+    - the hit is within tol of an edge or vertex of any solid;
+    - the ray grazes the face (|oriented-normal . direction| < 0.05).
+    A discarded ray is replaced with the next fixed direction.  Fewer than
+    3 valid rays, or disagreement among the seated rays, yields "unknown"
+    rather than a guessed verdict.
+
+    Rays are cast bidirectionally: for each direction d, both +d and -d
+    are cast, and the pair is seated only if every solid's (+d count +
+    -d count) is even.  A line meets a closed solid in an even number of
+    transverse crossings, so an odd sum proves the intersector missed or
+    added a crossing on that line (observed failure: a near-tangent ray
+    whose missed partner crossing flips the parity).  The pair's verdict
+    comes from the +d counts.  Either side degenerate, or any solid with
+    an odd bidirectional sum, discards the pair.
+    """
+
+    def __init__(self, solids: list, tol: float):
+        from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+
+        self._tol = float(tol)
+        self._solids = list(solids)
+        self._intersectors = []
+        for solid in self._solids:
+            inter = IntCurvesFace_ShapeIntersector()
+            inter.Load(solid, self._tol)
+            self._intersectors.append(inter)
+        self._edges = self._edge_compound(self._solids)
+
+    @staticmethod
+    def _edge_compound(solids):
+        """One compound holding every edge, for edge-proximity checks."""
+        from OCP.BRep import BRep_Builder
+        from OCP.TopAbs import TopAbs_EDGE
+        from OCP.TopExp import TopExp_Explorer
+        from OCP.TopoDS import TopoDS, TopoDS_Compound
+
+        comp = TopoDS_Compound()
+        builder = BRep_Builder()
+        builder.MakeCompound(comp)
+        for solid in solids:
+            ex = TopExp_Explorer(solid, TopAbs_EDGE)
+            while ex.More():
+                builder.Add(comp, TopoDS.Edge(ex.Current()))
+                ex.Next()
+        return comp
+
+    @staticmethod
+    def _face_normal(face, u: float, v: float):
+        from OCP.BRepAdaptor import BRepAdaptor_Surface
+        from OCP.gp import gp_Pnt, gp_Vec
+
+        try:
+            surf = BRepAdaptor_Surface(face)
+            p = gp_Pnt()
+            du = gp_Vec()
+            dv = gp_Vec()
+            surf.D1(float(u), float(v), p, du, dv)
+        except Exception:
+            return None
+        n = np.cross(
+            np.array([du.X(), du.Y(), du.Z()]),
+            np.array([dv.X(), dv.Y(), dv.Z()]))
+        nn = float(np.linalg.norm(n))
+        if nn <= 1e-300:
+            return None
+        return n / nn
+
+    def _dist_to_edges(self, point: np.ndarray) -> float:
+        from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+        from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+        from OCP.gp import gp_Pnt
+
+        v = BRepBuilderAPI_MakeVertex(
+            gp_Pnt(float(point[0]), float(point[1]), float(point[2]))).Vertex()
+        d = BRepExtrema_DistShapeShape(v, self._edges)
+        if not d.IsDone():
+            d.Perform()
+        if not d.IsDone():
+            return 0.0  # fail safe: treat as degenerate
+        return float(d.Value())
+
+    def _cast_ray(self, point: np.ndarray,
+                  direction: np.ndarray) -> Optional[list[int]]:
+        """Crossing counts per solid, or None if the ray is degenerate."""
+        from OCP.TopoDS import TopoDS
+        from OCP.gp import gp_Ax1, gp_Dir, gp_Lin, gp_Pnt
+
+        lin = gp_Lin(gp_Ax1(
+            gp_Pnt(float(point[0]), float(point[1]), float(point[2])),
+            gp_Dir(float(direction[0]), float(direction[1]),
+                   float(direction[2]))))
+        counts = []
+        for inter in self._intersectors:
+            inter.Perform(lin, 0.0, _RAY_PMAX)
+            if not inter.IsDone():
+                return None
+            n = 0
+            for i in range(1, inter.NbPnt() + 1):
+                if float(inter.WParameter(i)) < self._tol:
+                    return None  # hit at/behind the origin
+                face = TopoDS.Face(inter.Face(i))
+                nrm = self._face_normal(
+                    face, float(inter.UParameter(i)),
+                    float(inter.VParameter(i)))
+                if nrm is None:
+                    return None
+                if abs(float(np.dot(nrm, direction))) < _TANGENT_COS:
+                    return None  # grazing hit
+                hp = inter.Pnt(i)
+                if self._dist_to_edges(
+                        np.array([hp.X(), hp.Y(), hp.Z()])) < self._tol:
+                    return None  # within tol of an edge or vertex
+                n += 1
+            counts.append(n)
+        return counts
+
+    def _cast_bidirectional(self, point: np.ndarray,
+                            direction: np.ndarray) -> Optional[list[int]]:
+        """+d crossing counts per solid, or None if the pair is unusable.
+
+        Casts both +d and -d.  Returns None when either side is degenerate
+        (see _cast_ray) or when any solid's bidirectional crossing sum is
+        odd, which proves the intersector missed or added a crossing on
+        that line.
+        """
+        plus = self._cast_ray(point, direction)
+        if plus is None:
+            return None
+        minus = self._cast_ray(point, -direction)
+        if minus is None:
+            return None
+        for cp, cm in zip(plus, minus):
+            if (cp + cm) % 2 == 1:
+                return None
+        return plus
+
+    def classify(self, point: np.ndarray) -> str:
+        """Return 'inside', 'outside', or 'unknown'.
+
+        Seats up to 5 valid bidirectional ray pairs from the fixed
+        direction list; all seated pairs must agree.  "unknown" is
+        returned (never a guess) when fewer than 3 pairs validate or the
+        pairs disagree with each other.
+        """
+        p = np.asarray(point, dtype=np.float64).reshape(3)
+        verdicts = []
+        for direction in _RAY_DIRECTIONS:
+            counts = self._cast_bidirectional(p, direction)
+            if counts is None:
+                continue
+            verdicts.append(
+                "inside" if any(c % 2 == 1 for c in counts) else "outside")
+            if len(verdicts) >= _N_RAYS_TARGET:
+                break
+        if len(verdicts) < _N_RAYS_MIN:
+            return "unknown"
+        if all(v == verdicts[0] for v in verdicts):
+            return verdicts[0]
+        return "unknown"
+
+
+def _raise_classifier_disagreement(point: np.ndarray, occt_verdict: str,
+                                   independent_verdict: str) -> None:
+    """Refuse a decision the two classifiers do not agree on."""
+    pt = (float(point[0]), float(point[1]), float(point[2]))
+    exc = AssemblyError(
+        f"point classifiers disagree at {pt}: "
+        f"BRepClass3d_SolidClassifier={occt_verdict}, "
+        f"multi-ray parity={independent_verdict}; refusing rather than "
+        f"deciding on a single classifier",
+        kind="ClassifierDisagreement")
+    exc.occt_verdict = occt_verdict
+    exc.independent_verdict = independent_verdict
+    exc.point = pt
+    raise exc
+
+
+def _agreed_point_verdict(point: np.ndarray, model: BRepModel, tol: float,
+                          ray: _MultiRayClassifier) -> str:
+    """Classify a decision witness with both classifiers.
+
+    Returns the agreed 'inside'/'outside' verdict, or the OCCT
+    'boundary'/'unknown' state for the caller's existing refusal path.
+    Any OCCT inside/outside verdict the multi-ray classifier does not
+    confirm raises ClassifierDisagreement carrying both verdicts and the
+    point.
+    """
+    occt = _classify_point_in_model(point, model, tol)
+    if occt not in ("inside", "outside"):
+        return occt
+    independent = ray.classify(point)
+    if independent == occt:
+        return occt
+    _raise_classifier_disagreement(point, occt, independent)
+
+
+def classify_point_two_classifier(point, model, tol: float) -> dict:
+    """Two-classifier point verdict (G5).
+
+    `model` is a BRepModel or a sequence of TopoDS solids.  Returns a dict
+    with keys: point, occt (BRepClass3d_SolidClassifier verdict),
+    independent (multi-ray parity verdict), agreed (bool), decision (the
+    agreed inside/outside verdict, or None when the classifiers do not
+    agree).  The winding/tessellation arbiter in tools/review_probes stays
+    the TESTING arbiter only; it is not used as a production classifier.
+    """
+    p = np.asarray(point, dtype=np.float64).reshape(-1)
+    if p.shape != (3,):
+        raise ValueError("point must have exactly 3 coordinates")
+    if isinstance(model, BRepModel):
+        if not model.solids:
+            raise AssemblyError(
+                "material patch classification requires closed OCCT "
+                "solids; shell-only input is unsupported at this stage",
+                kind="ShellOnlyClassificationUnsupported")
+        solids = [sr.solid for sr in model.solids]
+    else:
+        solids = list(model)
+    occt = _occt_point_verdict(p, solids, tol)
+    independent = _MultiRayClassifier(solids, tol).classify(p)
+    agreed = occt in ("inside", "outside") and independent == occt
+    return {
+        "point": (float(p[0]), float(p[1]), float(p[2])),
+        "occt": occt,
+        "independent": independent,
+        "agreed": agreed,
+        "decision": occt if agreed else None,
+    }
+
+
+def _point_boundary_distances(points: np.ndarray,
+                              model: BRepModel) -> list[float]:
+    """Distance from each point to the boundary of the model's solids.
+
+    Measured against the model's FACES, not the solids: OCCT reports
+    distance 0 for a vertex strictly inside a solid (containment), while
+    the face distance is the true distance to the boundary.
+    """
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    from OCP.gp import gp_Pnt
+
+    dists = []
+    for p in points:
+        v = BRepBuilderAPI_MakeVertex(
+            gp_Pnt(float(p[0]), float(p[1]), float(p[2]))).Vertex()
+        best = float("inf")
+        for fr in model.faces:
+            d = BRepExtrema_DistShapeShape(v, fr.face)
+            if not d.IsDone():
+                d.Perform()
+            if d.IsDone():
+                best = min(best, float(d.Value()))
+        dists.append(best)
+    return dists
+
+
+def _witness_material_verdict(points: np.ndarray, classes: tuple[str, ...],
+                              model: BRepModel, tol: float, *,
+                              operand: str, parent_face_id: int,
+                              piece_index: int,
+                              min_points: int = 3) -> str:
+    """Decide one patch's material state from dual-classified witnesses.
+
+    G5 witness preference: witnesses at distance >= 10x tol from the other
+    operand's boundary (BRepExtrema_DistShapeShape against the other model's
+    faces) drive the decision, because the classifier confusion zone hugs
+    the boundary.  Where at least `min_points` witnesses clear the band:
+    - the far witnesses must be unanimous (else PatchClassificationInconsistent);
+    - a far boundary/unknown verdict refuses (BoundaryOrUnknownPatch);
+    - near-boundary boundary/unknown verdicts are confusion-zone noise and
+      are ignored;
+    - but a near witness that materially contradicts the far verdict (with
+      both classifiers agreeing) still blocks with
+      PatchClassificationInconsistent: that is the straddling-patch guard,
+      and dropping it would let a thin sliver hide inside the far set.
+    Where fewer than `min_points` witnesses clear the band, the preference
+    is not feasible and the pre-G5 full-set unanimity rule applies
+    unchanged.
+
+    NOT applied in _solid_interior_points: those witnesses are deliberately
+    near-boundary inward offsets, and thin shells would lose every witness
+    under a 10x tol band.  NOT applied in _shell_records nesting either,
+    which reuses those same near-boundary witnesses.
+    """
+    dists = _point_boundary_distances(points, model)
+    band = 10.0 * float(tol)
+    far = [c for c, d in zip(classes, dists) if d >= band]
+    near = [c for c, d in zip(classes, dists) if d < band]
+
+    def refuse(kind: str, detail: str) -> None:
+        raise AssemblyError(
+            f"{operand} face {parent_face_id} piece {piece_index}: "
+            f"{detail}",
+            kind=kind)
+
+    def unanimous_among(which: list[str], what: str) -> str:
+        invalid = sorted(set(
+            x for x in which if x not in ("inside", "outside")))
+        if invalid:
+            refuse("BoundaryOrUnknownPatch",
+                   f"{what} witness classification contains {invalid}")
+        unique = set(which)
+        if len(unique) != 1:
+            refuse("PatchClassificationInconsistent",
+                   f"supposedly split patch straddles material states "
+                   f"{sorted(unique)} ({what} witnesses)")
+        return which[0]
+
+    if len(far) >= min_points:
+        verdict = unanimous_among(far, "far-from-boundary")
+        contra = sorted(set(
+            x for x in near
+            if x in ("inside", "outside") and x != verdict))
+        if contra:
+            refuse("PatchClassificationInconsistent",
+                   f"near-boundary witness(es) contradict the "
+                   f"far-witness verdict {verdict}: {contra}")
+        return verdict
+    return unanimous_among(list(classes), "witness")
 
 
 def _decision_rule(operation: str, operand: str,
@@ -442,64 +828,44 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
     out: list[PatchDecision] = []
 
     def one_side(operand: str, groups, other: BRepModel):
+        # One multi-ray classifier per side, built at the loosest piece
+        # tolerance: a wider edge/near-origin discard band is the
+        # conservative choice, and the per-piece OCCT tolerance still
+        # governs the primary classifier.
+        jobs = []
         for fr in groups:
             for piece in fr.pieces:
                 tol = max(
                     float(base_tol),
                     2.0 * float(BRep_Tool.Tolerance_s(piece.face)))
-                # G2.6: coincident pieces get their ON state from the pair
-                # relation, not from 3D witnesses. The witness still has
-                # to be ON the partner support with a matching normal-dot
-                # sign, else CoincidenceWitnessMismatch.
-                if piece.coincidence is not None:
-                    cls = _classify_coincident_piece(
-                        piece, operand, base_tol)
-                    keep, rev = _decision_rule(operation, operand, cls)
-                    source = piece.face
-                    selected = _reverse_face(source) if keep and rev else (
-                        source if keep else None)
-                    points = _face_points(source, tol)
-                    out.append(PatchDecision(
-                        operand=operand,
-                        parent_face_id=piece.parent_face_id,
-                        piece_index=piece.piece_index,
-                        classification=cls,
-                        keep=keep,
-                        reverse_for_difference=rev,
-                        witness_xyz=points[0],
-                        witness_xyz_all=points,
-                        witness_classifications=tuple([cls] * len(points)),
-                        source_face=source,
-                        selected_face=selected,
-                    ))
-                    continue
-                points = _face_points(piece.face, tol)
-                classes = tuple(
-                    _classify_point_in_model(p, other, tol)
-                    for p in points)
-                invalid = sorted(set(
-                    x for x in classes
-                    if x not in ("inside", "outside")))
-                if invalid:
-                    raise AssemblyError(
-                        f"{operand} face {piece.parent_face_id} piece "
-                        f"{piece.piece_index}: witness classification "
-                        f"contains {invalid}",
-                        kind="BoundaryOrUnknownPatch")
-                unique = set(classes)
-                if len(unique) != 1:
-                    raise AssemblyError(
-                        f"{operand} face {piece.parent_face_id} piece "
-                        f"{piece.piece_index}: supposedly split patch "
-                        f"straddles material states {sorted(unique)}",
-                        kind="PatchClassificationInconsistent")
-                # G2.1 canonical states. Non-coincident patches use the
-                # multi-witness IN/OUT logic; ON witnesses still refuse.
-                cls = {"inside": "IN", "outside": "OUT"}[classes[0]]
+    def one_side(operand: str, groups, other: BRepModel):
+        # One multi-ray classifier per side, built at the loosest piece
+        # tolerance: a wider edge/near-origin discard band is the
+        # conservative choice, and the per-piece OCCT tolerance still
+        # governs the primary classifier.
+        jobs = []
+        for fr in groups:
+            for piece in fr.pieces:
+                tol = max(
+                    float(base_tol),
+                    2.0 * float(BRep_Tool.Tolerance_s(piece.face)))
+                jobs.append((piece, tol))
+        ray_tol = max([t for _, t in jobs], default=float(base_tol))
+        ray = _MultiRayClassifier(
+            [sr.solid for sr in other.solids], ray_tol)
+        for piece, tol in jobs:
+            # G2.6: coincident pieces get their ON state from the pair
+            # relation, not from 3D witnesses. The witness still has
+            # to be ON the partner support with a matching normal-dot
+            # sign, else CoincidenceWitnessMismatch.
+            if piece.coincidence is not None:
+                cls = _classify_coincident_piece(
+                    piece, operand, base_tol)
                 keep, rev = _decision_rule(operation, operand, cls)
                 source = piece.face
                 selected = _reverse_face(source) if keep and rev else (
                     source if keep else None)
+                points = _face_points(source, tol)
                 out.append(PatchDecision(
                     operand=operand,
                     parent_face_id=piece.parent_face_id,
@@ -509,10 +875,42 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                     reverse_for_difference=rev,
                     witness_xyz=points[0],
                     witness_xyz_all=points,
-                    witness_classifications=classes,
+                    witness_classifications=tuple([cls] * len(points)),
                     source_face=source,
                     selected_face=selected,
                 ))
+                continue
+            points = _face_points(piece.face, tol)
+            classes = tuple(
+                _agreed_point_verdict(p, other, tol, ray)
+                for p in points)
+            cls = _witness_material_verdict(
+                points, classes, other, tol,
+                operand=operand,
+                parent_face_id=piece.parent_face_id,
+                piece_index=piece.piece_index)
+            # G2.1 canonical states: map the dual-classified
+            # inside/outside verdict onto the four-state model before the
+            # keep table.
+            cls = {"inside": "IN", "outside": "OUT"}[cls]
+            keep, rev = _decision_rule(operation, operand, cls)
+            source = piece.face
+            selected = _reverse_face(source) if keep and rev else (
+                source if keep else None)
+            out.append(PatchDecision(
+                operand=operand,
+                parent_face_id=piece.parent_face_id,
+                piece_index=piece.piece_index,
+                classification=cls,
+                keep=keep,
+                reverse_for_difference=rev,
+                witness_xyz=points[0],
+                witness_xyz_all=points,
+                witness_classifications=classes,
+                source_face=source,
+                selected_face=selected,
+            ))
+
 
     one_side("A", split.faces_a, model_b)
     one_side("B", split.faces_b, model_a)
@@ -642,11 +1040,16 @@ def _solid_interior_points(solid, tol: float, *,
         raise ValueError("invalid solid witness count")
 
     clf = BRepClass3d_SolidClassifier(solid)
+    # G5: witness search must not trust the OCCT classifier alone either;
+    # a false IN here (finding F4) would plant a corrupt nesting witness.
+    ray = _MultiRayClassifier([solid], tol)
 
     def is_in(x: np.ndarray) -> bool:
         clf.Perform(gp_Pnt(float(x[0]), float(x[1]), float(x[2])),
                     float(tol))
-        return clf.State() == TopAbs_IN
+        if clf.State() != TopAbs_IN:
+            return False
+        return ray.classify(x) == "inside"
 
     lo, hi = _bbox(solid)
     scale = max(float(np.linalg.norm(hi - lo)), 1.0)
@@ -767,17 +1170,35 @@ def _shell_records(shells: list[object], tol: float
         })
 
     from OCP.TopAbs import TopAbs_IN, TopAbs_ON, TopAbs_OUT
+    # G5: one independent multi-ray classifier per candidate parent solid;
+    # containment of a child shell in a parent is a material decision, so
+    # the OCCT verdict on every witness must be confirmed by ray parity.
+    ray_by_parent = {p["index"]: _MultiRayClassifier([p["solid"]], tol)
+                     for p in tmp}
     for child in tmp:
         for parent in tmp:
             if parent is child:
                 continue
             classifier = BRepClass3d_SolidClassifier(parent["solid"])
+            ray = ray_by_parent[parent["index"]]
             states = []
             for q in child["points"]:
                 classifier.Perform(
                     gp_Pnt(float(q[0]), float(q[1]), float(q[2])),
                     float(tol))
-                states.append(classifier.State())
+                st = classifier.State()
+                if st == TopAbs_IN:
+                    occt_name = "inside"
+                elif st == TopAbs_OUT:
+                    occt_name = "outside"
+                else:
+                    occt_name = None
+                if occt_name is not None:
+                    independent = ray.classify(q)
+                    if independent != occt_name:
+                        _raise_classifier_disagreement(
+                            q, occt_name, independent)
+                states.append(st)
 
             if any(st == TopAbs_ON for st in states):
                 raise AssemblyError(
