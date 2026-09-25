@@ -250,7 +250,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                  tangent_sin_tol=1e-4, max_section_tol=None,
                  area_rel_tol=2e-6, sew_tol=None,
                  include_full_evidence=False,
-                 shadow_section_crosscheck=False):
+                 shadow_section_crosscheck=False,
+                 crosscheck_ops=False):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
 
     Returns (TopoDS_Shape, report) and leaves the existing mesh/proxy
@@ -274,6 +275,13 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     It is an optional stress mode, not part of the default certification path:
     on difficult freeform walking intersections that alternative construction
     can be less accurate than the primary representation.
+
+    crosscheck_ops=True additionally runs the two other Boolean operations on
+    the same inputs and requires the volume identities
+    vol(AuB)+vol(AnB)=vol(A)+vol(B) and vol(A-B)=vol(A)-vol(AnB) within the
+    scale-aware volume tolerance. A violation is a typed refusal with
+    kind=OperationIdentityFailed. Off by default because it costs three
+    pipeline runs; intended for CI-level tests, not every call.
     """
     from time import perf_counter
     from OCP.BRepCheck import BRepCheck_Analyzer
@@ -321,6 +329,119 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         }
         raise BRepAmbiguousResult(
             f"B-rep result refused in {stage}: {exc}", report, exc) from exc
+
+    # Options forwarded verbatim to the two companion runs of the optional
+    # cross-operation identity check. crosscheck_ops itself is forced off
+    # there so the check never recurses.
+    _pass_kwargs = dict(
+        base_tol=base_tol, broadphase_pad=broadphase_pad,
+        chord_tol=chord_tol, contact_tol=contact_tol, fuzzy=fuzzy,
+        parallel=parallel, use_obb=use_obb,
+        tangent_sin_tol=tangent_sin_tol, max_section_tol=max_section_tol,
+        area_rel_tol=area_rel_tol, sew_tol=sew_tol,
+        include_full_evidence=include_full_evidence,
+        shadow_section_crosscheck=shadow_section_crosscheck)
+
+    def _finalize(out, result_report):
+        """Run the optional cross-operation identity check (G1).
+
+        With crosscheck_ops=True the two other Boolean operations are
+        computed on the same inputs and the volume identities
+        vol(AuB)+vol(AnB)=vol(A)+vol(B) and vol(A-B)=vol(A)-vol(AnB) must
+        hold within the scale-aware volume tolerance. A violation is a
+        typed refusal with kind=OperationIdentityFailed. A companion run
+        that itself refuses is recorded as skipped, never silently passed.
+        """
+        if not crosscheck_ops:
+            return out, result_report
+        others = [o for o in ("union", "intersection", "difference")
+                  if o != op]
+        vols = {}
+        tols = []
+        skipped = {}
+
+        def _safe_volume(shape):
+            # Empty results (no solids) have volume zero; the adaptive
+            # integrator reports an error on them instead of 0.0.
+            from OCP.TopAbs import TopAbs_SOLID
+            from OCP.TopExp import TopExp_Explorer
+            if shape.IsNull():
+                return 0.0
+            if not TopExp_Explorer(shape, TopAbs_SOLID).More():
+                return 0.0
+            return abs(float(_shape_volume(shape)))
+
+        def _report_tol(rep):
+            ver = rep.get("stages", {}).get("verification", {})
+            t = ver.get("volume_tolerance")
+            return float(t) if t is not None else None
+
+        t_primary = _report_tol(result_report)
+        if t_primary is not None:
+            tols.append(t_primary)
+        for other in others:
+            try:
+                other_out, other_report = boolean_brep(
+                    shapeA, shapeB, other, crosscheck_ops=False,
+                    **_pass_kwargs)
+            except BRepAmbiguousResult as exc:
+                skipped[other] = exc.report.get("refusal", {}).get(
+                    "kind", type(exc).__name__)
+                continue
+            vols[other] = _safe_volume(other_out)
+            t_other = _report_tol(other_report)
+            if t_other is not None:
+                tols.append(t_other)
+        vols[op] = _safe_volume(out)
+        va = _safe_volume(a.shape)
+        vb = _safe_volume(b.shape)
+        volume_tol = max(tols) if tols else 2e-8 * max(va, vb, 1.0)
+
+        identities = {}
+        failed = []
+        if "union" in vols and "intersection" in vols:
+            err = abs(vols["union"] + vols["intersection"] - va - vb)
+            ok = err <= volume_tol
+            identities["union_plus_intersection"] = {
+                "error": err, "tolerance": volume_tol, "ok": ok}
+            if not ok:
+                failed.append(("union_plus_intersection", err))
+        else:
+            identities["union_plus_intersection"] = {
+                "checked": False,
+                "reason": "companion operation refused",
+                "skipped": skipped,
+            }
+        if "difference" in vols and "intersection" in vols:
+            err = abs(vols["difference"] - (va - vols["intersection"]))
+            ok = err <= volume_tol
+            identities["difference_from_intersection"] = {
+                "error": err, "tolerance": volume_tol, "ok": ok}
+            if not ok:
+                failed.append(("difference_from_intersection", err))
+        else:
+            identities["difference_from_intersection"] = {
+                "checked": False,
+                "reason": "companion operation refused",
+                "skipped": skipped,
+            }
+        result_report["stages"]["crosscheck"] = {
+            "enabled": True,
+            "volumes": vols,
+            "input_volumes": {"A": va, "B": vb},
+            "tolerance": volume_tol,
+            "identities": identities,
+            "skipped_operations": skipped,
+        }
+        if failed:
+            names = ", ".join(f"{n} err={e:.6g}" for n, e in failed)
+            exc = FreeformError(
+                f"operation volume identities violated: {names} "
+                f"(tolerance {volume_tol:.6g})",
+                "OperationIdentityFailed")
+            result_report["accepted"] = False
+            refuse("crosscheck", exc)
+        return out, result_report
 
     t_stage = perf_counter()
     try:
@@ -379,7 +500,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             refuse("verification", exc)
         report["accepted"] = True
         report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
-        return out, report
+        return _finalize(out, report)
 
     # Independently constructed B-reps can represent the same material
     # boundary without sharing a TShape. Use the strict optional recognizer;
@@ -453,7 +574,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             refuse("verification", exc)
         report["accepted"] = True
         report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
-        return out, report
+        return _finalize(out, report)
 
     t_stage = perf_counter()
     try:
@@ -687,9 +808,10 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     elif op == "intersection":
         volume_bounds_ok = vr <= min(va, vb) + volume_tol
         volume_bounds = [0.0, min(va, vb)]
-    else:
-        volume_bounds_ok = vr <= va + volume_tol
-        volume_bounds = [0.0, va]
+    elif op == "difference":
+        volume_bounds_ok = (vr <= va + volume_tol) and (
+            vr + volume_tol >= va - vb)
+        volume_bounds = [max(0.0, va - vb), va]
 
     report["stages"]["verification"] = {
         "brep_valid": valid,
@@ -743,4 +865,4 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
 
     report["accepted"] = True
     report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
-    return assembled.shape, report
+    return _finalize(assembled.shape, report)

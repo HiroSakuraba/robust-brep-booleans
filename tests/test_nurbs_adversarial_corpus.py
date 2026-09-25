@@ -20,6 +20,9 @@ import sys
 import tempfile
 
 sys.path.insert(0, "src")
+sys.path.insert(0, "tests")
+
+import _arbiter
 
 from brepkernel import BRepAmbiguousResult, boolean_brep
 from brepkernel.intersection import intersect_models
@@ -194,6 +197,8 @@ def t1_periodic_nurbs_cylinder_transverse_cut():
         f"'multiple':{asm['multiple_edges']},"
         f"'unattributed':{asm['edge_lineage']['unattributed_edges']}}}")
     ok &= assert_oracle_close("a1 periodic cut oracle", out, oracle, report)
+    ok &= _arbiter.check_accepted(
+        "a1", check, cyl, cutter, out, "difference")[0]
     return ok
 
 
@@ -213,7 +218,7 @@ def _sliver_case(height):
             base_tol=1e-7,
             contact_tol=4e-7)
     except BRepAmbiguousResult as exc:
-        return False, None, ov, exc.report
+        return False, None, ov, exc.report, None, sphere, cutter
 
     rv = volume(out)
     err = abs(rv - ov)
@@ -222,27 +227,33 @@ def _sliver_case(height):
         report["accepted"]
         and BRepCheck_Analyzer(out, True).IsValid()
         and err <= lim)
-    return good, (rv, err, lim), ov, report
+    return good, (rv, err, lim), ov, report, out, sphere, cutter
 
 
 def t2_sliver_scale_sweep():
     ok = True
     for h in (1e-3, 1e-4):
-        good, info, ov, report = _sliver_case(h)
+        good, info, ov, report, out, sphere, cutter = _sliver_case(h)
         ok &= check(
             f"a2 cap h={h:g} accepted accurately",
             good,
             (f"result={info} oracle={ov:.12g} "
              f"refusal={report.get('refusal') if report else None}"))
+        if good:
+            ok &= _arbiter.check_accepted(
+                f"a2 cap h={h:g}", check, sphere, cutter, out,
+                "difference")[0]
 
     # At 1e-5 we permit a deliberate refusal because the feature is only
     # 100x base_tol high. Acceptance still has to agree with the oracle.
-    good, info, ov, report = _sliver_case(1e-5)
+    good, info, ov, report, out, sphere, cutter = _sliver_case(1e-5)
     if good:
         ok &= check(
             "a2 cap h=1e-5 accepted accurately",
             True,
             f"result={info} oracle={ov:.12g}")
+        ok &= _arbiter.check_accepted(
+            "a2 cap h=1e-5", check, sphere, cutter, out, "difference")[0]
     else:
         refusal = report.get("refusal", {}) if report else {}
         safe = {
@@ -308,6 +319,8 @@ def t3_oblique_imported_blend_cut():
     ok &= assert_oracle_close(
         "a3 oblique blend oracle", out, oracle, report,
         rel=5e-6, abs_tol=1e-9)
+    ok &= _arbiter.check_accepted(
+        "a3", check, source, cutter, out, "difference")[0]
     return ok
 
 
@@ -377,6 +390,8 @@ def t4_pretrimmed_periodic_step_roundtrip():
         "a4 pretrimmed periodic STEP oracle",
         out, oracle, report,
         rel=5e-6, abs_tol=1e-9)
+    ok &= _arbiter.check_accepted(
+        "a4", check, source, second, out, "difference")[0]
     return ok
 
 

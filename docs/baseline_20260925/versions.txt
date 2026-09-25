@@ -1,0 +1,6 @@
+G0 baseline dependency versions (2026-09-25)
+numpy==2.5.3
+manifold3d==3.5.3
+cadquery-ocp==8.0.1.0.0 (OCCT 8.0.1)
+OCP.Standard has no Standard_Version symbol in this build; OCCT version inferred from cadquery-ocp version.
+venv: ~/workspace/brep-booleans/.venv (python 3.12)
