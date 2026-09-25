@@ -98,6 +98,9 @@ class SectionPayloadRecord:
     max_transversality: float
     risk_flags: tuple[str, ...]
     repaired_same_parameter: bool
+    exact_curve_on_surface_checked: bool
+    exact_surface_error_a: Optional[float]
+    exact_surface_error_b: Optional[float]
     shadow_crosschecked: bool
     shadow_max_distance: Optional[float]
     shadow_length_rel_error: Optional[float]
@@ -883,6 +886,14 @@ def _build_section_payloads(split: ModelSplitResult,
             max_transversality=float(sec.max_transversality),
             risk_flags=tuple(sec.risk_flags),
             repaired_same_parameter=bool(sec.repaired_same_parameter),
+            exact_curve_on_surface_checked=bool(
+                sec.exact_curve_on_surface_checked),
+            exact_surface_error_a=(
+                None if sec.exact_surface_error_a is None
+                else float(sec.exact_surface_error_a)),
+            exact_surface_error_b=(
+                None if sec.exact_surface_error_b is None
+                else float(sec.exact_surface_error_b)),
             shadow_crosschecked=bool(sec.shadow_crosschecked),
             shadow_max_distance=(None if sec.shadow_max_distance is None
                                  else float(sec.shadow_max_distance)),
