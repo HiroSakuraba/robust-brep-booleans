@@ -105,6 +105,16 @@ instead of the previous single fallback box.
 - Curvature-ranked refinement is a scheduling heuristic only. It may request
   more work in difficult regions; it is not used as a correctness certificate.
 
+**Current call-path boundary:** `project_point()`, `verify_points()`, and
+`refinement_plan()` are tested freeform utilities, but they are not currently
+called by `boolean_brep()` when deciding whether to accept a Boolean result.
+The live acceptance path verifies section geometry against the original OCCT
+trimmed faces and bilateral p-curves. The NumPy NURBS implementation currently
+affects the live pipeline through conservative span AABBs / candidate culling
+and accelerator metadata only. These utilities remain available for future
+profiling-driven refinement work; their existence should not be read as part
+of the present certification argument.
+
 ## `src/brepkernel/step_ingest.py`
 
 STEP/OCCT ingestion preserves:
@@ -520,6 +530,26 @@ needed 513 adaptive verification samples each while simpler sections needed
 five. Correctness is currently preferred over reducing that sampling cost;
 profiling can determine whether certified/curvature-aware section sampling is
 worth implementing next.
+
+## Runtime profiling
+
+The public `boolean_brep()` report now records wall-clock timings (milliseconds)
+for completed Tier B/C stages:
+
+- ingest;
+- same-domain/canonicalization check;
+- intersection;
+- local splitting;
+- assembly;
+- final B-rep verification;
+- total call time.
+
+Assembly reporting also summarizes section-verification sampling with section
+count, total samples, maximum samples on one section, and mean samples. This is
+intended to identify real production bottlenecks before introducing more
+aggressive patch subdivision or approximation machinery.
+
+Timings are diagnostics, not acceptance criteria, and can vary across machines.
 
 ## Performance boundary
 
