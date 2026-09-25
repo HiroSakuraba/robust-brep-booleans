@@ -1059,6 +1059,191 @@ em-dash check on touched files -> 0
 
 G6 gate: CLOSED.
 
+
+## G6 rework - Per-face broad-phase pad (2026-09-25)
+
+- Branch: gate/G6-broadphase-rework (local only; never pushed, never merged)
+- Base: 6bd8031 "docs: record v0.9 rebase, G7 replacement, roadmap update"
+  (gate/G6-broadphase-tol tip)
+- Commits:
+  - a63aec7 "tests: per-face broad-phase pad regression (G6 rework, I4
+    failing first)"
+  - d98607e "intersection: per-face broad-phase pad (G6 rework)"
+- Environment: ~/workspace/brep-booleans/.venv (CPython 3.12.3,
+  numpy==2.5.3, cadquery-ocp==8.0.1.0.0, OCCT 8.0.1)
+- Worktree note: the shared ~/workspace/brep-gates checkout was moved to
+  probe-hardening by the gate coordinator mid-task, so this work ran in a
+  separate worktree ~/workspace/brep-gates-g6rework on the same branch.
+- Rebase observation (per task): after the v0.9 rebase this branch no
+  longer contains src/brepkernel/coincidence.py and the G2 test files are
+  gone (19 test files, not 20). This does not matter for the change: the
+  scope is pad granularity only (broad-phase candidate generation), which
+  touches neither coincidence classification nor the G2 tests.
+
+### Review finding addressed
+
+G6's per-model pad, 2x the largest tolerance anywhere in either model,
+is catastrophically pessimistic: one damaged 0.5 mm-tolerance edge makes
+every face in a thousand-face model overlap in broad phase. Replaced with
+a per-face conservative pad.
+
+### What changed
+
+- src/brepkernel/step_ingest.py:
+  - FaceRecord gains tol_face: max OCCT tolerance over the face and its
+    incident edges and vertices (BRep_Tool.Tolerance), computed in
+    index_shape via the new _face_max_tolerance() helper (both ingest
+    branches).
+  - New face_broadphase_pads(model, contact_tol): per-face pad array,
+    pad_i = contact_tol + tol_face_i.
+  - candidate_face_pairs() gains optional pads_a/pads_b; _face_pairs_aabb()
+    expands each face box by its own pad (scalar-pad path unchanged).
+    The NURBS patch filter uses the pair sum pads_a[i] + pads_b[j].
+    _face_pairs_aabb keeps its old return contract (list of pairs) after
+    an interim 3-tuple broke test_freeform_nurbs's direct unit test; the
+    effective pads are recomputed in candidate_face_pairs.
+  - useShapeTolerance=True in _shape_bbox is untouched.
+- src/brepkernel/intersection.py: intersect_models() gains optional
+  broadphase_face_pads=(pads_a, pads_b), forwarded to
+  candidate_face_pairs(). Scalar broadphase_pad path unchanged.
+- src/brepkernel/pipeline.py: when broadphase_pad is not explicit,
+  per-face pads are computed for both models and passed through; the
+  report records broadphase_pad (max per-face pad),
+  broadphase_pad_mode ("per_face" | "explicit_scalar"),
+  broadphase_contact_tol, broadphase_max_tolerance (unchanged semantics),
+  and broadphase_pad_summary {A, B}: faces/min/mean/max plus
+  tolerance-driven face ids (faces whose own tolerance exceeds the
+  contact band). An explicit broadphase_pad is still honored verbatim as
+  a uniform scalar. crosscheck_ops companion runs receive the max
+  per-face pad as their explicit scalar (conservative, as before).
+- tests/test_g6_tolerance_broadphase.py: one assertion updated to the new
+  formula (pad >= FACE_TOL + contact_tol instead of pad >= 2*FACE_TOL);
+  the old 2x factor encoded the replaced per-model formula. Functional
+  requirements unchanged: the 1e-3-tolerance pair still becomes a
+  candidate and still refuses typed.
+
+### Pad derivation (I3)
+
+pad_i = contact_tol + max tolerance over face i and its incident edges
+and vertices. Derived from entity tolerances, not tuned: a face whose
+boundary entities carry tolerance t is geometrically uncertain over a
+band of about t around it (OCCT tolerance semantics), and the exact
+contact classifier needs a further contact_tol band so tolerance-near
+contacts are not dropped as "disjoint". Additive padding only widens the
+candidate set: it can add typed refusals, never new acceptances. The
+pair budget for faces i, j is pad_i + pad_j = 2*contact_tol + t_i + t_j,
+conservative against the minimal t_i + t_j + contact_tol.
+
+### I4 pre-fix demonstration (test committed at a63aec7, run on 6bd8031)
+
+```
+[FAIL] g6r per-face pad API exists face_broadphase_pads importable from step_ingest
+
+SOME FAILURES
+```
+
+### Post-fix test result (new tests)
+
+```
+[PASS] g6r per-face pad API exists face_broadphase_pads importable from step_ingest
+[PASS] g6r dirty edge visible on its incident faces dirty_faces=2
+[PASS] g6r dirty faces carry the damaged pad dirty_pads=['0.0005', '0.0005']
+[PASS] g6r clean faces keep a small per-face pad max_clean_pad=5e-07 cap=1.4e-06 n_clean=58
+[PASS] g6r old per-model pad explodes on the row old_pad=0.001 old_count=21 new_count=0
+[PASS] g6r per-face candidate count stays small new_count=0
+
+ALL PASS
+```
+
+The row model (10 unit boxes, one edge of box 0 raised to 0.5 mm) shows
+the review's failure mode directly: the old per-model pad (1e-3) yields
+21 candidates against a neighbor box 5e-4 away, while per-face pads
+yield 0. Clean-face pads stay at 5e-7 (contact_tol 4e-7 + OCCT default
+face tolerance 1e-7).
+
+Existing G6 test, unchanged behavior:
+
+```
+[PASS] g6 pair is a candidate even with zero pad candidates=21
+[PASS] g6 face tolerance visible to the kernel max_face_tol=0.001
+[PASS] g6 union refuses with typed kind refusal={'stage': 'intersection',
+  'type': 'IntersectionError', 'kind': 'SectionToleranceTooLoose',
+  'message': 'section edge 0: OCCT edge/face tolerance 0.001 exceeds
+  acceptance ceiling 1.28e-05'}
+[PASS] g6 pad recorded in report and covers the tolerance broadphase_pad=0.0010004
+
+ALL PASS
+```
+
+The G6 dirty model report now shows the per-face distribution: model A
+summary faces=6 min=5e-07 mean=8.3375e-04 max=0.0010004
+tolerance_driven_faces=5 (the raised +X face plus its 4 neighbors sharing
+the raised edges/vertices; the -X face is clean), model B all clean.
+
+### Candidate-count comparison (old vs new code)
+
+Measured via boolean_brep on 4 accepting cases (script
+.suite_logs/cand_counts.py, since removed); old code measured with the
+implementation stashed (git stash push -- src/), then popped:
+
+| case | old candidates | new candidates | new pad | old pad |
+|---|---|---|---|---|
+| A box/box union | 6 | 6 | 5e-07 | 4e-07 |
+| B NURBS-sphere union | 1 | 1 | 5e-07 | 4e-07 |
+| C cylinder-through-box difference | 2 | 2 | 5e-07 | 4e-07 |
+| D NURBS-sphere intersection | 1 | 1 | 5e-07 | 4e-07 |
+
+Counts change only where tolerances are large (the row model: 21 -> 0;
+the G6 dirty model: 21 candidates, max pad 0.0010004). On ordinary
+low-tolerance models the candidate sets are identical; the pad differs
+by 1e-7 because the per-face formula now includes each face's own OCCT
+tolerance (contact_tol + tol_face) instead of the bare contact_tol
+floor. Explicit-pad and crosscheck_ops paths verified separately
+(explicit 1e-3 honored verbatim, mode explicit_scalar; crosscheck
+accepted with pad 5e-7).
+
+### Full suite (19 test files; G2 files trimmed by the rebase)
+
+- 17 files EXIT0, 0 [FAIL] lines in the sequential run.
+- tests/test_brep_pipeline.py: the loop's run died with a 0-byte log
+  during the post-reboot memory spike (environment artifact, no output at
+  all); dedicated rerun with timeout 1500: ALL PASS, 0 [FAIL].
+- tests/test_freeform_nurbs.py: the loop's run caught a real bug I
+  introduced (interim _face_pairs_aabb 3-tuple return broke its direct
+  unit test); contract restored to list-of-pairs; rerun on final code:
+  ALL PASS, 0 [FAIL].
+- Result: 19/19 green.
+
+### Commands run
+
+```
+git checkout -b gate/G6-broadphase-rework gate/G6-broadphase-tol  # 6bd8031
+git worktree add ~/workspace/brep-gates-g6rework gate/G6-broadphase-rework
+# wrote tests/test_g6_perface_broadphase.py, committed (a63aec7), ran -> SOME FAILURES (I4)
+# implemented per-face pads in step_ingest/intersection/pipeline
+python tests/test_g6_perface_broadphase.py        # ALL PASS
+python tests/test_g6_tolerance_broadphase.py      # ALL PASS
+python .suite_logs/cand_counts.py                 # new-code counts: 6, 1, 2, 1
+git stash push -q -m g6r-impl-temp -- src/        # old-code counts: 6, 1, 2, 1
+git stash pop -q
+# full suite: nohup loop over tests/test_*.py -> 17 EXIT0; dedicated reruns
+#   for test_brep_pipeline (ALL PASS) and test_freeform_nurbs (ALL PASS)
+grep for U+2014 on touched files -> 0
+```
+
+### Gate verdicts
+
+| Criterion | Result |
+|---|---|
+| Per-face pad: clean faces stay small with one 0.5 mm edge | PASS (max clean pad 5e-7 <= contact_tol + 1e-6; candidate counts 21 -> 0) |
+| Existing G6 test keeps passing | PASS (pair is candidate, typed SectionToleranceTooLoose refusal; pad assertion updated to the new formula) |
+| Pad formula derived from entity tolerances (I3) | PASS (pad_i = contact_tol + BRep_Tool.Tolerance over face + incident edges/vertices) |
+| Per-face pad recorded in the operation report | PASS (broadphase_pad max, broadphase_pad_mode, broadphase_contact_tol, broadphase_max_tolerance, broadphase_pad_summary) |
+| Candidate counts change only where tolerances are large | PASS (4 accepting cases identical; row model 21 -> 0) |
+| Full suite green (I5) | PASS (19/19, 0 FAIL lines) |
+| I1-I9 invariants held | PASS (refusal, never wrong accept; I4 failing test first; no em dashes; local branch only, no push/merge) |
+
+G6 rework: CLOSED.
 ## Course correction: rebase onto v0.9, G7 replaced (2026-09-25)
 
 Ben forwarded ChatGPT's review of the plan as a work-order update. Verified:

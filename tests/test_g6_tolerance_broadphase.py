@@ -106,12 +106,18 @@ def t2_union_refuses_typed():
     except BRepAmbiguousResult as exc:
         refusal = exc.report.get("refusal", {})
         pad = exc.report.get("broadphase_pad")
+        ctol = exc.report.get("broadphase_contact_tol")
+        # G6 rework: the pad is now per-face, pad_i = contact_tol +
+        # max tolerance over face i and its incident edges/vertices, so
+        # the recorded max pad covers FACE_TOL plus the contact band
+        # (the old per-model formula's 2x factor no longer applies).
         ok = check("g6 union refuses with typed kind",
                    refusal.get("kind") == "SectionToleranceTooLoose"
                    and refusal.get("stage") == "intersection",
                    f"refusal={refusal}")
         ok &= check("g6 pad recorded in report and covers the tolerance",
-                    pad is not None and pad >= 2.0 * FACE_TOL,
+                    pad is not None and ctol is not None
+                    and pad >= FACE_TOL + ctol,
                     f"broadphase_pad={pad}")
         return ok
     detail = (f"accepted={report.get('accepted')} "

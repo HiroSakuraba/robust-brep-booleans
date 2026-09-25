@@ -244,6 +244,27 @@ def _empty_brep_compound():
     return c
 
 
+def _broadphase_pad_summary(pads, contact_tol, cap=32):
+    """JSON-serializable distribution summary of per-face broad-phase pads.
+
+    A face is "tolerance-driven" when its own entity tolerance exceeds the
+    contact band (pad_i = contact_tol + t_i with t_i > contact_tol); those
+    face ids are listed (capped) so a damaged face is identifiable in the
+    report without dumping every pad.
+    """
+    import numpy as np
+    pads = np.asarray(pads, dtype=np.float64).reshape(-1)
+    driven = [int(i) for i, p in enumerate(pads) if p > 2.0 * contact_tol]
+    return {
+        "faces": int(pads.size),
+        "min": float(pads.min()) if pads.size else 0.0,
+        "mean": float(pads.mean()) if pads.size else 0.0,
+        "max": float(pads.max()) if pads.size else 0.0,
+        "tolerance_driven_faces": len(driven),
+        "tolerance_driven_face_ids": driven[:cap],
+    }
+
+
 def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                  broadphase_pad=None, chord_tol=None, contact_tol=None,
                  fuzzy=0.0, parallel=True, use_obb=True,
@@ -292,7 +313,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     from OCP.BRepCheck import BRepCheck_Analyzer
 
     from .freeform import FreeformError
-    from .step_ingest import BRepModel, index_shape, model_max_tolerance
+    from .step_ingest import (BRepModel, face_broadphase_pads, index_shape,
+                              model_max_tolerance)
     from .intersection import intersect_models
     from .split import split_models
     from .assembly import assemble_boolean, _shape_volume
@@ -481,19 +503,37 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         },
     }
 
-    # G6: make the broad phase tolerance-aware. A face whose OCCT
-    # tolerance is t is geometrically uncertain over a band of width
-    # about 2t around it; a candidate test padded by less than that can
-    # silently drop a genuinely ambiguous contact as "disjoint".
-    # pad = max(contact_tol, 2 * max tolerance over all vertices, edges
-    # and faces of both models). This is additive padding, never a
+    # G6 rework: per-face conservative broad-phase pad. For each face,
+    # pad_i = contact_tol + max tolerance over that face and its incident
+    # edges and vertices (BRep_Tool.Tolerance via FaceRecord.tol_face).
+    # The old per-model pad, 2x the largest tolerance anywhere in either
+    # model, made one damaged edge inflate every face's box; the per-face
+    # pad keeps clean faces tight. This is additive padding, never a
     # loosening of an acceptance check: it only widens the candidate
     # set, which can add typed refusals but never new acceptances.
+    # An explicitly passed broadphase_pad is still honored verbatim as a
+    # uniform scalar (documented escape hatch for callers).
     _tol_max = max(model_max_tolerance(a), model_max_tolerance(b))
-    if not _pad_explicit:
-        broadphase_pad = max(float(broadphase_pad), 2.0 * float(_tol_max))
+    if _pad_explicit:
+        _face_pads = None
+        _pad_mode = "explicit_scalar"
+        _pad_summary = None
+    else:
+        _pads_a = face_broadphase_pads(a, float(contact_tol))
+        _pads_b = face_broadphase_pads(b, float(contact_tol))
+        _face_pads = (_pads_a, _pads_b)
+        broadphase_pad = float(max(_pads_a.max(initial=0.0),
+                                    _pads_b.max(initial=0.0)))
+        _pad_mode = "per_face"
+        _pad_summary = {
+            "A": _broadphase_pad_summary(_pads_a, float(contact_tol)),
+            "B": _broadphase_pad_summary(_pads_b, float(contact_tol)),
+        }
     report["broadphase_pad"] = float(broadphase_pad)
+    report["broadphase_pad_mode"] = _pad_mode
+    report["broadphase_contact_tol"] = float(contact_tol)
     report["broadphase_max_tolerance"] = float(_tol_max)
+    report["broadphase_pad_summary"] = _pad_summary
 
     # Exact oriented topological equality is the cheapest identity path.
     # IsSame() is intentionally NOT used: OCCT documents that IsSame ignores
@@ -604,7 +644,9 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     t_stage = perf_counter()
     try:
         ix = intersect_models(
-            a, b, broadphase_pad=float(broadphase_pad),
+            a, b, broadphase_pad=(float(broadphase_pad) if _pad_explicit
+                                  else 0.0),
+            broadphase_face_pads=_face_pads,
             base_tol=float(base_tol),
             chord_tol=(None if chord_tol is None else float(chord_tol)),
             contact_tol=float(contact_tol), fuzzy=float(fuzzy),

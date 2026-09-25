@@ -1327,6 +1327,7 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
 
 def intersect_models(a: BRepModel, b: BRepModel, *,
                      broadphase_pad: float = 0.0,
+                     broadphase_face_pads=None,
                      base_tol: float = 1e-7,
                      chord_tol: Optional[float] = None,
                      contact_tol: Optional[float] = None,
@@ -1338,8 +1339,16 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
                      crosscheck_nonapprox: bool = False,
                      completeness_probe: bool = True
                      ) -> ModelIntersectionResult:
-    """Run verified section work only for conservative candidate face pairs."""
-    candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad))
+    """Run verified section work only for conservative candidate face pairs.
+
+    broadphase_face_pads is an optional (pads_a, pads_b) tuple of per-face
+    pads (see step_ingest.face_broadphase_pads); when given, each face's
+    box is expanded by its own pad instead of the uniform broadphase_pad.
+    """
+    pads_a, pads_b = (None, None) if broadphase_face_pads is None \
+        else broadphase_face_pads
+    candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad),
+                                      pads_a=pads_a, pads_b=pads_b)
     results: list[FaceIntersectionResult] = []
     section_calls = 0
     verified_edges = 0

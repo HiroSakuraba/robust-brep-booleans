@@ -33,6 +33,11 @@ class FaceRecord:
     bbox_lo: np.ndarray
     bbox_hi: np.ndarray
     freeform: Optional[FreeformFaceAccel] = None
+    # G6 rework: max OCCT tolerance over the face and its incident edges
+    # and vertices (BRep_Tool.Tolerance). The per-face broad-phase pad is
+    # contact_tol + tol_face, so one damaged edge no longer inflates the
+    # pad of every other face in the model.
+    tol_face: float = 0.0
 
 
 @dataclass
@@ -118,6 +123,7 @@ def index_shape(shape, *, build_freeform: bool = True,
             while ef.More():
                 face = TopoDS.Face(ef.Current())
                 lo, hi = _shape_bbox(face)
+                ftol = _face_max_tolerance(face)
                 st = _surface_type_name(face)
                 ff = None
                 if build_freeform and "BSpline" in st:
@@ -132,7 +138,7 @@ def index_shape(shape, *, build_freeform: bool = True,
                     face_id, solid_id, shell_id, face,
                     getattr(face.Orientation(), "name", str(face.Orientation())),
                     st, tuple(float(x) for x in BRepTools.UVBounds_s(face)),
-                    lo, hi, ff))
+                    lo, hi, ff, ftol))
                 shr.face_ids.append(face_id)
                 face_id += 1
                 ef.Next()
@@ -156,6 +162,7 @@ def index_shape(shape, *, build_freeform: bool = True,
             while ef.More():
                 face = TopoDS.Face(ef.Current())
                 lo, hi = _shape_bbox(face)
+                ftol = _face_max_tolerance(face)
                 st = _surface_type_name(face)
                 ff = None
                 if build_freeform and "BSpline" in st:
@@ -168,7 +175,7 @@ def index_shape(shape, *, build_freeform: bool = True,
                     face_id, -1, shell_id, face,
                     getattr(face.Orientation(), "name", str(face.Orientation())),
                     st, tuple(float(x) for x in BRepTools.UVBounds_s(face)),
-                    lo, hi, ff))
+                    lo, hi, ff, ftol))
                 shr.face_ids.append(face_id)
                 face_id += 1
                 ef.Next()
@@ -197,6 +204,42 @@ def load_step(path: str, *, build_freeform: bool = True,
                        trim_tol=trim_tol)
 
 
+def _face_max_tolerance(face) -> float:
+    """Max OCCT tolerance over a face and its incident edges/vertices."""
+    from OCP.BRep import BRep_Tool
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_VERTEX
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    tol = float(BRep_Tool.Tolerance_s(face))
+    ex = TopExp_Explorer(face, TopAbs_EDGE)
+    while ex.More():
+        edge = TopoDS.Edge(ex.Current())
+        tol = max(tol, float(BRep_Tool.Tolerance_s(edge)))
+        ev = TopExp_Explorer(edge, TopAbs_VERTEX)
+        while ev.More():
+            tol = max(tol,
+                      float(BRep_Tool.Tolerance_s(TopoDS.Vertex(ev.Current()))))
+            ev.Next()
+        ex.Next()
+    return tol
+
+
+def face_broadphase_pads(model: "BRepModel", contact_tol: float) -> "np.ndarray":
+    """Per-face conservative broad-phase pad.
+
+    pad_i = contact_tol + tol_face_i, where tol_face_i is the max OCCT
+    tolerance over face i and its incident edges and vertices. The pad is
+    derived from entity tolerances, not tuned: a face whose boundary
+    entities carry tolerance t is geometrically uncertain over a band of
+    about t around it, and the exact contact classifier needs a further
+    contact_tol band to avoid dropping tolerance-near contacts as
+    "disjoint". Adding the pad only widens the candidate set, which can
+    add typed refusals but never new acceptances.
+    """
+    return np.array([float(contact_tol) + float(f.tol_face)
+                     for f in model.faces], dtype=np.float64)
+
+
 def model_max_tolerance(model: "BRepModel") -> float:
     """Maximum OCCT tolerance over every vertex, edge, and face.
 
@@ -219,15 +262,36 @@ def model_max_tolerance(model: "BRepModel") -> float:
     return tol
 
 
+def _effective_face_pads(model: "BRepModel", pad: float,
+                       pads: "np.ndarray | None") -> "np.ndarray":
+    """Per-face effective pad: the per-face array, floored by the scalar."""
+    n = len(model.faces)
+    if pads is None:
+        return np.full(n, float(pad), dtype=np.float64)
+    return np.maximum(np.asarray(pads, dtype=np.float64).reshape(n),
+                      float(pad))
+
+
 def _face_pairs_aabb(a: BRepModel, b: BRepModel,
-                     pad: float) -> list[tuple[int, int]]:
-    """Sweep-and-prune on precise face AABBs."""
+                     pad: float = 0.0,
+                     pads_a: "np.ndarray | None" = None,
+                     pads_b: "np.ndarray | None" = None
+                     ) -> list[tuple[int, int]]:
+    """Sweep-and-prune on precise face AABBs, expanded per face.
+
+    Each face's box is expanded by its own pad (G6 rework: pad_i =
+    contact_tol + max tolerance over face i and its incident edges and
+    vertices). When no per-face arrays are given the scalar pad applies
+    uniformly, preserving the old call signature and behavior.
+    """
     if not a.faces or not b.faces:
         return []
-    alo = np.vstack([f.bbox_lo for f in a.faces]) - pad
-    ahi = np.vstack([f.bbox_hi for f in a.faces]) + pad
-    blo = np.vstack([f.bbox_lo for f in b.faces]) - pad
-    bhi = np.vstack([f.bbox_hi for f in b.faces]) + pad
+    pa = _effective_face_pads(a, pad, pads_a)
+    pb = _effective_face_pads(b, pad, pads_b)
+    alo = np.vstack([f.bbox_lo for f in a.faces]) - pa[:, None]
+    ahi = np.vstack([f.bbox_hi for f in a.faces]) + pa[:, None]
+    blo = np.vstack([f.bbox_lo for f in b.faces]) - pb[:, None]
+    bhi = np.vstack([f.bbox_hi for f in b.faces]) + pb[:, None]
     oa = np.argsort(alo[:, 0], kind="mergesort")
     ob = np.argsort(blo[:, 0], kind="mergesort")
     active: list[int] = []
@@ -253,20 +317,30 @@ def _face_pairs_aabb(a: BRepModel, b: BRepModel,
 
 
 def candidate_face_pairs(a: BRepModel, b: BRepModel,
-                         pad: float = 0.0) -> list[dict]:
+                         pad: float = 0.0,
+                         pads_a: "np.ndarray | None" = None,
+                         pads_b: "np.ndarray | None" = None) -> list[dict]:
     """Conservative face/patch interaction candidates.
 
     NURBS pairs get a second conservative control-hull filter. Analytic or
     unsupported freeform pairs remain face-level candidates, so accuracy is
     never traded away for speed.
+
+    pads_a / pads_b are optional per-face pads (see face_broadphase_pads);
+    when given, each face's box is expanded by its own pad instead of the
+    uniform scalar. The NURBS patch filter then uses the pair sum
+    pads_a[i] + pads_b[j].
     """
     out = []
-    for ia, ib in _face_pairs_aabb(a, b, float(pad)):
+    pa = _effective_face_pads(a, float(pad), pads_a)
+    pb = _effective_face_pads(b, float(pad), pads_b)
+    for ia, ib in _face_pairs_aabb(a, b, float(pad), pads_a, pads_b):
         fa, fb = a.faces[ia], b.faces[ib]
         patch_pairs = None
         if fa.freeform is not None and fb.freeform is not None:
             pp = candidate_patch_pairs(
-                fa.freeform.index, fb.freeform.index, pad=float(pad))
+                fa.freeform.index, fb.freeform.index,
+                pad=float(pa[ia] + pb[ib]))
             if not pp:
                 continue
             patch_pairs = pp
