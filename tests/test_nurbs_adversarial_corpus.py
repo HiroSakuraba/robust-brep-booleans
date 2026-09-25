@@ -5,7 +5,9 @@ New coverage beyond the baseline sphere/rounded-box cases:
 2. spherical-cap slivers down to 1e-5 feature height;
 3. an oblique cut through a STEP-round-tripped, all-NURBS filleted solid;
 4. a STEP-round-tripped periodic cylindrical face already trimmed by an
-   earlier Boolean, then cut again on the opposite side.
+   earlier Boolean, then cut again on the opposite side;
+5. a single NURBS torus/plane face pair with two disconnected intersection
+   loops, pinning missed-branch detection.
 
 The contract is intentionally asymmetric: straightforward transverse cases
 must succeed and match an independent OCCT oracle; the smallest sliver may
@@ -35,6 +37,7 @@ from OCP.BRepPrimAPI import (
     BRepPrimAPI_MakeBox,
     BRepPrimAPI_MakeCylinder,
     BRepPrimAPI_MakeSphere,
+    BRepPrimAPI_MakeTorus,
 )
 from OCP.GProp import GProp_GProps
 from OCP.IFSelect import IFSelect_RetDone
@@ -366,12 +369,55 @@ def t4_pretrimmed_periodic_step_roundtrip():
         rel=5e-6, abs_tol=1e-9)
     return ok
 
+
+def t5_two_loop_torus_completeness():
+    """One face pair must preserve two disconnected intersection loops.
+
+    At z=0 a torus with major radius 3 and minor radius 1 meets the plane in
+    two circles (r=2 and r=4).  A large box below that plane contributes only
+    its top face to the interaction, so this is a direct one-pair/multi-branch
+    completeness regression.
+    """
+    torus = to_nurbs(BRepPrimAPI_MakeTorus(3.0, 1.0).Shape())
+    cutter = BRepPrimAPI_MakeBox(
+        gp_Pnt(-5.0, -5.0, -2.0),
+        gp_Pnt(5.0, 5.0, 0.0)).Shape()
+
+    out, report = boolean_brep(torus, cutter, "difference")
+    oracle = cut_oracle(torus, cutter)
+    ix = report["stages"]["intersection"]
+    asm = report["stages"]["assembly"]
+
+    ok = check(
+        "a5 one face pair keeps two disconnected loops",
+        ix["candidate_face_pairs"] == 1
+        and ix["section_calls"] == 1
+        and ix["verified_edges"] == 2
+        and ix["completeness_probes"] == 1
+        and ix["raw_curve_count"] >= 2
+        and ix["raw_trimmed_components"] >= 2
+        and ix["raw_unmatched_components"] == 0
+        and ix["ambiguous_contacts"] == 0,
+        f"intersection={ix}")
+    ok &= check(
+        "a5 two-loop result provenance complete",
+        asm["edge_lineage"]["boolean_section_edges"] == 2
+        and asm["edge_lineage"]["unattributed_edges"] == 0
+        and asm["free_edges"] == 0
+        and asm["multiple_edges"] == 0,
+        f"lineage={asm['edge_lineage']}")
+    ok &= assert_oracle_close(
+        "a5 two-loop torus oracle", out, oracle, report,
+        rel=5e-6, abs_tol=1e-9)
+    return ok
+
 def main():
     ok = True
     ok &= t1_periodic_nurbs_cylinder_transverse_cut()
     ok &= t2_sliver_scale_sweep()
     ok &= t3_oblique_imported_blend_cut()
     ok &= t4_pretrimmed_periodic_step_roundtrip()
+    ok &= t5_two_loop_torus_completeness()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
