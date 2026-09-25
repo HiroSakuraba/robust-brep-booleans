@@ -237,7 +237,8 @@ def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
                          edge_index: int, *,
                          base_tol: float,
                          chord_tol: Optional[float],
-                         tangent_sin_tol: float
+                         tangent_sin_tol: float,
+                         max_section_tol: Optional[float]
                          ) -> SectionEdgeRecord:
     from OCP.BRep import BRep_Tool
     from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
@@ -248,9 +249,41 @@ def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
     et = float(BRep_Tool.Tolerance_s(edge))
     ft = max(float(BRep_Tool.Tolerance_s(fa.face)),
              float(BRep_Tool.Tolerance_s(fb.face)))
-    verify_tol = max(float(base_tol), 2.0 * et, 2.0 * ft)
 
+    # BRepAlgoAPI_Section may approximate the intersection curve.  Its edge
+    # tolerance is useful evidence, but the verifier must not simply widen
+    # itself to whatever tolerance the approximation produced.  Cap the
+    # acceptable B-rep tolerance relative to the requested kernel tolerance
+    # and local face scale; anything looser is a typed refusal.
+    scale = max(
+        float(np.linalg.norm(fa.bbox_hi - fa.bbox_lo)),
+        float(np.linalg.norm(fb.bbox_hi - fb.bbox_lo)),
+        1.0)
+    tol_limit = (max(64.0 * float(base_tol), 1e-8 * scale)
+                 if max_section_tol is None
+                 else float(max_section_tol))
+    if not tol_limit > 0.0:
+        raise ValueError("max_section_tol must be positive")
+    if et > tol_limit or ft > tol_limit:
+        raise IntersectionError(
+            f"section edge {edge_index}: OCCT edge/face tolerance "
+            f"{max(et, ft):.6g} exceeds acceptance ceiling "
+            f"{tol_limit:.6g}",
+            kind="SectionToleranceTooLoose")
+
+    verify_tol = max(float(base_tol), 2.0 * et, 2.0 * ft)
     edge, repaired = _repair_same_parameter(edge, verify_tol)
+
+    # SameParameter repair may legitimately update the edge tolerance.  Apply
+    # the same ceiling after repair so the repair cannot silently loosen the
+    # acceptance contract.
+    et = float(BRep_Tool.Tolerance_s(edge))
+    if et > tol_limit:
+        raise IntersectionError(
+            f"section edge {edge_index}: SameParameter repair tolerance "
+            f"{et:.6g} exceeds acceptance ceiling {tol_limit:.6g}",
+            kind="SectionToleranceTooLoose")
+    verify_tol = max(float(base_tol), 2.0 * et, 2.0 * ft)
     pc_a = BRep_Tool.CurveOnSurface_s(edge, fa.face, 0.0, 0.0)
     pc_b = BRep_Tool.CurveOnSurface_s(edge, fb.face, 0.0, 0.0)
     if pc_a is None or pc_b is None:
@@ -372,7 +405,8 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
                       fuzzy: float = 0.0,
                       parallel: bool = True,
                       use_obb: bool = True,
-                      tangent_sin_tol: float = 1e-4
+                      tangent_sin_tol: float = 1e-4,
+                      max_section_tol: Optional[float] = None
                       ) -> FaceIntersectionResult:
     """Intersect one pair of *trimmed* faces and verify all section curves."""
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
@@ -422,7 +456,8 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
     verified = [
         _verify_section_edge(
             edge, fa, fb, i, base_tol=base_tol,
-            chord_tol=chord_tol, tangent_sin_tol=tangent_sin_tol)
+            chord_tol=chord_tol, tangent_sin_tol=tangent_sin_tol,
+            max_section_tol=max_section_tol)
         for i, edge in enumerate(edges)
     ]
 
@@ -467,7 +502,8 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
                      fuzzy: float = 0.0,
                      parallel: bool = True,
                      use_obb: bool = True,
-                     tangent_sin_tol: float = 1e-4
+                     tangent_sin_tol: float = 1e-4,
+                     max_section_tol: Optional[float] = None
                      ) -> ModelIntersectionResult:
     """Run verified section work only for conservative candidate face pairs."""
     candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad))
@@ -486,7 +522,8 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
         r = section_face_pair(
             fa, fb, base_tol=base_tol, chord_tol=chord_tol,
             contact_tol=contact_tol, fuzzy=fuzzy, parallel=parallel,
-            use_obb=use_obb, tangent_sin_tol=tangent_sin_tol)
+            use_obb=use_obb, tangent_sin_tol=tangent_sin_tol,
+            max_section_tol=max_section_tol)
         results.append(r)
         verified_edges += len(r.edges)
         point_contacts += int(r.status == "point_contact")
