@@ -604,10 +604,14 @@ def candidate_patch_pairs(a: NurbsPatchIndex, b: NurbsPatchIndex,
         while jb < len(ob) and blo[ob[jb], 0] <= xmax:
             active.append(int(ob[jb]))
             jb += 1
-        active = [j for j in active
-                  if bhi[j, 0] >= xmin and blo[j, 0] <= xmax]
+        # A minima are monotone, but A maxima are not.  Therefore
+        # only expire B intervals that end before the current xmin.  A B
+        # interval whose start is beyond this *particular* xmax may still
+        # overlap a later, wider A interval and must remain active.
+        active = [j for j in active if bhi[j, 0] >= xmin]
         for j in active:
-            if (alo[ia, 1] <= bhi[j, 1]
+            if (blo[j, 0] <= xmax and bhi[j, 0] >= xmin
+                    and alo[ia, 1] <= bhi[j, 1]
                     and ahi[ia, 1] >= blo[j, 1]
                     and alo[ia, 2] <= bhi[j, 2]
                     and ahi[ia, 2] >= blo[j, 2]):
