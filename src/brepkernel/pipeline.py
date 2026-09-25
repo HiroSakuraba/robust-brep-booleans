@@ -474,6 +474,9 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "point_contacts": ix.point_contacts,
         "ambiguous_contacts": ix.ambiguous_contacts,
         "face_pairs_skipped": ix.skipped_by_broadphase,
+        "shadow_section_calls": ix.shadow_section_calls,
+        "shadow_verified_edges": ix.shadow_verified_edges,
+        "max_shadow_distance": ix.max_shadow_distance,
     }
 
     t_stage = perf_counter()
