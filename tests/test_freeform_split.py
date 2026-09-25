@@ -202,6 +202,9 @@ def t5_torus_seam_routes_existing_boundary_operand_specifically():
     ok &= check(
         "t5 seam-side torus uses only interior loop",
         not sp.unresolved_contacts
+        and sp.reused_seam_edges_a == 1
+        and sp.reused_seam_edges_b == 0
+        and sp.shared_seam_refusals == 0
         and len(ra) == 1
         and ra[0].source_edges == 1
         and len(ra[0].pieces) >= 2,
@@ -250,6 +253,9 @@ def t6_torus_seam_routing_is_operand_symmetric():
     ok &= check(
         "t6 cutter A uses both loops",
         not sp.unresolved_contacts
+        and sp.reused_seam_edges_a == 0
+        and sp.reused_seam_edges_b == 1
+        and sp.shared_seam_refusals == 0
         and len(ra) == 1
         and ra[0].source_edges == 2
         and len(ra[0].pieces) >= 3,
@@ -291,7 +297,8 @@ def t7_shared_seam_still_refuses():
 
     return check(
         "t7 shared seam remains unresolved",
-        any(x[2] == "shared_seam_curve" for x in sp.unresolved_contacts),
+        sp.shared_seam_refusals == 1
+        and any(x[2] == "shared_seam_curve" for x in sp.unresolved_contacts),
         f"unresolved={sp.unresolved_contacts}")
 
 def main():
