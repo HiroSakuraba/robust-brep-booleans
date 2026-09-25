@@ -191,6 +191,9 @@ class SectionEdgeRecord:
     max_transversality: float
     risk_flags: tuple[str, ...] = ()
     repaired_same_parameter: bool = False
+    exact_curve_on_surface_checked: bool = False
+    exact_surface_error_a: Optional[float] = None
+    exact_surface_error_b: Optional[float] = None
     shadow_crosschecked: bool = False
     shadow_max_distance: Optional[float] = None
     shadow_length_rel_error: Optional[float] = None
@@ -240,6 +243,38 @@ def _repair_same_parameter(edge, tol: float):
             "section edge could not be made SameParameter",
             kind="SectionNotSameParameter")
     return new_edge, True
+
+
+def _exact_curve_on_surface_distance(edge, face) -> float:
+    """Use OCCT's exact SameParameter curve-on-surface distance validator."""
+    from OCP.BRepAdaptor import BRepAdaptor_Curve
+    from OCP.BRepLib import BRepLib_ValidateEdge
+
+    try:
+        c3 = BRepAdaptor_Curve(edge)
+        cf = BRepAdaptor_Curve(edge, face)
+        cos = cf.CurveOnSurface()
+        v = BRepLib_ValidateEdge(c3, cos, True)
+        v.SetExactMethod(True)
+        v.SetParallel(False)
+        v.Process()
+        if not v.IsDone():
+            raise IntersectionError(
+                "OCCT exact curve-on-surface validation did not complete",
+                kind="ExactCurveOnSurfaceValidationFailed")
+        d = float(v.GetMaxDistance())
+        if not np.isfinite(d) or d < 0.0:
+            raise IntersectionError(
+                f"invalid exact curve-on-surface distance {d}",
+                kind="ExactCurveOnSurfaceValidationFailed")
+        return d
+    except IntersectionError:
+        raise
+    except Exception as exc:
+        raise IntersectionError(
+            f"OCCT exact curve-on-surface validation failed: "
+            f"{type(exc).__name__}: {exc}",
+            kind="ExactCurveOnSurfaceValidationFailed") from exc
 
 
 def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
@@ -299,6 +334,20 @@ def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
         raise IntersectionError(
             f"section edge {edge_index} lacks a p-curve on an input face",
             kind="MissingPCurve")
+
+    # This is stronger than our adaptive sample check: OCCT's exact
+    # ValidateEdge mode computes the maximum distance between the 3D edge
+    # curve and its SameParameter curve-on-surface representation.  Require it
+    # independently on both authoritative input faces.
+    exact_a = _exact_curve_on_surface_distance(edge, fa.face)
+    exact_b = _exact_curve_on_surface_distance(edge, fb.face)
+    exact_worst = max(exact_a, exact_b)
+    if exact_worst > verify_tol:
+        raise IntersectionError(
+            f"section edge {edge_index}: exact curve-on-surface distance "
+            f"{exact_worst:.6g} exceeds verification tolerance "
+            f"{verify_tol:.6g}",
+            kind="ExactCurveOnSurfaceMismatch")
 
     c3 = BRepAdaptor_Curve(edge)
     first = float(c3.FirstParameter())
@@ -399,6 +448,9 @@ def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
         max_transversality=max_tr,
         risk_flags=tuple(risk),
         repaired_same_parameter=repaired,
+        exact_curve_on_surface_checked=True,
+        exact_surface_error_a=exact_a,
+        exact_surface_error_b=exact_b,
     )
 
 
@@ -575,7 +627,7 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
                       use_obb: bool = True,
                       tangent_sin_tol: float = 1e-4,
                       max_section_tol: Optional[float] = None,
-                      crosscheck_nonapprox: bool = True
+                      crosscheck_nonapprox: bool = False
                       ) -> FaceIntersectionResult:
     """Intersect one pair of *trimmed* faces and verify all section curves."""
     from OCP.BRep import BRep_Tool
@@ -662,7 +714,7 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
                      use_obb: bool = True,
                      tangent_sin_tol: float = 1e-4,
                      max_section_tol: Optional[float] = None,
-                     crosscheck_nonapprox: bool = True
+                     crosscheck_nonapprox: bool = False
                      ) -> ModelIntersectionResult:
     """Run verified section work only for conservative candidate face pairs."""
     candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad))
