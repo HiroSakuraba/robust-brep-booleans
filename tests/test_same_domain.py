@@ -45,9 +45,11 @@ def t2_shifted_box_rejected():
         gp_Pnt(0.01, 0, 0), gp_Pnt(1.01, 2, 3)).Shape()
     r = same_domain_shapes(a, b)
     return check(
-        "sd2 shifted box rejected",
-        not r.equivalent,
-        f"reason={r.reason}")
+        "sd2 shifted box rejected without canonicalization",
+        not r.equivalent
+        and not r.canonicalized
+        and r.reason == "model bounding boxes differ",
+        f"reason={r.reason} canonicalized={r.canonicalized}")
 
 
 def t3_reversed_same_tshape_rejected():
@@ -58,11 +60,13 @@ def t3_reversed_same_tshape_rejected():
     equal_respects_orientation = a.IsEqual(b)
     r = same_domain_shapes(a, b)
     return check(
-        "sd3 reversed same TShape rejected",
+        "sd3 reversed same TShape rejected without canonicalization",
         same_ignores_orientation and not equal_respects_orientation
-        and not r.equivalent,
+        and not r.equivalent
+        and not r.canonicalized
+        and r.reason == "global material orientation differs",
         f"IsSame={same_ignores_orientation} IsEqual={equal_respects_orientation} "
-        f"reason={r.reason}")
+        f"reason={r.reason} canonicalized={r.canonicalized}")
 
 
 def t4_independent_nurbs_spheres_match():
