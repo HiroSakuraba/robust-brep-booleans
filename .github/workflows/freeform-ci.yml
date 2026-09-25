@@ -19,6 +19,7 @@ on:
       - "tests/test_brep_pipeline.py"
       - "tests/test_same_domain.py"
       - "tests/test_step_nurbs_multiface.py"
+      - "tests/test_nurbs_adversarial_corpus.py"
       - "docs/NURBS_ACCEL.md"
       - ".github/workflows/freeform-ci.yml"
       - "requirements-freeform.txt"
@@ -56,5 +57,7 @@ jobs:
         run: python tests/test_brep_pipeline.py
       - name: Imported multi-face NURBS STEP regression
         run: python tests/test_step_nurbs_multiface.py
+      - name: Adversarial NURBS corpus
+        run: python tests/test_nurbs_adversarial_corpus.py
       - name: Multi-shell semantic regressions
         run: python tests/test_multishell_semantics.py
