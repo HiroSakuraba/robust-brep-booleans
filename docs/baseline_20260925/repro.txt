@@ -1,0 +1,7 @@
+versions: numpy=2.5.3 cadquery-ocp=8.0.1.0.0 manifold3d=3.5.3
+F2 OCCT common volume: 0.54081549348893
+F2 REFUSED: {'stage': 'intersection', 'type': 'IntersectionError', 'kind': 'SectionCompletenessMismatch', 'message': 'lower-level intersector exposes 1 trimmed curve component(s) not represented by verified Section edges (raw=3, trimmed=2, max_distance=9.41089e-05, tol=4e-05)'}
+F4 A             occt_state=TopAbs_State.TopAbs_OUT winding=-0.0000 surface_distance=1.5594
+F4 B             occt_state=TopAbs_State.TopAbs_OUT winding=-0.0000 surface_distance=1.0396
+F4 kernel union  occt_state=TopAbs_State.TopAbs_IN winding=+0.0000 surface_distance=1.0396
+F4 OCCT fuse     occt_state=TopAbs_State.TopAbs_IN winding=+0.0000 surface_distance=1.0396

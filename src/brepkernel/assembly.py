@@ -266,25 +266,164 @@ def _classify_point_in_model(point: np.ndarray, model: BRepModel,
 
 def _decision_rule(operation: str, operand: str,
                    classification: str) -> tuple[bool, bool]:
-    """Return (keep, reverse) for a non-boundary patch."""
-    if classification not in ("inside", "outside"):
-        raise AssemblyError(
-            f"cannot decide {operation} patch on {classification} witness",
-            kind="BoundaryOrUnknownPatch")
-    if operation == "union":
-        return classification == "outside", False
-    if operation == "intersection":
-        return classification == "inside", False
-    if operation == "difference":
-        if operand == "A":
-            return classification == "outside", False
-        return classification == "inside", True
-    raise ValueError(f"unsupported boolean operation {operation!r}")
+    """Return (keep, reverse) for a patch in one of the four G2 states.
+
+    The keep decision comes from the keep table (section 2.2) via
+    keep_patch(); the table is the only place these rules live. The
+    reverse flag is an orientation concern, not a keep rule: for
+    difference, kept patches of B must be flipped to face outward from
+    the A-B material.
+    """
+    keep = keep_patch(operation, operand, classification)
+    reverse = (operation == "difference" and operand == "B"
+               and classification == "IN" and keep)
+    return keep, reverse
+
+
+# ---------------------------------------------------------------------------
+# G2.2 keep table: the core keep rules for regularized Booleans.
+#
+# A boundary patch of one operand is classified into one of four states
+# relative to the other solid (G2.1):
+#   IN      patch interior lies strictly inside the other solid;
+#   OUT     patch interior lies strictly outside the other solid;
+#   ON_SAME patch lies on the other solid's boundary and both outward
+#           normals point the same way (materials on the same side);
+#   ON_OPP  patch lies on the other solid's boundary and the outward
+#           normals are opposite (materials touch from opposite sides).
+# The ON states are decided from face-pair geometry, never from the 3D
+# point classifier (which would just say ON).
+#
+# Why: for ON_SAME exactly one copy of the shared boundary survives in
+# union and intersection (A's copy, for deterministic provenance). For
+# ON_OPP the two materials meet from opposite sides, so the shared wall
+# is interior to the union, zero-thickness for the intersection, and
+# remains A's outer wall after subtracting B.
+#
+# This table is the ONLY place these rules live (pinned by
+# tests/test_g2_keep_table.py, one test per cell).
+# ---------------------------------------------------------------------------
+_KEEP_TABLE = {
+    "union": {
+        "A": {"IN": False, "OUT": True, "ON_SAME": True, "ON_OPP": False},
+        "B": {"IN": False, "OUT": True, "ON_SAME": False, "ON_OPP": False},
+    },
+    "intersection": {
+        "A": {"IN": True, "OUT": False, "ON_SAME": True, "ON_OPP": False},
+        "B": {"IN": True, "OUT": False, "ON_SAME": False, "ON_OPP": False},
+    },
+    "difference": {
+        "A": {"IN": False, "OUT": True, "ON_SAME": False, "ON_OPP": True},
+        "B": {"IN": True, "OUT": False, "ON_SAME": False, "ON_OPP": False},
+    },
+}
+
+
+def keep_patch(operation: str, operand: str, state: str) -> bool:
+    """Look up whether a patch in `state` is kept, from the keep table.
+
+    Raises ValueError on any unknown operation, operand, or state rather
+    than guessing a keep decision.
+    """
+    try:
+        return _KEEP_TABLE[operation][operand][state]
+    except KeyError as exc:
+        raise ValueError(
+            f"keep_patch: unknown operation/operand/state "
+            f"({operation!r}, {operand!r}, {state!r})") from exc
 
 
 def _reverse_face(face):
     from OCP.TopoDS import TopoDS
     return TopoDS.Face(face.Reversed())
+
+
+def _classify_coincident_piece(piece, operand: str,
+                               base_tol: float) -> str:
+    """Return ON_SAME/ON_OPP for a coincident piece (G2.6).
+
+    The state comes from the pair's sense relation. The witness must be
+    ON the partner's support and the outward-normal dot sign must match
+    the sense, else CoincidenceWitnessMismatch.
+    """
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
+    from OCP.gp import gp_Pnt
+    from OCP.TopoDS import TopoDS
+
+    sense = piece.coincidence
+    if sense not in ("same", "opp"):
+        raise AssemblyError(
+            f"{operand} face {piece.parent_face_id} piece "
+            f"{piece.piece_index}: bad coincidence sense {sense!r}",
+            kind="CoincidenceWitnessMismatch")
+    partner_rec = piece.coincident_partner_rec
+    if partner_rec is None:
+        raise AssemblyError(
+            f"{operand} face {piece.parent_face_id} piece "
+            f"{piece.piece_index}: missing coincident partner",
+            kind="CoincidenceWitnessMismatch")
+    tol = max(float(base_tol),
+              2.0 * float(BRep_Tool.Tolerance_s(piece.face)))
+    points = _face_points(piece.face, tol)
+    if len(points) == 0:
+        raise AssemblyError(
+            f"{operand} face {piece.parent_face_id} piece "
+            f"{piece.piece_index}: no witnesses",
+            kind="CoincidenceWitnessMismatch")
+    partner_face = TopoDS.Face(partner_rec.face)
+    psurf = BRepAdaptor_Surface(partner_face).Surface().Surface()
+    for p in points:
+        proj = GeomAPI_ProjectPointOnSurf(
+            gp_Pnt(float(p[0]), float(p[1]), float(p[2])), psurf)
+        if proj.NbPoints() == 0 or \
+                float(proj.LowerDistance()) > tol:
+            raise AssemblyError(
+                f"{operand} face {piece.parent_face_id} piece "
+                f"{piece.piece_index}: witness off partner support",
+                kind="CoincidenceWitnessMismatch")
+    # Normal-dot sign check at the first witness.
+    from .coincidence import _outward_normal
+    from OCP.BRepTools import BRepTools
+    import numpy as np
+    piece_face = TopoDS.Face(piece.face)
+    try:
+        u0, u1, v0, v1 = BRepTools.UVBounds_s(piece_face)
+        uv = (float((u0 + u1) / 2.0), float((v0 + v1) / 2.0))
+    except Exception:
+        uv = None
+    na = _outward_normal(
+        piece_face,
+        getattr(piece_face.Orientation(), "name", ""), uv) if uv else None
+    if na is None:
+        raise AssemblyError(
+            f"{operand} face {piece.parent_face_id} piece "
+            f"{piece.piece_index}: cannot compute outward normal",
+            kind="CoincidenceWitnessMismatch")
+    p0 = points[0]
+    proj = GeomAPI_ProjectPointOnSurf(
+        gp_Pnt(float(p0[0]), float(p0[1]), float(p0[2])), psurf)
+    ub, vb = proj.LowerDistanceParameters()
+    nb = _outward_normal(partner_face, partner_rec.orientation,
+                         (float(ub), float(vb)))
+    if nb is None:
+        raise AssemblyError(
+            f"{operand} face {piece.parent_face_id} piece "
+            f"{piece.piece_index}: cannot compute partner normal",
+            kind="CoincidenceWitnessMismatch")
+    dot = float(np.dot(na, nb))
+    if sense == "same" and dot < 0.9:
+        raise AssemblyError(
+            f"{operand} face {piece.parent_face_id} piece "
+            f"{piece.piece_index}: normal-dot {dot:.3f} disagrees with "
+            f"sense 'same'", kind="CoincidenceWitnessMismatch")
+    if sense == "opp" and dot > -0.9:
+        raise AssemblyError(
+            f"{operand} face {piece.parent_face_id} piece "
+            f"{piece.piece_index}: normal-dot {dot:.3f} disagrees with "
+            f"sense 'opp'", kind="CoincidenceWitnessMismatch")
+    return "ON_SAME" if sense == "same" else "ON_OPP"
 
 
 def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
@@ -308,6 +447,32 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                 tol = max(
                     float(base_tol),
                     2.0 * float(BRep_Tool.Tolerance_s(piece.face)))
+                # G2.6: coincident pieces get their ON state from the pair
+                # relation, not from 3D witnesses. The witness still has
+                # to be ON the partner support with a matching normal-dot
+                # sign, else CoincidenceWitnessMismatch.
+                if piece.coincidence is not None:
+                    cls = _classify_coincident_piece(
+                        piece, operand, base_tol)
+                    keep, rev = _decision_rule(operation, operand, cls)
+                    source = piece.face
+                    selected = _reverse_face(source) if keep and rev else (
+                        source if keep else None)
+                    points = _face_points(source, tol)
+                    out.append(PatchDecision(
+                        operand=operand,
+                        parent_face_id=piece.parent_face_id,
+                        piece_index=piece.piece_index,
+                        classification=cls,
+                        keep=keep,
+                        reverse_for_difference=rev,
+                        witness_xyz=points[0],
+                        witness_xyz_all=points,
+                        witness_classifications=tuple([cls] * len(points)),
+                        source_face=source,
+                        selected_face=selected,
+                    ))
+                    continue
                 points = _face_points(piece.face, tol)
                 classes = tuple(
                     _classify_point_in_model(p, other, tol)
@@ -328,7 +493,9 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                         f"{piece.piece_index}: supposedly split patch "
                         f"straddles material states {sorted(unique)}",
                         kind="PatchClassificationInconsistent")
-                cls = classes[0]
+                # G2.1 canonical states. Non-coincident patches use the
+                # multi-witness IN/OUT logic; ON witnesses still refuse.
+                cls = {"inside": "IN", "outside": "OUT"}[classes[0]]
                 keep, rev = _decision_rule(operation, operand, cls)
                 source = piece.face
                 selected = _reverse_face(source) if keep and rev else (
@@ -757,23 +924,49 @@ def _point_edge_distance(point: np.ndarray, edge) -> float:
     return float(d.Value())
 
 
-def _edge_matches_section(edge, sec, base_tol: float) -> bool:
-    """Recognize a result edge as lying on a verified section edge.
+def _edge_on_face_boundary(edge, face, base_tol: float) -> bool:
+    """Geometric check: does the edge lie on the face's boundary wire.
 
-    Splitter/sewing may preserve the edge, copy it, or keep only a sub-edge.
-    Therefore TShape identity is tried first, then a conservative geometric
-    sub-edge check: the result edge may not exceed the section length and
-    several points along it must lie on the verified section curve.
+    Used as a fallback when the splitter rebuilt edges (TShape identity
+    lost). A result edge that is a sub-edge of an original boundary
+    edge is a source_boundary, not a coincident_boundary.
     """
-    if edge.IsSame(sec.edge):
+    from OCP.TopAbs import TopAbs_EDGE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    try:
+        ex = TopExp_Explorer(TopoDS.Face(face), TopAbs_EDGE)
+        while ex.More():
+            bnd = TopoDS.Edge(ex.Current())
+            if _edge_matches_ref_edge(edge, bnd, float(base_tol),
+                                      float(base_tol), float(base_tol)):
+                return True
+            ex.Next()
+    except Exception:
+        return False
+    return False
+
+
+def _edge_matches_ref_edge(edge, ref_edge, verify_tolerance: float,
+                           edge_tolerance: float,
+                           base_tol: float) -> bool:
+    """Recognize a result edge as lying on a reference edge.
+
+    Splitter/sewing may preserve the edge, copy it, or keep only a
+    sub-edge. Therefore TShape identity is tried first, then a
+    conservative geometric sub-edge check: the result edge may not
+    exceed the reference length and several points along it must lie on
+    the reference curve.
+    """
+    if edge.IsSame(ref_edge):
         return True
 
     from OCP.BRepAdaptor import BRepAdaptor_Curve
 
     le = _edge_length(edge)
-    ls = _edge_length(sec.edge)
-    tol = max(float(base_tol), float(sec.verify_tolerance),
-              float(sec.edge_tolerance))
+    ls = _edge_length(ref_edge)
+    tol = max(float(base_tol), float(verify_tolerance),
+              float(edge_tolerance))
     len_tol = max(16.0 * tol, 1e-8 * max(le, ls, 1.0))
     if le > ls + len_tol:
         return False
@@ -788,9 +981,16 @@ def _edge_matches_section(edge, sec, base_tol: float) -> bool:
         t = t0 + (t1 - t0) * q
         p = ce.Value(float(t))
         x = np.array([p.X(), p.Y(), p.Z()], dtype=np.float64)
-        if _point_edge_distance(x, sec.edge) > match_tol:
+        if _point_edge_distance(x, ref_edge) > match_tol:
             return False
     return True
+
+
+def _edge_matches_section(edge, sec, base_tol: float) -> bool:
+    """Recognize a result edge as lying on a verified section edge."""
+    return _edge_matches_ref_edge(
+        edge, sec.edge, float(sec.verify_tolerance),
+        float(sec.edge_tolerance), float(base_tol))
 
 
 def _build_edge_lineage(result_shape, selected: list[PatchDecision],
@@ -820,7 +1020,10 @@ def _build_edge_lineage(result_shape, selected: list[PatchDecision],
                 if d.operand not in operands:
                     operands.append(d.operand)
                 parent_face = original[d.operand].get(d.parent_face_id)
-                if parent_face is not None and _shape_has_edge(parent_face, edge):
+                if parent_face is not None and (
+                        _shape_has_edge(parent_face, edge)
+                        or _edge_on_face_boundary(
+                            edge, parent_face, float(base_tol))):
                     if pf not in source_boundary:
                         source_boundary.append(pf)
 
@@ -831,8 +1034,36 @@ def _build_edge_lineage(result_shape, selected: list[PatchDecision],
                 if key not in intersections:
                     intersections.append(key)
 
+        # G2.6: coincident_boundary. A result edge that matches a
+        # partner-face boundary edge used as an overlap-split tool, and
+        # that lies in the interior of at least one parent face (i.e.
+        # it was created by the overlap cut, not merely coincident with
+        # an original boundary), came from the other operand's boundary
+        # via the overlap split.
+        coincident_sources = []
+        interior_to_a_parent = False
+        for tool in split.coincident_boundary_tools:
+            if _edge_matches_ref_edge(
+                    edge, tool["edge"], float(base_tol),
+                    float(base_tol), float(base_tol)):
+                key = (tool["operand"], tool["face_id"],
+                       tool["edge_id"])
+                if key not in coincident_sources:
+                    coincident_sources.append(key)
+        if coincident_sources:
+            for operand, fid in parents:
+                parent_face = original[operand].get(fid)
+                if parent_face is not None and not _edge_on_face_boundary(
+                        edge, parent_face, float(base_tol)):
+                    interior_to_a_parent = True
+                    break
+            source_boundary.extend(
+                s for s in coincident_sources if s not in source_boundary)
+
         if intersections:
             kind = "boolean_section"
+        elif coincident_sources and interior_to_a_parent:
+            kind = "coincident_boundary"
         elif source_boundary:
             kind = "source_boundary"
         elif refs:
@@ -916,12 +1147,37 @@ def _compound_solids(solids: list[SolidAssemblyRecord]):
     return c
 
 
+def _solids_touch(solids, tol: float) -> bool:
+    """True when any two result solids touch geometrically (G2.5).
+
+    Touching (distance ~0) outer solids make a union non-manifold;
+    disjoint solids are a legitimate multi-solid result.
+    """
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    shapes = [s.solid for s in solids]
+    for i in range(len(shapes)):
+        for j in range(i + 1, len(shapes)):
+            try:
+                d = BRepExtrema_DistShapeShape(shapes[i], shapes[j])
+                if d.Value() <= tol:
+                    return True
+            except Exception:
+                # An unreadable distance is not evidence of touching.
+                continue
+    return False
+
+
 def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
                      split: ModelSplitResult, operation: str, *,
                      base_tol: float = 1e-7,
-                     sew_tol: Optional[float] = None
+                     sew_tol: Optional[float] = None,
+                     allow_nonmanifold: bool = False
                      ) -> BooleanAssemblyResult:
-    """Classify exact B-rep patches and assemble union/intersection/A-B."""
+    """Classify exact B-rep patches and assemble union/intersection/A-B.
+
+    allow_nonmanifold=True returns a compound of touching solids for a
+    touching-only union instead of refusing NonManifoldResult.
+    """
     from OCP.BRep import BRep_Tool
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
     from OCP.BRepCheck import BRepCheck_Analyzer
@@ -1003,6 +1259,23 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
 
     result_shape = (solids[0].solid if len(solids) == 1
                     else _compound_solids(solids))
+    # G2.5: a union of solids that only touch (along an edge or at a
+    # point) is non-manifold. Refuse typed by default; the optional
+    # allow_nonmanifold flag returns the compound with the contact
+    # recorded in the report notes.
+    touching_solids = (operation == "union" and len(solids) > 1
+                       and _solids_touch(solids, max(float(base_tol),
+                                                    float(sew_tol)) * 4.0))
+    if touching_solids and not allow_nonmanifold:
+        raise AssemblyError(
+            f"union of {len(solids)} solids that touch geometrically: "
+            f"non-manifold result refused",
+            kind="NonManifoldResult")
+    notes = []
+    if touching_solids:
+        notes.append(
+            f"non-manifold contact accepted: {len(solids)} touching "
+            f"solids returned as a compound (allow_nonmanifold=True)")
     if not BRepCheck_Analyzer(result_shape, True).IsValid():
         raise AssemblyError("final assembled result is B-rep invalid",
                             kind="SolidInvalid")
@@ -1024,4 +1297,5 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         multiple_edges=multi,
         edge_lineage=edge_lineage,
         section_payloads=section_payloads,
+        notes=notes,
     )

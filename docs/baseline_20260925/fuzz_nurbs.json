@@ -1,0 +1,1041 @@
+{
+ "args": {
+  "trials": 60,
+  "seed": 11,
+  "nurbs": true,
+  "snap": 0.0,
+  "points": 300,
+  "kinds": "box,cyl,sph,cone,torus",
+  "out": "docs/baseline_20260925/fuzz_nurbs.json"
+ },
+ "versions": "versions: numpy=2.5.3 cadquery-ocp=8.0.1.0.0 manifold3d=3.5.3",
+ "tally": {
+  "accept": 59,
+  "refuse:InsufficientPatchWitnesses": 1
+ },
+ "rows": [
+  {
+   "trial": 0,
+   "A": "box",
+   "B": "box",
+   "op": "difference",
+   "volume": 0.6257733549206604,
+   "oracle_volume": 0.6257733549199956,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 2.253
+  },
+  {
+   "trial": 1,
+   "A": "sph",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.0013680968603091194,
+   "oracle_volume": 0.0013680968603091196,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 12.513
+  },
+  {
+   "trial": 2,
+   "A": "cone",
+   "B": "box",
+   "op": "union",
+   "volume": 1.4674849810816344,
+   "oracle_volume": 1.4674849810816344,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 8.932
+  },
+  {
+   "trial": 3,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.106
+  },
+  {
+   "trial": 4,
+   "A": "cyl",
+   "B": "torus",
+   "op": "intersection",
+   "volume": 0.1997216503555485,
+   "oracle_volume": 0.19972164965815478,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 17.062
+  },
+  {
+   "trial": 5,
+   "A": "cyl",
+   "B": "sph",
+   "op": "difference",
+   "volume": 3.4197515004744434,
+   "oracle_volume": 3.419751500474443,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 19.125
+  },
+  {
+   "trial": 6,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.042544794457889584,
+   "oracle_volume": 0.04254479445788958,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.965
+  },
+  {
+   "trial": 7,
+   "A": "box",
+   "B": "torus",
+   "op": "union",
+   "volume": 4.124396810878049,
+   "oracle_volume": 4.124396808832122,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 17.157
+  },
+  {
+   "trial": 8,
+   "A": "cone",
+   "B": "sph",
+   "op": "difference",
+   "volume": 0.06732143773174784,
+   "oracle_volume": 0.06732143773174784,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 18.12
+  },
+  {
+   "trial": 9,
+   "A": "sph",
+   "B": "box",
+   "op": "union",
+   "volume": 4.621826488541365,
+   "oracle_volume": 4.62182649373974,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 19.564
+  },
+  {
+   "trial": 10,
+   "A": "cone",
+   "B": "cone",
+   "op": "union",
+   "volume": 1.100010164596361,
+   "oracle_volume": 1.100010164596361,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 16.678
+  },
+  {
+   "trial": 11,
+   "A": "sph",
+   "B": "box",
+   "op": "union",
+   "volume": 3.679281222072774,
+   "oracle_volume": 3.6792812220451387,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 19.511
+  },
+  {
+   "trial": 12,
+   "A": "cone",
+   "B": "cone",
+   "op": "difference",
+   "volume": 0.22072963520046446,
+   "oracle_volume": 0.22072963520046446,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 9.773
+  },
+  {
+   "trial": 13,
+   "A": "cone",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 6.423
+  },
+  {
+   "trial": 14,
+   "A": "sph",
+   "B": "box",
+   "op": "difference",
+   "volume": 0.5581299423225212,
+   "oracle_volume": 0.5581299423042314,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 18.212
+  },
+  {
+   "trial": 15,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.114
+  },
+  {
+   "trial": 16,
+   "A": "cone",
+   "B": "box",
+   "op": "intersection",
+   "refusal": {
+    "stage": "assembly",
+    "type": "AssemblyError",
+    "kind": "InsufficientPatchWitnesses",
+    "message": "only 2 stable interior witness(es) found; 3 required"
+   },
+   "status": "refuse:InsufficientPatchWitnesses",
+   "seconds": 0.687
+  },
+  {
+   "trial": 17,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.3187096295768529,
+   "oracle_volume": 0.3187096295768954,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 3.12
+  },
+  {
+   "trial": 18,
+   "A": "cone",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.4078671205339325,
+   "oracle_volume": 0.4078671205339325,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 9.826
+  },
+  {
+   "trial": 19,
+   "A": "sph",
+   "B": "box",
+   "op": "difference",
+   "volume": 2.382800834267847,
+   "oracle_volume": 2.382800834269568,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 27.223
+  },
+  {
+   "trial": 20,
+   "A": "cone",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.32260663918196075,
+   "oracle_volume": 0.3226066391819608,
+   "audit": {
+    "checked": 298,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 7.76
+  },
+  {
+   "trial": 21,
+   "A": "torus",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.3196194576715321,
+   "oracle_volume": 0.3196194576715321,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 21.195
+  },
+  {
+   "trial": 22,
+   "A": "sph",
+   "B": "cone",
+   "op": "union",
+   "volume": 0.767974152308495,
+   "oracle_volume": 0.7679741523084951,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 27.311
+  },
+  {
+   "trial": 23,
+   "A": "cyl",
+   "B": "cone",
+   "op": "intersection",
+   "volume": 0.11105428986127817,
+   "oracle_volume": 0.11105428986127817,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 6.884
+  },
+  {
+   "trial": 24,
+   "A": "cyl",
+   "B": "cone",
+   "op": "union",
+   "volume": 2.3481169540591917,
+   "oracle_volume": 2.3481169540591917,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 1,
+    "error_points": [],
+    "classifier_points": [
+     [
+      1.6394191745741407,
+      0.6590754103425351,
+      -1.3254596456529883
+     ]
+    ]
+   },
+   "status": "accept",
+   "seconds": 12.271
+  },
+  {
+   "trial": 25,
+   "A": "torus",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.2749701632659248,
+   "oracle_volume": 0.2749701632659248,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 32.815
+  },
+  {
+   "trial": 26,
+   "A": "torus",
+   "B": "cone",
+   "op": "union",
+   "volume": 1.280830291684914,
+   "oracle_volume": 1.2808302916849141,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 30.013
+  },
+  {
+   "trial": 27,
+   "A": "cone",
+   "B": "cone",
+   "op": "union",
+   "volume": 2.659183336811668,
+   "oracle_volume": 2.659183336811667,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 18.775
+  },
+  {
+   "trial": 28,
+   "A": "cyl",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.4942212314054661,
+   "oracle_volume": 0.49422123140546614,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 2.869
+  },
+  {
+   "trial": 29,
+   "A": "cyl",
+   "B": "torus",
+   "op": "union",
+   "volume": 1.7407839421181106,
+   "oracle_volume": 1.7407839423267852,
+   "audit": {
+    "checked": 298,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 23.938
+  },
+  {
+   "trial": 30,
+   "A": "sph",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 7.044
+  },
+  {
+   "trial": 31,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.6483295832810883,
+   "oracle_volume": 0.6483295832810886,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 4.58
+  },
+  {
+   "trial": 32,
+   "A": "cyl",
+   "B": "cone",
+   "op": "union",
+   "volume": 4.056439693205183,
+   "oracle_volume": 4.056439693218897,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 11.581
+  },
+  {
+   "trial": 33,
+   "A": "torus",
+   "B": "sph",
+   "op": "difference",
+   "volume": 0.7026113021243894,
+   "oracle_volume": 0.7026113021243894,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 30.426
+  },
+  {
+   "trial": 34,
+   "A": "cyl",
+   "B": "torus",
+   "op": "intersection",
+   "volume": 0.2550903414924014,
+   "oracle_volume": 0.2550903414648202,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 20.599
+  },
+  {
+   "trial": 35,
+   "A": "cyl",
+   "B": "cone",
+   "op": "difference",
+   "volume": 3.165543278841059,
+   "oracle_volume": 3.165543278841059,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 9.54
+  },
+  {
+   "trial": 36,
+   "A": "cone",
+   "B": "sph",
+   "op": "union",
+   "volume": 1.5243190265478845,
+   "oracle_volume": 1.5243190265478845,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 22.605
+  },
+  {
+   "trial": 37,
+   "A": "box",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.05890946173824925,
+   "oracle_volume": 0.05890946173840163,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 2.225
+  },
+  {
+   "trial": 38,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 1.471733829324013,
+   "oracle_volume": 1.4717338293240125,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 6.65
+  },
+  {
+   "trial": 39,
+   "A": "sph",
+   "B": "cone",
+   "op": "union",
+   "volume": 1.4677828642160318,
+   "oracle_volume": 1.467782864216032,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 26.974
+  },
+  {
+   "trial": 40,
+   "A": "sph",
+   "B": "cone",
+   "op": "intersection",
+   "volume": 0.0051407119299322,
+   "oracle_volume": 0.0051407119299322,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 13.832
+  },
+  {
+   "trial": 41,
+   "A": "cyl",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.5663139164131112,
+   "oracle_volume": 0.5663139164131116,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 17.946
+  },
+  {
+   "trial": 42,
+   "A": "sph",
+   "B": "cone",
+   "op": "union",
+   "volume": 1.1784833940601118,
+   "oracle_volume": 1.178483394060112,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 23.573
+  },
+  {
+   "trial": 43,
+   "A": "sph",
+   "B": "torus",
+   "op": "intersection",
+   "volume": 0.043959374049832765,
+   "oracle_volume": 0.04395937404983276,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 24.887
+  },
+  {
+   "trial": 44,
+   "A": "sph",
+   "B": "torus",
+   "op": "difference",
+   "volume": 0.8587701961646819,
+   "oracle_volume": 0.8587701961646819,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 31.142
+  },
+  {
+   "trial": 45,
+   "A": "torus",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.0002668506277997289,
+   "oracle_volume": 0.0002668506282325076,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 14.936
+  },
+  {
+   "trial": 46,
+   "A": "cone",
+   "B": "sph",
+   "op": "difference",
+   "volume": 0.876440535655778,
+   "oracle_volume": 0.876440535655778,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 15.254
+  },
+  {
+   "trial": 47,
+   "A": "sph",
+   "B": "torus",
+   "op": "union",
+   "volume": 3.503068963889206,
+   "oracle_volume": 3.503068963889206,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 36.479
+  },
+  {
+   "trial": 48,
+   "A": "sph",
+   "B": "sph",
+   "op": "union",
+   "volume": 1.3840030430380788,
+   "oracle_volume": 1.3840030430380788,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 21.529
+  },
+  {
+   "trial": 49,
+   "A": "cone",
+   "B": "cone",
+   "op": "difference",
+   "volume": 0.5291979502645372,
+   "oracle_volume": 0.5291979502642905,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 15.867
+  },
+  {
+   "trial": 50,
+   "A": "torus",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 20.767
+  },
+  {
+   "trial": 51,
+   "A": "sph",
+   "B": "box",
+   "op": "intersection",
+   "volume": 0.8266699790495019,
+   "oracle_volume": 0.826669979096114,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 15.342
+  },
+  {
+   "trial": 52,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 3.110320085962704,
+   "oracle_volume": 3.1103200862124973,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 6.453
+  },
+  {
+   "trial": 53,
+   "A": "cone",
+   "B": "cone",
+   "op": "union",
+   "volume": 1.4745910881614954,
+   "oracle_volume": 1.4745910881614954,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 16.886
+  },
+  {
+   "trial": 54,
+   "A": "torus",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.5095255202585645,
+   "oracle_volume": 0.5095255202585645,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 17.409
+  },
+  {
+   "trial": 55,
+   "A": "cyl",
+   "B": "sph",
+   "op": "difference",
+   "volume": 1.9378491572080088,
+   "oracle_volume": 1.9378491572080083,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 13.4
+  },
+  {
+   "trial": 56,
+   "A": "cone",
+   "B": "torus",
+   "op": "union",
+   "volume": 1.3273601236911352,
+   "oracle_volume": 1.3273601236911352,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 31.444
+  },
+  {
+   "trial": 57,
+   "A": "torus",
+   "B": "torus",
+   "op": "intersection",
+   "volume": 0.018666282109925814,
+   "oracle_volume": 0.01866628210992581,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 22.962
+  },
+  {
+   "trial": 58,
+   "A": "box",
+   "B": "torus",
+   "op": "intersection",
+   "volume": 0.06866135198826766,
+   "oracle_volume": 0.06866135198826766,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 14.159
+  },
+  {
+   "trial": 59,
+   "A": "torus",
+   "B": "torus",
+   "op": "union",
+   "volume": 1.7494246934247308,
+   "oracle_volume": 1.7494246934247308,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 35.059
+  }
+ ]
+}

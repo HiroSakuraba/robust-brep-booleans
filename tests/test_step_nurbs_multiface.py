@@ -11,6 +11,9 @@ import sys
 import tempfile
 
 sys.path.insert(0, "src")
+sys.path.insert(0, "tests")
+
+import _arbiter
 
 from brepkernel import boolean_brep
 from brepkernel.step_ingest import index_shape
@@ -162,6 +165,8 @@ def main():
         and all(p["samples"] >= 2 for p in payloads)
         and any(p["result_edges"] for p in payloads),
         f"lineage={lin} payloads={payloads}")
+    ok &= _arbiter.check_accepted(
+        "step2", check, source, cutter, out, "difference")[0]
 
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1

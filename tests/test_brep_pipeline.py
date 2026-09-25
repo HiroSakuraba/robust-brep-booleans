@@ -8,6 +8,9 @@ import math
 import sys
 
 sys.path.insert(0, "src")
+sys.path.insert(0, "tests")
+
+import _arbiter
 
 from brepkernel import boolean_brep, BRepAmbiguousResult
 
@@ -151,6 +154,7 @@ def t1_one_call_true_nurbs_union():
         and all(timings[k] >= 0.0 for k in required)
         and timings["total"] >= max(timings[k] for k in required - {"total"}),
         f"timings={timings}")
+    ok &= _arbiter.check_accepted("p1", check, a, b, out, "union")[0]
     return ok
 
 
@@ -168,6 +172,9 @@ def t2_exact_identity_fast_path():
         rd["accepted"]
         and rd["stages"]["identity"]["resolution"] == "empty"
         and solid_count(d) == 0)
+    ok &= _arbiter.check_accepted("p2 union", check, a, a, u, "union")[0]
+    ok &= _arbiter.check_accepted(
+        "p2 difference", check, a, a, d, "difference")[0]
     return ok
 
 
@@ -213,6 +220,9 @@ def t4_independent_same_domain_fast_path():
         and "intersection" not in rd["stages"]
         and solid_count(d) == 0,
         f"same_domain={sd_d}")
+    ok &= _arbiter.check_accepted("p4 union", check, a, b, u, "union")[0]
+    ok &= _arbiter.check_accepted(
+        "p4 difference", check, a, b, d, "difference")[0]
     return ok
 
 
@@ -230,7 +240,7 @@ def t5_different_decomposition_public_fast_path():
     out, report = boolean_brep(a, b, "union")
     sd = report["stages"].get("same_domain", {})
     cb = sd.get("canonical_B") or {}
-    return check(
+    ok = check(
         "p5 different decomposition canonical fast path",
         report["accepted"]
         and sd.get("equivalent")
@@ -241,6 +251,8 @@ def t5_different_decomposition_public_fast_path():
         and "intersection" not in report["stages"]
         and solid_count(out) == 1,
         f"same_domain={sd}")
+    ok &= _arbiter.check_accepted("p5", check, a, b, out, "union")[0]
+    return ok
 
 
 def t6_public_volume_invariants_intersection_and_difference():
@@ -268,6 +280,7 @@ def t6_public_volume_invariants_intersection_and_difference():
             and abs(got - expected[op]) < 3e-6,
             f"volume={got:.12g} expected={expected[op]:.12g} "
             f"verification={ver}")
+        ok &= _arbiter.check_accepted(f"p6 {op}", check, a, b, out, op)[0]
     return ok
 
 def main():
