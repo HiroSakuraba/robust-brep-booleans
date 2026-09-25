@@ -15,8 +15,15 @@ from brepkernel.split import split_models
 from brepkernel.step_ingest import index_shape
 
 from OCP.BRep import BRep_Builder
-from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
+from OCP.BRepBuilderAPI import (
+    BRepBuilderAPI_MakeFace,
+    BRepBuilderAPI_NurbsConvert,
+)
+from OCP.BRepPrimAPI import (
+    BRepPrimAPI_MakeBox,
+    BRepPrimAPI_MakeSphere,
+    BRepPrimAPI_MakeTorus,
+)
 from OCP.Geom import Geom_BSplineSurface, Geom_Plane
 try:
     # OCP <= 7.x bindings
@@ -155,12 +162,65 @@ def t4_near_tangent_gap_blocks_speculative_split():
                  f"unresolved={sp.unresolved_contacts}")
 
 
+
+def t5_torus_seam_trial_with_risky_split_enabled():
+    """Characterize OCCT behavior before changing seam policy.
+
+    One torus/plane section loop lies on the torus's existing periodic seam.
+    The other is an interior loop.  Forcing both verified edges through the
+    current splitter tells us whether OCCT itself can produce a valid local
+    partition; production policy remains conservative until this test is
+    understood.
+    """
+    tor0 = BRepPrimAPI_MakeTorus(3.0, 1.0).Shape()
+    conv = BRepBuilderAPI_NurbsConvert(tor0, True)
+    assert conv.IsDone()
+    torus = conv.Shape()
+    cutter = BRepPrimAPI_MakeBox(
+        gp_Pnt(-5.0, -5.0, -2.0),
+        gp_Pnt(5.0, 5.0, 0.0)).Shape()
+
+    a = index_shape(torus)
+    b = index_shape(cutter)
+    ix = intersect_models(a, b, base_tol=1e-7)
+    curve_pairs = [p for p in ix.pairs if p.edges]
+    if len(curve_pairs) != 1 or len(curve_pairs[0].edges) != 2:
+        return check(
+            "t5 setup has two torus section loops",
+            False,
+            f"pairs={[(p.face_a,p.face_b,len(p.edges)) for p in ix.pairs]}")
+
+    risks = [e.risk_flags for e in curve_pairs[0].edges]
+    ok = check(
+        "t5 setup includes one torus seam loop",
+        any("seam_on_a" in r for r in risks),
+        f"risks={risks}")
+
+    try:
+        sp = split_models(a, b, ix, base_tol=1e-7, allow_risky=True)
+    except Exception as exc:
+        return check(
+            "t5 forced seam split trial completes",
+            False,
+            f"{type(exc).__name__}: {exc}; risks={risks}")
+
+    ra = [r for r in sp.faces_a if r.source_edges]
+    rb = [r for r in sp.faces_b if r.source_edges]
+    ok &= check(
+        "t5 forced seam split trial completes",
+        not sp.unresolved_contacts and bool(ra) and bool(rb),
+        f"A={[(r.status,len(r.pieces),r.area_error,r.notes) for r in ra]} "
+        f"B={[(r.status,len(r.pieces),r.area_error,r.notes) for r in rb]} "
+        f"unresolved={sp.unresolved_contacts}")
+    return ok
+
 def main():
     ok = True
     ok &= t1_only_affected_trimmed_face_splits()
     ok &= t2_far_faces_are_bit_identical_passthrough()
     ok &= t3_point_tangency_blocks_speculative_split()
     ok &= t4_near_tangent_gap_blocks_speculative_split()
+    ok &= t5_torus_seam_trial_with_risky_split_enabled()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
