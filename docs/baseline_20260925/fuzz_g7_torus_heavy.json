@@ -1,0 +1,1026 @@
+{
+ "args": {
+  "trials": 60,
+  "seed": 7,
+  "nurbs": false,
+  "snap": 0.0,
+  "points": 300,
+  "kinds": "torus,cyl,sph",
+  "out": "docs/baseline_20260925/fuzz_g7_torus_heavy.json"
+ },
+ "versions": "versions: numpy=2.5.3 cadquery-ocp=8.0.1.0.0 manifold3d=3.5.3",
+ "tally": {
+  "accept": 56,
+  "refuse:SectionToleranceTooLoose": 4
+ },
+ "rows": [
+  {
+   "trial": 0,
+   "A": "sph",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 1.9015659557519478,
+   "oracle_volume": 1.9015659557519478,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 41.975
+  },
+  {
+   "trial": 1,
+   "A": "sph",
+   "B": "cyl",
+   "op": "difference",
+   "refusal": {
+    "stage": "intersection",
+    "type": "IntersectionError",
+    "kind": "SectionToleranceTooLoose",
+    "message": "section edge 0: OCCT edge/face tolerance 7.07895e-05 exceeds acceptance ceiling 1.28e-05"
+   },
+   "status": "refuse:SectionToleranceTooLoose",
+   "seconds": 0.427
+  },
+  {
+   "trial": 2,
+   "A": "cyl",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.7082610948700642,
+   "oracle_volume": 0.7082610948700642,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 31.409
+  },
+  {
+   "trial": 3,
+   "A": "torus",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.009769906323034,
+   "oracle_volume": 0.009769906323034,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 38.072
+  },
+  {
+   "trial": 4,
+   "A": "cyl",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.42540349695071616,
+   "oracle_volume": 0.4254034969507162,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 22.998
+  },
+  {
+   "trial": 5,
+   "A": "sph",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.11471475434439293,
+   "oracle_volume": 0.11471475434439293,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 17.377
+  },
+  {
+   "trial": 6,
+   "A": "cyl",
+   "B": "sph",
+   "op": "union",
+   "volume": 3.900690847736176,
+   "oracle_volume": 3.900690847736176,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 22.314
+  },
+  {
+   "trial": 7,
+   "A": "torus",
+   "B": "sph",
+   "op": "intersection",
+   "refusal": {
+    "stage": "intersection",
+    "type": "IntersectionError",
+    "kind": "SectionToleranceTooLoose",
+    "message": "section edge 2: OCCT edge/face tolerance 0.000208554 exceeds acceptance ceiling 1.28e-05"
+   },
+   "status": "refuse:SectionToleranceTooLoose",
+   "seconds": 1.038
+  },
+  {
+   "trial": 8,
+   "A": "sph",
+   "B": "torus",
+   "op": "difference",
+   "volume": 1.9818692781088925,
+   "oracle_volume": 1.9818692781088925,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 46.085
+  },
+  {
+   "trial": 9,
+   "A": "sph",
+   "B": "torus",
+   "op": "intersection",
+   "volume": 0.3338684687887521,
+   "oracle_volume": 0.3338684687887521,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 64.899
+  },
+  {
+   "trial": 10,
+   "A": "sph",
+   "B": "torus",
+   "op": "difference",
+   "volume": 1.6538456225613603,
+   "oracle_volume": 1.6538456225613603,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 54.008
+  },
+  {
+   "trial": 11,
+   "A": "torus",
+   "B": "sph",
+   "op": "difference",
+   "volume": 0.5227161631095498,
+   "oracle_volume": 0.5227161631095497,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 51.079
+  },
+  {
+   "trial": 12,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "union",
+   "volume": 3.86165399096405,
+   "oracle_volume": 3.8616539909640495,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 6.084
+  },
+  {
+   "trial": 13,
+   "A": "cyl",
+   "B": "sph",
+   "op": "union",
+   "volume": 2.840584555041192,
+   "oracle_volume": 2.840584555041192,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 12.132
+  },
+  {
+   "trial": 14,
+   "A": "sph",
+   "B": "torus",
+   "op": "intersection",
+   "volume": 0.14699525113060197,
+   "oracle_volume": 0.14699525113060197,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 51.193
+  },
+  {
+   "trial": 15,
+   "A": "torus",
+   "B": "torus",
+   "op": "intersection",
+   "volume": 0.06220435578745524,
+   "oracle_volume": 0.06220435578745524,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 50.766
+  },
+  {
+   "trial": 16,
+   "A": "sph",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.5108469826622699,
+   "oracle_volume": 0.5108469826622699,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 25.502
+  },
+  {
+   "trial": 17,
+   "A": "sph",
+   "B": "sph",
+   "op": "difference",
+   "volume": 0.4891738665286551,
+   "oracle_volume": 0.4891738665286551,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 21.032
+  },
+  {
+   "trial": 18,
+   "A": "torus",
+   "B": "torus",
+   "op": "union",
+   "volume": 1.2133165197872384,
+   "oracle_volume": 1.2133165197872382,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 67.004
+  },
+  {
+   "trial": 19,
+   "A": "cyl",
+   "B": "sph",
+   "op": "union",
+   "volume": 3.8711232756875065,
+   "oracle_volume": 3.8711232756875065,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 24.06
+  },
+  {
+   "trial": 20,
+   "A": "sph",
+   "B": "torus",
+   "op": "difference",
+   "volume": 1.1222110531736005,
+   "oracle_volume": 1.1222110531736003,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 38.52
+  },
+  {
+   "trial": 21,
+   "A": "cyl",
+   "B": "torus",
+   "op": "union",
+   "volume": 2.9585944660452914,
+   "oracle_volume": 2.958594466045291,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 27.564
+  },
+  {
+   "trial": 22,
+   "A": "torus",
+   "B": "cyl",
+   "op": "union",
+   "volume": 3.7956866738539397,
+   "oracle_volume": 3.7956866738539397,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 24.003
+  },
+  {
+   "trial": 23,
+   "A": "sph",
+   "B": "torus",
+   "op": "difference",
+   "volume": 0.29258865277263596,
+   "oracle_volume": 0.29258865277263596,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 17.547
+  },
+  {
+   "trial": 24,
+   "A": "torus",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.2064644408843801,
+   "oracle_volume": 0.2064644408843801,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 21.179
+  },
+  {
+   "trial": 25,
+   "A": "sph",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.255100534749668,
+   "oracle_volume": 0.255100534749668,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 13.015
+  },
+  {
+   "trial": 26,
+   "A": "torus",
+   "B": "sph",
+   "op": "difference",
+   "volume": 1.114151030021144,
+   "oracle_volume": 1.114151030021144,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 35.768
+  },
+  {
+   "trial": 27,
+   "A": "cyl",
+   "B": "torus",
+   "op": "union",
+   "volume": 2.269266100293347,
+   "oracle_volume": 2.269266100293347,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 21.085
+  },
+  {
+   "trial": 28,
+   "A": "torus",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.17834242466054265,
+   "oracle_volume": 0.17834242466054265,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 18.896
+  },
+  {
+   "trial": 29,
+   "A": "torus",
+   "B": "torus",
+   "op": "union",
+   "volume": 1.326792251930631,
+   "oracle_volume": 1.326792251930631,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 58.183
+  },
+  {
+   "trial": 30,
+   "A": "sph",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.18996694220666602,
+   "oracle_volume": 0.18996694220666602,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 10.299
+  },
+  {
+   "trial": 31,
+   "A": "torus",
+   "B": "torus",
+   "op": "union",
+   "volume": 1.9070799548914998,
+   "oracle_volume": 1.9070799548914998,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 39.593
+  },
+  {
+   "trial": 32,
+   "A": "torus",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.08870651464298383,
+   "oracle_volume": 0.08870651464298385,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 11.612
+  },
+  {
+   "trial": 33,
+   "A": "torus",
+   "B": "sph",
+   "op": "difference",
+   "refusal": {
+    "stage": "intersection",
+    "type": "IntersectionError",
+    "kind": "SectionToleranceTooLoose",
+    "message": "section edge 0: OCCT edge/face tolerance 4.04062e-05 exceeds acceptance ceiling 1.28e-05"
+   },
+   "status": "refuse:SectionToleranceTooLoose",
+   "seconds": 0.197
+  },
+  {
+   "trial": 34,
+   "A": "sph",
+   "B": "torus",
+   "op": "difference",
+   "volume": 1.998555998690023,
+   "oracle_volume": 1.998555998690023,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 18.603
+  },
+  {
+   "trial": 35,
+   "A": "sph",
+   "B": "cyl",
+   "op": "union",
+   "refusal": {
+    "stage": "intersection",
+    "type": "IntersectionError",
+    "kind": "SectionToleranceTooLoose",
+    "message": "section edge 0: OCCT edge/face tolerance 0.000604294 exceeds acceptance ceiling 1.28e-05"
+   },
+   "status": "refuse:SectionToleranceTooLoose",
+   "seconds": 0.189
+  },
+  {
+   "trial": 36,
+   "A": "sph",
+   "B": "sph",
+   "op": "union",
+   "volume": 5.039670162069884,
+   "oracle_volume": 5.039670162069885,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 21.1
+  },
+  {
+   "trial": 37,
+   "A": "torus",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.1934036238857883,
+   "oracle_volume": 0.19340362388578833,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 16.393
+  },
+  {
+   "trial": 38,
+   "A": "sph",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 1.679237122557957,
+   "oracle_volume": 1.679237122557957,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 12.604
+  },
+  {
+   "trial": 39,
+   "A": "cyl",
+   "B": "torus",
+   "op": "intersection",
+   "volume": 0.36051745660165957,
+   "oracle_volume": 0.3605174566016595,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 18.157
+  },
+  {
+   "trial": 40,
+   "A": "cyl",
+   "B": "torus",
+   "op": "union",
+   "volume": 1.0235556622521145,
+   "oracle_volume": 1.0235556622521145,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 20.303
+  },
+  {
+   "trial": 41,
+   "A": "torus",
+   "B": "cyl",
+   "op": "union",
+   "volume": 2.007442303201013,
+   "oracle_volume": 2.007442303201013,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 17.884
+  },
+  {
+   "trial": 42,
+   "A": "cyl",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 1.5855878689511047,
+   "oracle_volume": 1.5855878689511047,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 1.869
+  },
+  {
+   "trial": 43,
+   "A": "torus",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 0.23363172241169705,
+   "oracle_volume": 0.23363172241169708,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 14.886
+  },
+  {
+   "trial": 44,
+   "A": "cyl",
+   "B": "torus",
+   "op": "union",
+   "volume": 1.1624727570478646,
+   "oracle_volume": 1.1624727570478646,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 15.235
+  },
+  {
+   "trial": 45,
+   "A": "cyl",
+   "B": "sph",
+   "op": "union",
+   "volume": 3.2672645890599035,
+   "oracle_volume": 3.2672645890599035,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 13.565
+  },
+  {
+   "trial": 46,
+   "A": "sph",
+   "B": "torus",
+   "op": "intersection",
+   "volume": 0.023899552861552417,
+   "oracle_volume": 0.023899552861552417,
+   "audit": {
+    "checked": 298,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 16.746
+  },
+  {
+   "trial": 47,
+   "A": "torus",
+   "B": "torus",
+   "op": "union",
+   "volume": 1.8498038223984339,
+   "oracle_volume": 1.8498038223984345,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 43.871
+  },
+  {
+   "trial": 48,
+   "A": "torus",
+   "B": "torus",
+   "op": "union",
+   "volume": 2.5644678966634364,
+   "oracle_volume": 2.5644678966634364,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 46.104
+  },
+  {
+   "trial": 49,
+   "A": "torus",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.7482133165056515,
+   "oracle_volume": 0.7482133165056515,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 21.539
+  },
+  {
+   "trial": 50,
+   "A": "sph",
+   "B": "sph",
+   "op": "difference",
+   "volume": 1.5516700392412737,
+   "oracle_volume": 1.5516700392412737,
+   "audit": {
+    "checked": 299,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 18.762
+  },
+  {
+   "trial": 51,
+   "A": "cyl",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.3820989658393138,
+   "oracle_volume": 0.3820989658393138,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 8.811
+  },
+  {
+   "trial": 52,
+   "A": "cyl",
+   "B": "torus",
+   "op": "union",
+   "volume": 3.3276457914040396,
+   "oracle_volume": 3.3276457914040405,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 23.684
+  },
+  {
+   "trial": 53,
+   "A": "sph",
+   "B": "cyl",
+   "op": "intersection",
+   "volume": 1.668477959856431e-07,
+   "oracle_volume": 1.668477959856431e-07,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 3.803
+  },
+  {
+   "trial": 54,
+   "A": "cyl",
+   "B": "torus",
+   "op": "difference",
+   "volume": 1.889392056941712,
+   "oracle_volume": 1.889392056941712,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 12.722
+  },
+  {
+   "trial": 55,
+   "A": "cyl",
+   "B": "torus",
+   "op": "union",
+   "volume": 1.7342417635396896,
+   "oracle_volume": 1.7342417635396896,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 19.93
+  },
+  {
+   "trial": 56,
+   "A": "cyl",
+   "B": "sph",
+   "op": "difference",
+   "volume": 1.5993094325832073,
+   "oracle_volume": 1.5993094325832076,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 12.256
+  },
+  {
+   "trial": 57,
+   "A": "torus",
+   "B": "cyl",
+   "op": "difference",
+   "volume": 0.3838049871551976,
+   "oracle_volume": 0.38380498715519773,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 17.782
+  },
+  {
+   "trial": 58,
+   "A": "torus",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.0,
+   "oracle_volume": 0.0,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 13.214
+  },
+  {
+   "trial": 59,
+   "A": "torus",
+   "B": "sph",
+   "op": "intersection",
+   "volume": 0.1712346042773058,
+   "oracle_volume": 0.1712346042773058,
+   "audit": {
+    "checked": 300,
+    "kernel_errors": 0,
+    "classifier_disagreements": 0,
+    "error_points": [],
+    "classifier_points": []
+   },
+   "status": "accept",
+   "seconds": 25.308
+  }
+ ]
+}
