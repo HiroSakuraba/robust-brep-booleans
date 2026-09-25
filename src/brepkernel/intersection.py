@@ -420,7 +420,11 @@ def _run_section_engine(fa: FaceRecord, fb: FaceRecord, *,
                         parallel: bool,
                         use_obb: bool):
     """Run one OCCT Section construction mode and return edges/vertices."""
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
     from OCP.BRep import BRep_Tool
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_VERTEX
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
 
     sec = BRepAlgoAPI_Section(fa.face, fb.face, False)
     sec.SetNonDestructive(True)
@@ -574,11 +578,7 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
                       crosscheck_nonapprox: bool = True
                       ) -> FaceIntersectionResult:
     """Intersect one pair of *trimmed* faces and verify all section curves."""
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
     from OCP.BRep import BRep_Tool
-    from OCP.TopAbs import TopAbs_EDGE, TopAbs_VERTEX
-    from OCP.TopExp import TopExp_Explorer
-    from OCP.TopoDS import TopoDS
 
     if not base_tol > 0:
         raise ValueError("base_tol must be positive")
