@@ -469,7 +469,25 @@ def same_domain_models(a: BRepModel, b: BRepModel, *,
     if strict.equivalent or not allow_canonicalization:
         return strict
 
-    # Canonicalization is useful only when both operands are closed solids.
+    # Do not canonicalize after an invariant mismatch that canonicalization is
+    # itself required to preserve.  These are proofs that the two material
+    # sets cannot become equivalent by merely merging same-domain faces/edges.
+    # This avoids expensive ShapeUpgrade_UnifySameDomain work on the ordinary
+    # case of two different solids (for example overlapping translated parts).
+    terminal_reasons = {
+        "closed solids required",
+        "operand A is B-rep invalid",
+        "operand B is B-rep invalid",
+        "model bounding boxes differ",
+        "model volumes differ",
+        "global material orientation differs",
+    }
+    if strict.reason in terminal_reasons:
+        return strict
+
+    # Topology-count and face-matching failures are intentionally *not*
+    # terminal: canonicalization exists specifically to remove redundant
+    # same-domain decomposition before retrying the strict matcher.
     if not a.solids or not b.solids:
         return strict
 
