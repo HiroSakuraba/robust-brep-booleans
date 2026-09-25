@@ -26,6 +26,7 @@ from brepkernel.split import (
 from brepkernel.step_ingest import index_shape
 
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
+from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepGProp import BRepGProp
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeSphere
@@ -282,12 +283,15 @@ def t7_two_cavity_shell_nesting_is_consistent():
     This directly exercises the shell-containment hierarchy rather than
     relying on one center point or a single-cavity special case.
     """
-    outer = BRepPrimAPI_MakeSphere(
+    outer0 = BRepPrimAPI_MakeSphere(
         gp_Pnt(0, 0, 0), 3.0).Shape()
-    c1 = BRepPrimAPI_MakeSphere(
+    c10 = BRepPrimAPI_MakeSphere(
         gp_Pnt(-1.0, 0, 0), 0.5).Shape()
-    c2 = BRepPrimAPI_MakeSphere(
+    c20 = BRepPrimAPI_MakeSphere(
         gp_Pnt(1.0, 0, 0), 0.5).Shape()
+    outer = BRepBuilderAPI_NurbsConvert(outer0, True).Shape()
+    c1 = BRepBuilderAPI_NurbsConvert(c10, True).Shape()
+    c2 = BRepBuilderAPI_NurbsConvert(c20, True).Shape()
 
     records = _shell_records(
         [_first_shell(outer), _first_shell(c1), _first_shell(c2)],
