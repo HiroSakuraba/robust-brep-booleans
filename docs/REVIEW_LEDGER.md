@@ -1844,3 +1844,82 @@ Base: exit=0, TALLY {'accept': 58, 'refuse:InsufficientPatchWitnesses': 2},
 0 WRONG, 0 CRASH. G5: exit=0, TALLY {'accept': 58,
 'refuse:InsufficientPatchWitnesses': 2}, 0 WRONG, 0 CRASH,
 0 ClassifierDisagreement refusals. Tallies identical between base and G5.
+
+---
+
+## G7 periodic-seam stress (25 Sept 2026, branch gate/G7-seam-stress)
+
+Scope: stress-test the v0.9 seam mechanism (reuse an existing seam boundary
+on the seam-side operand; verify the section edge normally on the opposite
+operand), NOT a rewrite. Tests + harnesses only; zero src/ changes.
+
+### What was built
+
+- tests/test_g7_seam_stress.py (new, 38 checks):
+  - g1 equatorial seam-plane cut (torus minus box, z<=0): one section loop
+    IS the torus v-seam; report pins reused_seam_edges_A=1, B=0,
+    shared=0, seam_on_a in section payloads, 2 verified loops, oracle-exact
+    volume, arbiter 200 pts / 0 kernel errors.
+  - g2 polar seam-plane cut (torus minus box, y<=0): one section loop IS
+    the u-seam meridian; pins reused_seam_edges_A=1, seam_on_a flag,
+    oracle-exact volume, arbiter 200/0.
+  - g3 same polar cut, operands reversed (intersection): pins
+    reused_seam_edges_B=1, seam_on_b flag, oracle-exact, arbiter 200/0.
+  - g4 torus-vs-torus union (small torus hooked through the big tube):
+    4 transverse section curves crossing seams geometrically; accepted,
+    oracle-exact (66.5750592625), arbiter 200/0, routing counters 0/0.
+  - g5 torus-vs-box difference (box corner through tube wall): 8 section
+    curves; accepted, oracle-exact (58.0715722701), arbiter 200/0.
+  - g6 revolved freeform NURBS (B-spline egg profile via MakeRevol) vs box
+    union: one-face GeomAbs_SurfaceOfRevolution solid; accepted in 7.7 s,
+    oracle-exact (95.2739324039), arbiter 200/0.
+  - g7 asserts every accepted public report carries reused_seam_edges_A/B
+    and shared_seam_refusals counters.
+- tools/review_probes/{arbiter,fuzz_brep,common_cad_probes,repro_findings}.py
+  and tests/_arbiter.py checked out from the gate working branch (missing
+  from main; harness-only, needed for the fuzz and the audits).
+
+### Fuzz (torus-heavy, --kinds torus,cyl,sph, 60 trials each)
+
+- Analytic, seed 7: TALLY {accept: 56, refuse:SectionToleranceTooLoose: 4},
+  0 WRONG, 0 CRASH. Refusals are tolerance-gate, none seam-related.
+- NURBS, seed 11: TALLY {accept: 59, refuse:InsufficientPatchWitnesses: 1},
+  0 WRONG, 0 CRASH. The single refusal is a patch-witness-count refusal,
+  not seam-related.
+- Seam-related refusal-kind histogram: 0 rows in both runs.
+- Baselines: docs/baseline_20260925/fuzz_g7_torus_heavy.json and
+  docs/baseline_20260925/fuzz_g7_torus_heavy_nurbs.json.
+
+### Commands run
+
+```
+python tests/test_g7_seam_stress.py            # 38 checks, ALL PASS, ~42 min
+python tools/review_probes/fuzz_brep.py --trials 60 --seed 7 --kinds torus,cyl,sph --out docs/baseline_20260925/fuzz_g7_torus_heavy.json
+python tools/review_probes/fuzz_brep.py --trials 60 --seed 11 --nurbs --kinds torus,cyl,sph --out docs/baseline_20260925/fuzz_g7_torus_heavy_nurbs.json
+for f in <14 other tests/test_*.py>; do python $f; done   # all exit 0, 0 FAIL
+git grep -P '\x{2014}' -- <touched files>                  # 0 matches
+```
+
+### Results (trimmed)
+
+- test_g7_seam_stress: ALL PASS, 38 checks, ~42 min; 6 audits, all
+  kernel_errors=0, checked=200 each; every accepted volume matches the
+  independent OCCT oracle to the printed precision (g1/g2 err 0.0,
+  g3 err 4.5e-11, g4 err 0.0, g5 err 0.0, g6 err 1.4e-14).
+- Full sweep of the other 14 test files: all exit 0, 0 [FAIL] lines.
+- Total: 15/15 test files green on this branch (14 existing + the new
+  test_g7_seam_stress.py).
+- No wrong accept found; no stop-and-report event. The near-tangent
+  torus-torus offsets probed during case selection refused with typed
+  UnresolvedContact (allowed), so the committed g4 uses a transverse
+  tube-crossing configuration instead.
+
+### Notes / open
+
+- Torus-torus and torus-box boolean_brep calls are slow (~360-384 s each
+  on NURBS tori); the g7 file takes ~42 min total. Not a correctness
+  issue; worth profiling before any CI adoption.
+- The old G7 pre-split plan stays dead; v0.9 routing needed no changes.
+- I1-I9 held: local branch only, no push, no src/ edits, no em dashes.
+
+G7 gate: stress round COMPLETE, no wrong accept, suite green.
