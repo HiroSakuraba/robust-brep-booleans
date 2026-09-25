@@ -50,7 +50,8 @@ def t1_one_call_true_nurbs_union():
     b = BRepBuilderAPI_NurbsConvert(b0, True).Shape()
 
     out, report = boolean_brep(
-        a, b, "union", include_full_evidence=True)
+        a, b, "union", include_full_evidence=True,
+        shadow_section_crosscheck=True)
     ing = report["stages"]["ingest"]
     ix = report["stages"]["intersection"]
     asm = report["stages"]["assembly"]
@@ -83,6 +84,8 @@ def t1_one_call_true_nurbs_union():
         and ver["closed"]
         and ver["manifold_edges"]
         and ver["complete_edge_lineage"]
+        and ver["exact_curve_on_surface_complete"]
+        and ver["shadow_section_crosscheck_requested"]
         and ver["shadow_section_crosscheck_complete"]
         and ver["volume_bounds_ok"]
         and not ver["unattributed_edges"]
@@ -102,6 +105,11 @@ def t1_one_call_true_nurbs_union():
         "p1 section payload summaries",
         bool(payloads)
         and all(p["samples"] >= 2 and p["verify_tolerance"] > 0
+                and p["exact_curve_on_surface_checked"]
+                and p["exact_surface_error_A"] is not None
+                and p["exact_surface_error_B"] is not None
+                and p["exact_surface_error_A"] <= p["verify_tolerance"]
+                and p["exact_surface_error_B"] <= p["verify_tolerance"]
                 and p["shadow_crosschecked"]
                 and p["shadow_max_distance"] is not None
                 and p["shadow_length_rel_error"] is not None
