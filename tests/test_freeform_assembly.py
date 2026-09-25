@@ -16,7 +16,8 @@ import sys
 sys.path.insert(0, "src")
 
 from brepkernel.assembly import (
-    assemble_boolean, AssemblyError, _classify_pieces,
+    assemble_boolean, AssemblyError, _build_nested_solids,
+    _classify_pieces, _shell_records,
 )
 from brepkernel.intersection import intersect_models
 from brepkernel.split import (
@@ -29,6 +30,9 @@ from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepGProp import BRepGProp
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeSphere
 from OCP.GProp import GProp_GProps
+from OCP.TopAbs import TopAbs_SHELL
+from OCP.TopExp import TopExp_Explorer
+from OCP.TopoDS import TopoDS
 from OCP.gp import gp_Pnt
 
 
@@ -265,6 +269,49 @@ def t6_unsplit_straddling_patch_refuses_multiwitness():
         "t6 straddling patch refuses multi-witness",
         False, "classification unexpectedly accepted")
 
+
+def _first_shell(shape):
+    ex = TopExp_Explorer(shape, TopAbs_SHELL)
+    assert ex.More()
+    return TopoDS.Shell(ex.Current())
+
+
+def t7_two_cavity_shell_nesting_is_consistent():
+    """Multiple disjoint cavities must share the same outer parent.
+
+    This directly exercises the shell-containment hierarchy rather than
+    relying on one center point or a single-cavity special case.
+    """
+    outer = BRepPrimAPI_MakeSphere(
+        gp_Pnt(0, 0, 0), 3.0).Shape()
+    c1 = BRepPrimAPI_MakeSphere(
+        gp_Pnt(-1.0, 0, 0), 0.5).Shape()
+    c2 = BRepPrimAPI_MakeSphere(
+        gp_Pnt(1.0, 0, 0), 0.5).Shape()
+
+    records = _shell_records(
+        [_first_shell(outer), _first_shell(c1), _first_shell(c2)],
+        1e-7)
+    solids = _build_nested_solids(records)
+
+    depth0 = [r for r in records if r.depth == 0]
+    depth1 = [r for r in records if r.depth == 1]
+    ok = check(
+        "t7 two cavities share one outer shell",
+        len(depth0) == 1 and len(depth1) == 2
+        and all(r.parent_shell == depth0[0].shell_index for r in depth1),
+        f"records={[(r.shell_index,r.depth,r.parent_shell) for r in records]}")
+    ok &= check(
+        "t7 one solid with two cavities",
+        len(solids) == 1 and len(solids[0].cavity_shells) == 2,
+        f"solids={[(s.outer_shell,s.cavity_shells) for s in solids]}")
+    want = 4.0 * math.pi / 3.0 * (3.0**3 - 2.0 * 0.5**3)
+    ok &= check(
+        "t7 two-cavity volume",
+        abs(solids[0].volume - want) < 5e-6,
+        f"got={solids[0].volume:.12g} expected={want:.12g}")
+    return ok
+
 def main():
     ok = True
     ok &= t1_overlap_spheres_all_ops()
@@ -273,6 +320,7 @@ def main():
     ok &= t4_disjoint_intersection_is_empty()
     ok &= t5_exact_tangency_refuses_global_assembly()
     ok &= t6_unsplit_straddling_patch_refuses_multiwitness()
+    ok &= t7_two_cavity_shell_nesting_is_consistent()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
