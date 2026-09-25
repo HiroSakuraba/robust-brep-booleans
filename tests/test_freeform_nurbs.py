@@ -17,7 +17,10 @@ sys.path.insert(0, "src")
 from brepkernel.freeform import (FreeformFaceAccel, NurbsPatchIndex,
                                  candidate_patch_pairs,
                                  nurbs_from_occt_face)
-from brepkernel.step_ingest import index_shape, candidate_face_pairs
+from brepkernel.step_ingest import (
+    BRepModel, FaceRecord, _face_pairs_aabb,
+    index_shape, candidate_face_pairs,
+)
 
 try:
     # OCP <= 7.x bindings
@@ -188,6 +191,62 @@ def t6_step_hierarchy_and_face_broadphase():
     return ok
 
 
+
+def t7_sweep_and_prune_keeps_future_wide_overlap():
+    """Regression for non-monotone xmax in both broad-phase sweeps.
+
+    A0 is wide and activates B0. A1 is narrow and does not overlap B0.
+    A2 is wide again and *does* overlap B0. The old implementation permanently
+    evicted B0 while processing A1 because it filtered active intervals with
+    blo <= current_xmax, so A2/B0 was silently lost.
+    """
+    def face(fid, x0, x1):
+        return FaceRecord(
+            face_id=fid, solid_id=0, shell_id=0, face=None,
+            orientation="", surface_type="mock", uv_bounds=(0, 1, 0, 1),
+            bbox_lo=np.array([x0, 0.0, 0.0], dtype=np.float64),
+            bbox_hi=np.array([x1, 1.0, 1.0], dtype=np.float64),
+            freeform=None)
+
+    a = BRepModel(
+        shape=None, solids=[], shells=[],
+        faces=[face(0, 0.0, 10.0),
+               face(1, 1.0, 2.0),
+               face(2, 2.0, 10.0)])
+    b = BRepModel(
+        shape=None, solids=[], shells=[],
+        faces=[face(0, 8.0, 9.0)])
+
+    face_pairs = _face_pairs_aabb(a, b, 0.0)
+    ok = check(
+        "face sweep keeps future-wide overlap",
+        face_pairs == [(0, 0), (2, 0)],
+        f"pairs={face_pairs}")
+
+    class MockIndex:
+        pass
+
+    pa = MockIndex()
+    pa.records = [object(), object(), object()]
+    pa.lo = np.array([[0.0, 0.0, 0.0],
+                      [1.0, 0.0, 0.0],
+                      [2.0, 0.0, 0.0]], dtype=np.float64)
+    pa.hi = np.array([[10.0, 1.0, 1.0],
+                      [2.0, 1.0, 1.0],
+                      [10.0, 1.0, 1.0]], dtype=np.float64)
+
+    pb = MockIndex()
+    pb.records = [object()]
+    pb.lo = np.array([[8.0, 0.0, 0.0]], dtype=np.float64)
+    pb.hi = np.array([[9.0, 1.0, 1.0]], dtype=np.float64)
+
+    patch_pairs = candidate_patch_pairs(pa, pb)
+    ok &= check(
+        "patch sweep keeps future-wide overlap",
+        patch_pairs == [(0, 0), (2, 0)],
+        f"pairs={patch_pairs}")
+    return ok
+
 def main():
     ok = True
     ok &= t1_eval_matches_occt()
@@ -196,6 +255,7 @@ def main():
     ok &= t4_curvature_plan_is_finite()
     ok &= t5_patch_pair_culling()
     ok &= t6_step_hierarchy_and_face_broadphase()
+    ok &= t7_sweep_and_prune_keeps_future_wide_overlap()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
