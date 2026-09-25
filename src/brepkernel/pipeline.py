@@ -350,13 +350,14 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             "same_domain_equivalent": True,
             "resolution": resolution,
         }
-        report["timings_ms"]["verification"] = (
-        perf_counter() - t_stage) * 1000.0
-    report["stages"]["verification"] = {
+        t_verify = perf_counter()
+        report["stages"]["verification"] = {
             "brep_valid": True if op == "difference"
             else bool(BRepCheck_Analyzer(out, True).IsValid()),
             "identity_exact": True,
         }
+        report["timings_ms"]["verification"] = (
+            perf_counter() - t_verify) * 1000.0
         if not report["stages"]["verification"]["brep_valid"]:
             exc = FreeformError("exact-identity result is not B-rep valid",
                                 "IdentityResultInvalid")
@@ -423,11 +424,14 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             }
             for ev in sd.matches
         ]
+        t_verify = perf_counter()
         report["stages"]["verification"] = {
             "brep_valid": True if op == "difference"
             else bool(BRepCheck_Analyzer(out, True).IsValid()),
             "strict_same_domain": True,
         }
+        report["timings_ms"]["verification"] = (
+            perf_counter() - t_verify) * 1000.0
         if not report["stages"]["verification"]["brep_valid"]:
             exc = FreeformError("same-domain fast-path result is invalid",
                                 "SameDomainResultInvalid")
@@ -577,6 +581,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "manifold_edges": assembled.multiple_edges == 0,
         "unresolved_contacts": len(sp.unresolved_contacts),
     }
+    report["timings_ms"]["verification"] = (
+        perf_counter() - t_stage) * 1000.0
     if not valid:
         exc = FreeformError("final B-rep validity check failed",
                             "FinalBRepInvalid")
