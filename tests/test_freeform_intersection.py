@@ -195,6 +195,49 @@ def t6_loose_section_tolerance_refuses():
             f"kind={getattr(e, 'kind', '?')} message={e}")
     return check("t6 loose section tolerance refuses", False, "no refusal")
 
+
+def t7_narrow_trimmed_freeform_section_stays_inside_trim():
+    """A narrow trimmed NURBS patch must retain a valid clipped section."""
+    bs = _bspline()
+    fa = BRepBuilderAPI_MakeFace(
+        bs, 0.49, 0.51, 0.15, 0.85, 1e-7).Face()
+    fb = _vertical_plane()
+    a = index_shape(_shell(fa))
+    b = index_shape(_shell(fb))
+    r = intersect_models(
+        a, b, base_tol=1e-7, chord_tol=1e-6)
+    ok = r.verified_edges >= 1 and r.pairs[0].status == "curve"
+    for e in r.pairs[0].edges:
+        ok &= bool(
+            e.trim_ok
+            and np.all(e.uv_a[:, 0] >= 0.49 - e.verify_tolerance)
+            and np.all(e.uv_a[:, 0] <= 0.51 + e.verify_tolerance)
+            and np.all(e.uv_a[:, 1] >= 0.15 - e.verify_tolerance)
+            and np.all(e.uv_a[:, 1] <= 0.85 + e.verify_tolerance))
+    return check(
+        "t7 narrow trimmed freeform section",
+        ok,
+        f"status={r.pairs[0].status if r.pairs else None} "
+        f"edges={r.verified_edges}")
+
+
+def t8_forced_near_tangent_curve_is_risky():
+    """A shallow sphere/plane cut must not be treated as ordinary transverse."""
+    sphere = BRepPrimAPI_MakeSphere(1.0).Shape()
+    plane = _horizontal_plane(0.999)
+    a = index_shape(sphere)
+    b = index_shape(_shell(plane))
+    r = intersect_models(
+        a, b, broadphase_pad=1e-6,
+        base_tol=1e-7, chord_tol=1e-6,
+        tangent_sin_tol=0.1)
+    statuses = [p.status for p in r.pairs]
+    return check(
+        "t8 near-tangent curve is risky",
+        "curve_near_tangent" in statuses
+        and r.ambiguous_contacts >= 1,
+        f"statuses={statuses} ambiguous={r.ambiguous_contacts}")
+
 def main():
     ok = True
     ok &= t1_transverse_curve_has_verified_pcurves()
@@ -203,6 +246,8 @@ def main():
     ok &= t4_tangent_contact_not_disjoint()
     ok &= t5_near_tangent_gap_is_ambiguous_not_disjoint()
     ok &= t6_loose_section_tolerance_refuses()
+    ok &= t7_narrow_trimmed_freeform_section_stays_inside_trim()
+    ok &= t8_forced_near_tangent_curve_is_risky()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
