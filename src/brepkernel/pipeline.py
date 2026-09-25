@@ -249,7 +249,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                  fuzzy=0.0, parallel=True, use_obb=True,
                  tangent_sin_tol=1e-4, max_section_tol=None,
                  area_rel_tol=2e-6, sew_tol=None,
-                 include_full_evidence=False):
+                 include_full_evidence=False,
+                 shadow_section_crosscheck=False):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
 
     Returns (TopoDS_Shape, report) and leaves the existing mesh/proxy
@@ -267,6 +268,12 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     verified section sample payloads (parameters, XYZ, and UV on both input
     faces) converted to ordinary Python lists so the report can be serialized
     directly to JSON. The default remains a compact summary.
+
+    shadow_section_crosscheck=True additionally runs OCCT's alternative
+    non-approximated section construction and requires geometric agreement.
+    It is an optional stress mode, not part of the default certification path:
+    on difficult freeform walking intersections that alternative construction
+    can be less accurate than the primary representation.
     """
     from time import perf_counter
     from OCP.BRepCheck import BRepCheck_Analyzer
@@ -458,7 +465,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             parallel=bool(parallel), use_obb=bool(use_obb),
             tangent_sin_tol=float(tangent_sin_tol),
             max_section_tol=(None if max_section_tol is None
-                             else float(max_section_tol)))
+                             else float(max_section_tol)),
+            crosscheck_nonapprox=bool(shadow_section_crosscheck))
     except FreeformError as exc:
         report["timings_ms"]["intersection"] = (
             perf_counter() - t_stage) * 1000.0
@@ -544,6 +552,10 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                 "max_transversality": p.max_transversality,
                 "risk_flags": list(p.risk_flags),
                 "repaired_same_parameter": p.repaired_same_parameter,
+                "exact_curve_on_surface_checked":
+                    p.exact_curve_on_surface_checked,
+                "exact_surface_error_A": p.exact_surface_error_a,
+                "exact_surface_error_B": p.exact_surface_error_b,
                 "shadow_crosschecked": p.shadow_crosschecked,
                 "shadow_max_distance": p.shadow_max_distance,
                 "shadow_length_rel_error": p.shadow_length_rel_error,
@@ -625,8 +637,16 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         if e.provenance_kind == "boolean_section"
         and (not e.verified_pcurves or not e.intersection_refs)]
     complete_lineage = not unattributed and not bad_sections
-    shadow_complete = all(
-        p.shadow_crosschecked for p in assembled.section_payloads)
+    exact_curve_surface_complete = all(
+        p.exact_curve_on_surface_checked
+        and p.exact_surface_error_a is not None
+        and p.exact_surface_error_b is not None
+        and p.exact_surface_error_a <= p.verify_tolerance
+        and p.exact_surface_error_b <= p.verify_tolerance
+        for p in assembled.section_payloads)
+    shadow_complete = (
+        all(p.shadow_crosschecked for p in assembled.section_payloads)
+        if shadow_section_crosscheck else None)
 
     # Cheap operation-level volume invariants catch catastrophic selection or
     # shell-orientation errors without using a second Boolean engine.
@@ -664,6 +684,9 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         "complete_edge_lineage": complete_lineage,
         "unattributed_edges": unattributed,
         "section_edges_missing_verified_pcurves": bad_sections,
+        "exact_curve_on_surface_complete": exact_curve_surface_complete,
+        "shadow_section_crosscheck_requested":
+            bool(shadow_section_crosscheck),
         "shadow_section_crosscheck_complete": shadow_complete,
         "volume_bounds_ok": volume_bounds_ok,
         "volume_bounds": volume_bounds,
@@ -684,10 +707,16 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             f"unattributed={unattributed}, bad_sections={bad_sections}",
             "IncompleteEdgeLineage")
         refuse("verification", exc)
-    if not shadow_complete:
+    if not exact_curve_surface_complete:
         exc = FreeformError(
-            "one or more accepted section edges lack approx/nonapprox "
-            "construction cross-check evidence",
+            "one or more accepted section edges lack exact bilateral "
+            "curve-on-surface validation evidence",
+            "ExactCurveOnSurfaceValidationMissing")
+        refuse("verification", exc)
+    if shadow_section_crosscheck and not shadow_complete:
+        exc = FreeformError(
+            "one or more accepted section edges lack requested "
+            "approx/nonapprox construction cross-check evidence",
             "SectionConstructionCrosscheckMissing")
         refuse("verification", exc)
     if not volume_bounds_ok:
