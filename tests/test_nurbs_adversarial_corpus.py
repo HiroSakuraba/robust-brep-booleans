@@ -3,7 +3,9 @@
 New coverage beyond the baseline sphere/rounded-box cases:
 1. periodic NURBS cylinder intersected across its seam-bearing side;
 2. spherical-cap slivers down to 1e-5 feature height;
-3. an oblique cut through a STEP-round-tripped, all-NURBS filleted solid.
+3. an oblique cut through a STEP-round-tripped, all-NURBS filleted solid;
+4. a STEP-round-tripped periodic cylindrical face already trimmed by an
+   earlier Boolean, then cut again on the opposite side.
 
 The contract is intentionally asymmetric: straightforward transverse cases
 must succeed and match an independent OCCT oracle; the smallest sliver may
@@ -296,11 +298,80 @@ def t3_oblique_imported_blend_cut():
     return ok
 
 
+
+def t4_pretrimmed_periodic_step_roundtrip():
+    """Periodic support + inherited trim/seam state from a prior Boolean.
+
+    Build an analytic cylinder, carve a local side notch, convert the already
+    trimmed result to NURBS, round-trip through STEP, then perform a second
+    transverse cut on the opposite side. This exercises parameter-frame
+    recovery after prior topology work rather than only a pristine periodic
+    primitive.
+    """
+    analytic = BRepPrimAPI_MakeCylinder(1.0, 2.0).Shape()
+    notch = BRepPrimAPI_MakeBox(
+        gp_Pnt(0.55, -0.28, 0.35),
+        gp_Pnt(1.45, 0.28, 1.65)).Shape()
+    first = BRepAlgoAPI_Cut(analytic, notch)
+    first.Build()
+    assert first.IsDone()
+    trimmed = first.Shape()
+    assert BRepCheck_Analyzer(trimmed, True).IsValid()
+
+    source = step_roundtrip(to_nurbs(trimmed))
+    model = index_shape(source)
+    periodic = []
+    for fr in model.faces:
+        if "BSpline" not in fr.surface_type:
+            continue
+        bs = BRepAdaptor_Surface(fr.face).BSpline()
+        if bs.IsUPeriodic() or bs.IsVPeriodic():
+            periodic.append(fr.face_id)
+
+    ok = check(
+        "a4 pretrimmed STEP retains periodic freeform support",
+        bool(periodic)
+        and len(model.nurbs_faces) == len(model.faces)
+        and len(model.faces) >= 7,
+        f"faces={len(model.faces)} periodic={periodic} "
+        f"accels={len(model.nurbs_faces)}")
+
+    second = BRepPrimAPI_MakeBox(
+        gp_Pnt(-1.45, -1.2, 0.25),
+        gp_Pnt(-0.20, 1.2, 1.75)).Shape()
+    out, report = boolean_brep(source, second, "difference")
+    oracle = cut_oracle(source, second)
+
+    ix = report["stages"]["intersection"]
+    asm = report["stages"]["assembly"]
+    ok &= check(
+        "a4 inherited trim produces verified sections",
+        ix["candidate_face_pairs"] >= 3
+        and ix["verified_edges"] >= 3
+        and ix["ambiguous_contacts"] == 0,
+        f"intersection={ix}")
+    ok &= check(
+        "a4 inherited trim provenance complete",
+        asm["free_edges"] == 0
+        and asm["multiple_edges"] == 0
+        and asm["edge_lineage"]["unattributed_edges"] == 0
+        and asm["edge_lineage"]["boolean_section_edges"] >= 3,
+        f"assembly={{'free':{asm['free_edges']},"
+        f"'multiple':{asm['multiple_edges']},"
+        f"'section_edges':{asm['edge_lineage']['boolean_section_edges']},"
+        f"'unattributed':{asm['edge_lineage']['unattributed_edges']}}}")
+    ok &= assert_oracle_close(
+        "a4 pretrimmed periodic STEP oracle",
+        out, oracle, report,
+        rel=5e-6, abs_tol=1e-9)
+    return ok
+
 def main():
     ok = True
     ok &= t1_periodic_nurbs_cylinder_transverse_cut()
     ok &= t2_sliver_scale_sweep()
     ok &= t3_oblique_imported_blend_cut()
+    ok &= t4_pretrimmed_periodic_step_roundtrip()
     print("\nALL PASS" if ok else "\nSOME FAILURES")
     return 0 if ok else 1
 
