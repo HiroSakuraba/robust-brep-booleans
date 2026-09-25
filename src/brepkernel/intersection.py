@@ -191,6 +191,9 @@ class SectionEdgeRecord:
     max_transversality: float
     risk_flags: tuple[str, ...] = ()
     repaired_same_parameter: bool = False
+    shadow_crosschecked: bool = False
+    shadow_max_distance: Optional[float] = None
+    shadow_length_rel_error: Optional[float] = None
 
 
 @dataclass
@@ -214,6 +217,9 @@ class ModelIntersectionResult:
     point_contacts: int
     ambiguous_contacts: int
     skipped_by_broadphase: int
+    shadow_section_calls: int = 0
+    shadow_verified_edges: int = 0
+    max_shadow_distance: float = 0.0
 
     @property
     def has_ambiguous_contact(self) -> bool:
@@ -407,6 +413,155 @@ def _shape_distance(a, b) -> Optional[float]:
     return float(d.Value())
 
 
+
+def _run_section_engine(fa: FaceRecord, fb: FaceRecord, *,
+                        approximation: bool,
+                        fuzzy: float,
+                        parallel: bool,
+                        use_obb: bool):
+    """Run one OCCT Section construction mode and return edges/vertices."""
+    from OCP.BRep import BRep_Tool
+
+    sec = BRepAlgoAPI_Section(fa.face, fb.face, False)
+    sec.SetNonDestructive(True)
+    sec.SetRunParallel(bool(parallel))
+    sec.SetUseOBB(bool(use_obb))
+    if fuzzy > 0.0:
+        sec.SetFuzzyValue(float(fuzzy))
+    sec.Approximation(bool(approximation))
+    sec.ComputePCurveOn1(True)
+    sec.ComputePCurveOn2(True)
+    sec.Build()
+    if not sec.IsDone():
+        mode = "approx" if approximation else "nonapprox-shadow"
+        raise IntersectionError(
+            f"OCCT {mode} section failed for faces "
+            f"{fa.face_id}/{fb.face_id}",
+            kind="SectionEngineFailure")
+
+    edges = []
+    ex = TopExp_Explorer(sec.Shape(), TopAbs_EDGE)
+    while ex.More():
+        edges.append(TopoDS.Edge(ex.Current()))
+        ex.Next()
+
+    vertices = []
+    ex = TopExp_Explorer(sec.Shape(), TopAbs_VERTEX)
+    while ex.More():
+        v = TopoDS.Vertex(ex.Current())
+        vertices.append(_p3(BRep_Tool.Pnt_s(v)))
+        ex.Next()
+    return edges, vertices
+
+
+def _edge_length(edge) -> float:
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    g = GProp_GProps()
+    BRepGProp.LinearProperties_s(edge, g, False, False)
+    return float(g.Mass())
+
+
+def _edge_compound(records: list[SectionEdgeRecord]):
+    from OCP.BRep import BRep_Builder
+    from OCP.TopoDS import TopoDS_Compound
+
+    b = BRep_Builder()
+    out = TopoDS_Compound()
+    b.MakeCompound(out)
+    for r in records:
+        b.Add(out, r.edge)
+    return out
+
+
+def _point_shape_distance(point: np.ndarray, shape) -> float:
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    from OCP.gp import gp_Pnt
+
+    v = BRepBuilderAPI_MakeVertex(
+        gp_Pnt(float(point[0]), float(point[1]), float(point[2]))).Vertex()
+    d = BRepExtrema_DistShapeShape(v, shape)
+    if not d.IsDone():
+        d.Perform()
+    if not d.IsDone():
+        return float("inf")
+    return float(d.Value())
+
+
+def _subsample_xyz(records: list[SectionEdgeRecord],
+                   max_per_edge: int = 33) -> list[np.ndarray]:
+    pts = []
+    for r in records:
+        n = len(r.xyz)
+        if not n:
+            continue
+        if n <= max_per_edge:
+            idx = range(n)
+        else:
+            idx = np.unique(np.linspace(
+                0, n - 1, max_per_edge, dtype=np.int64))
+        pts.extend(r.xyz[int(i)] for i in idx)
+    return pts
+
+
+def _crosscheck_section_modes(primary: list[SectionEdgeRecord],
+                              shadow: list[SectionEdgeRecord],
+                              *,
+                              base_tol: float
+                              ) -> tuple[float, float]:
+    """Require two OCCT section construction modes to describe one curve set.
+
+    This is deliberately called a cross-check, not an exact Hausdorff proof.
+    Both edge sets are independently verified against both trimmed input faces
+    before this function is called. We then compare them bidirectionally in 3D
+    and compare total curve length so a missing branch/segment cannot pass just
+    because the surviving branch is close.
+    """
+    if not primary or not shadow:
+        raise IntersectionError(
+            "primary/shadow section edge set cardinality disagrees",
+            kind="SectionConstructionDisagreement")
+
+    pshape = _edge_compound(primary)
+    sshape = _edge_compound(shadow)
+    ppts = _subsample_xyz(primary)
+    spts = _subsample_xyz(shadow)
+    if not ppts or not spts:
+        raise IntersectionError(
+            "primary/shadow section has no comparable samples",
+            kind="SectionConstructionDisagreement")
+
+    d_ps = max((_point_shape_distance(p, sshape) for p in ppts),
+               default=float("inf"))
+    d_sp = max((_point_shape_distance(p, pshape) for p in spts),
+               default=float("inf"))
+    max_dist = max(d_ps, d_sp)
+
+    tol = max(
+        8.0 * float(base_tol),
+        2.0 * max([r.verify_tolerance for r in primary + shadow],
+                  default=float(base_tol)))
+    if not np.isfinite(max_dist) or max_dist > tol:
+        raise IntersectionError(
+            f"approx/nonapprox section disagreement {max_dist:.6g} "
+            f"exceeds cross-check tolerance {tol:.6g}",
+            kind="SectionConstructionDisagreement")
+
+    lp = sum(_edge_length(r.edge) for r in primary)
+    ls = sum(_edge_length(r.edge) for r in shadow)
+    rel = abs(lp - ls) / max(abs(lp), abs(ls), tol, 1e-300)
+    len_tol = max(32.0 * tol, 2e-5 * max(lp, ls, 1.0))
+    if abs(lp - ls) > len_tol:
+        raise IntersectionError(
+            f"approx/nonapprox section total length differs by "
+            f"{abs(lp-ls):.6g} (rel {rel:.6g})",
+            kind="SectionConstructionDisagreement")
+
+    return float(max_dist), float(rel)
+
+
 def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
                       base_tol: float = 1e-7,
                       chord_tol: Optional[float] = None,
@@ -415,7 +570,8 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
                       parallel: bool = True,
                       use_obb: bool = True,
                       tangent_sin_tol: float = 1e-4,
-                      max_section_tol: Optional[float] = None
+                      max_section_tol: Optional[float] = None,
+                      crosscheck_nonapprox: bool = True
                       ) -> FaceIntersectionResult:
     """Intersect one pair of *trimmed* faces and verify all section curves."""
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
@@ -433,34 +589,9 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
                           2.0 * float(BRep_Tool.Tolerance_s(fa.face)),
                           2.0 * float(BRep_Tool.Tolerance_s(fb.face)))
 
-    sec = BRepAlgoAPI_Section(fa.face, fb.face, False)
-    sec.SetNonDestructive(True)
-    sec.SetRunParallel(bool(parallel))
-    sec.SetUseOBB(bool(use_obb))
-    if fuzzy > 0.0:
-        sec.SetFuzzyValue(float(fuzzy))
-    sec.Approximation(True)
-    sec.ComputePCurveOn1(True)
-    sec.ComputePCurveOn2(True)
-    sec.Build()
-    if not sec.IsDone():
-        raise IntersectionError(
-            f"OCCT section failed for faces {fa.face_id}/{fb.face_id}",
-            kind="SectionEngineFailure")
-
-    edges = []
-    ex = TopExp_Explorer(sec.Shape(), TopAbs_EDGE)
-    while ex.More():
-        edges.append(TopoDS.Edge(ex.Current()))
-        ex.Next()
-
-    vertices = []
-    ex = TopExp_Explorer(sec.Shape(), TopAbs_VERTEX)
-    while ex.More():
-        v = TopoDS.Vertex(ex.Current())
-        p = BRep_Tool.Pnt_s(v)
-        vertices.append(_p3(p))
-        ex.Next()
+    edges, vertices = _run_section_engine(
+        fa, fb, approximation=True, fuzzy=float(fuzzy),
+        parallel=bool(parallel), use_obb=bool(use_obb))
 
     verified = [
         _verify_section_edge(
@@ -469,6 +600,24 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
             max_section_tol=max_section_tol)
         for i, edge in enumerate(edges)
     ]
+
+    if verified and crosscheck_nonapprox:
+        shadow_edges, _ = _run_section_engine(
+            fa, fb, approximation=False, fuzzy=float(fuzzy),
+            parallel=bool(parallel), use_obb=bool(use_obb))
+        shadow_verified = [
+            _verify_section_edge(
+                edge, fa, fb, i, base_tol=base_tol,
+                chord_tol=chord_tol, tangent_sin_tol=tangent_sin_tol,
+                max_section_tol=max_section_tol)
+            for i, edge in enumerate(shadow_edges)
+        ]
+        max_shadow_distance, shadow_length_rel = _crosscheck_section_modes(
+            verified, shadow_verified, base_tol=base_tol)
+        for e in verified:
+            e.shadow_crosschecked = True
+            e.shadow_max_distance = max_shadow_distance
+            e.shadow_length_rel_error = shadow_length_rel
 
     # Vertices include edge endpoints. They are useful diagnostic data, but
     # only a no-edge vertex set is a pure point-contact result.
@@ -512,7 +661,8 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
                      parallel: bool = True,
                      use_obb: bool = True,
                      tangent_sin_tol: float = 1e-4,
-                     max_section_tol: Optional[float] = None
+                     max_section_tol: Optional[float] = None,
+                     crosscheck_nonapprox: bool = True
                      ) -> ModelIntersectionResult:
     """Run verified section work only for conservative candidate face pairs."""
     candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad))
@@ -521,6 +671,9 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
     verified_edges = 0
     point_contacts = 0
     ambiguous = 0
+    shadow_calls = 0
+    shadow_edges = 0
+    max_shadow_distance = 0.0
 
     by_a = {f.face_id: f for f in a.faces}
     by_b = {f.face_id: f for f in b.faces}
@@ -532,9 +685,17 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
             fa, fb, base_tol=base_tol, chord_tol=chord_tol,
             contact_tol=contact_tol, fuzzy=fuzzy, parallel=parallel,
             use_obb=use_obb, tangent_sin_tol=tangent_sin_tol,
-            max_section_tol=max_section_tol)
+            max_section_tol=max_section_tol,
+            crosscheck_nonapprox=bool(crosscheck_nonapprox))
         results.append(r)
         verified_edges += len(r.edges)
+        if any(e.shadow_crosschecked for e in r.edges):
+            shadow_calls += 1
+            shadow_edges += len(r.edges)
+            max_shadow_distance = max(
+                max_shadow_distance,
+                max((float(e.shadow_max_distance or 0.0)
+                     for e in r.edges), default=0.0))
         point_contacts += int(r.status == "point_contact")
         ambiguous += int(r.status in ("ambiguous_contact",
                                       "distance_unknown",
@@ -549,4 +710,7 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
         ambiguous_contacts=ambiguous,
         skipped_by_broadphase=max(0, len(a.faces) * len(b.faces)
                                   - len(candidates)),
+        shadow_section_calls=shadow_calls,
+        shadow_verified_edges=shadow_edges,
+        max_shadow_distance=max_shadow_distance,
     )
