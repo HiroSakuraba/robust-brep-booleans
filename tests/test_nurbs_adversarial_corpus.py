@@ -22,6 +22,7 @@ import tempfile
 sys.path.insert(0, "src")
 
 from brepkernel import BRepAmbiguousResult, boolean_brep
+from brepkernel.intersection import intersect_models
 from brepkernel.step_ingest import index_shape
 
 from OCP.BRepAdaptor import BRepAdaptor_Surface
