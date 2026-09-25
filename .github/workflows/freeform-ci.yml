@@ -21,6 +21,7 @@ on:
       - "tests/test_step_nurbs_multiface.py"
       - "docs/NURBS_ACCEL.md"
       - ".github/workflows/freeform-ci.yml"
+      - "requirements-freeform.txt"
 
 concurrency:
   group: freeform-${{ github.workflow }}-${{ github.ref }}
@@ -35,10 +36,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-freeform.txt
       - name: Install geometry dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install numpy manifold3d cadquery-ocp==8.0.1.0.0
+        run: python -m pip install -r requirements-freeform.txt
       - name: NURBS evaluator / broadphase regressions
         run: python tests/test_freeform_nurbs.py
       - name: Trimmed surface intersection regressions
