@@ -432,7 +432,10 @@ def t5_two_loop_torus_periodic_seam_boolean():
         "a5 seam-aware split completes",
         not sp["unresolved_contacts"]
         and sp["affected_faces_A"] == 1
-        and sp["affected_faces_B"] == 1,
+        and sp["affected_faces_B"] == 1
+        and sp["reused_seam_edges_A"] == 1
+        and sp["reused_seam_edges_B"] == 0
+        and sp["shared_seam_refusals"] == 0,
         f"split={sp}")
     ok &= check(
         "a5 seam-aware result closed and auditable",
@@ -480,6 +483,9 @@ def t6_reversed_operand_torus_intersection():
         not sp["unresolved_contacts"]
         and sp["affected_faces_A"] == 1
         and sp["affected_faces_B"] == 1
+        and sp["reused_seam_edges_A"] == 0
+        and sp["reused_seam_edges_B"] == 1
+        and sp["shared_seam_refusals"] == 0
         and asm["free_edges"] == 0
         and asm["multiple_edges"] == 0
         and asm["edge_lineage"]["boolean_section_edges"] == 2
