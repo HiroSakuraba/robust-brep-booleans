@@ -183,7 +183,8 @@ def deferred_classify_pair(fa, fb, tol: float):
     """
     from .coincidence import (coincidence_band, _sample_points,
                              _max_distance_to_support, _recognized_plane,
-                             _plane_params_from_pln, _planes_exactly_equal,
+                             _plane_params_from_pln,
+                             _planes_equal_up_to_rounding,
                              _sense)
     band = coincidence_band(tol)
     ka, kb = fa.surface_type, fb.surface_type
@@ -218,7 +219,7 @@ def deferred_classify_pair(fa, fb, tol: float):
     if pln_a is not None and pln_b is not None:
         pa = _plane_params_from_pln(pln_a)
         pb = _plane_params_from_pln(pln_b)
-        if _planes_exactly_equal(pa, pb):
+        if _planes_equal_up_to_rounding(pa, pb):
             sense = _sense(fa, fb, band)
             if sense == "undecidable":
                 return "undecidable"

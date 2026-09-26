@@ -1115,15 +1115,21 @@ def _solid_interior_points(solid, tol: float, *,
 
     # Fallback points are allowed to fill out the witness set, but never
     # replace the requirement for multiple consistent witnesses.
-    props = GProp_GProps()
-    err = BRepGProp.VolumePropertiesGK_s(
-        solid, props, 1e-9, True, True, True, False, False)
-    if float(err) < 0.0:
-        raise AssemblyError("adaptive center-of-mass integration failed",
-                            kind="VolumeIntegrationFailed")
-    cm = _p3(props.CentreOfMass())
-    if is_in(cm):
-        add(cm)
+    #
+    # G10 Problem B: the center-of-mass witness is optional. The adaptive
+    # volume integration behind it is expensive (it dominates NURBS
+    # witness time), so it runs only when the ordinary face-based
+    # strategy failed to produce enough points, at reduced accuracy, and
+    # a failed integration only skips this candidate: it must never turn
+    # an otherwise certifiable operation into a refusal.
+    if len(points) < min_points:
+        props = GProp_GProps()
+        err = BRepGProp.VolumePropertiesGK_s(
+            solid, props, 1e-4, True, True, True, False, False)
+        if float(err) >= 0.0:
+            cm = _p3(props.CentreOfMass())
+            if is_in(cm):
+                add(cm)
 
     if len(points) < min_points:
         for fx in frac:

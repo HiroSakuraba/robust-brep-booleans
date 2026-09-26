@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Optional, Union
 
+import math as _math
 import numpy as np
 
 # Coincidence band = 4x base tolerance (matches the contact tolerance).
@@ -144,16 +145,44 @@ def _dot(a, b):
 
 
 
-def _planes_exactly_equal(pa, pb) -> bool:
-    """Case (a): canonical exact plane coincidence (Fraction arithmetic).
+# Representation-rounding bound for plane coincidence. A rigid motion
+# (rotation + translation) applied in float64 re-rounds each plane
+# location component; the rounding it can introduce is a few ULPs of the
+# component magnitude. 64 ULPs of the largest location component is a
+# generous bound on what the motion itself can introduce. It is a
+# property of the float64 representation, not of the geometry: no
+# geometric epsilon is tuned here, and the bound scales with the model
+# (it is ~1e-14 at unit scale, ~1e-11 at 1e3 offset).
+_REPRESENTATION_ULPS = 64
 
-    Directions must agree modulo sign and the offset of one location
-    from the other's plane must be exactly zero.
+
+def _representation_bound(la, lb) -> float:
+    """Largest-tolerable plane offset attributable to float64 rounding."""
+    m = 0.0
+    for v in la + lb:
+        c = abs(float(v))
+        if c > m:
+            m = c
+    return _REPRESENTATION_ULPS * _math.ulp(m)
+
+
+def _planes_equal_up_to_rounding(pa, pb) -> bool:
+    """Case (a): canonical plane coincidence up to float64 rounding.
+
+    Directions must agree modulo sign (bit-identical: the same rigid
+    motion applied to identical direction doubles yields identical
+    results) and the offset of one location from the other's plane must
+    be within what float64 rounding of a rigid motion can introduce
+    (see _REPRESENTATION_ULPS). Anything larger is genuine geometric
+    separation, handled by the caller's band logic.
     """
     (la, da), (lb, db) = pa, pb
     if not (da == db or da == _neg(db)):
         return False
-    return _dot(_sub(lb, la), da) == 0
+    off = _dot(_sub(lb, la), da)
+    if off == 0:
+        return True
+    return abs(float(off)) <= _representation_bound(la, lb)
 
 
 
@@ -455,14 +484,14 @@ def classify_support_pair(fa, fb, tol: float,
         recognized = (pln_a is not None) or (pln_b is not None)
         outer = max(band, ctol, t_entity)
 
-        if _planes_exactly_equal(pa, pb):
+        if _planes_equal_up_to_rounding(pa, pb):
             sense = _sense(fa, fb, band)
             if sense == "undecidable":
                 return CoincidenceUndecidable(
                     fa.face_id, fb.face_id, "sense_failed", 0.0,
                     "plane_offset", entries)
-            # Case (a): canonical params agree bit-identically. This
-            # includes recognizer-recovered params, which come through
+            # Case (a): canonical params agree up to float64 rounding.
+            # This includes recognizer-recovered params, which come through
             # the same canonical recognizer on both sides.
             return ("coincident", sense, "exact")
 

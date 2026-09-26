@@ -2442,3 +2442,83 @@ gate/G9-docs; the release actions are blocked on Ben per the checklist.
   evidence records instead of None.
 - Onshape API keys / OAuth app and CATIA access / sample files stay
   parked: blocked on Ben, untouched by design.
+
+## G10 - Rigid-motion invariance and NURBS witness cost (2026-09-26)
+
+Branch: muse/g10-rigid-motion-com (local only, off main ceea17d; never
+pushed). Work done in worktree ~/workspace/brep-gates-wt/g10-rigid-motion.
+
+### Problem A: planar coincidence was representation-exact
+
+`_planes_exactly_equal()` in src/brepkernel/coincidence.py required
+bit-identical floating-point parameters. A rigid transform produces a
+mathematically identical plane with a few ULPs of representation drift,
+causing valid accepts to become refusals under rotation.
+
+Fix: replaced with `_planes_equal_up_to_rounding()`, which accepts
+planes whose direction vectors are bit-identical (mod sign) and whose
+offsets agree within 64 ULPs of the largest location component (via
+math.ulp). This is a machine representation bound, not a CAD modeling
+tolerance. The old name is fully removed from coincidence.py and
+coincidence_deferred.py.
+
+### Problem B: COM witness did unconditional 1e-9 integration
+
+`_solid_interior_points()` in src/brepkernel/assembly.py ran the
+center-of-mass volume integration unconditionally at 1e-9, and raised
+VolumeIntegrationFailed if it failed, turning certifiable operations
+into refusals.
+
+Fix (per plan): the COM witness is now gated on `len(points) <
+min_points`, runs at 1e-4, and integration failure skips the candidate
+instead of raising.
+
+Note: an earlier session deferred Problem B; this was reversed because
+the plan prescribes it explicitly and G10's merge criterion (removal of
+the pathological integration hotspot) depends on it.
+
+### Tests
+
+- tests/test_g10_com_witness.py (new, 4 checks): written first, all 4
+  FAILED pre-fix, all 4 PASS post-fix.
+- tests/test_rigid_motion_invariance.py (refined): 25 base cases x 3
+  rigid motions = 75 checks. Semantics: accept to accept required at
+  1e-9; accept to refuse is hard failure; refuse to refuse must keep
+  kind and stage; refuse to accept allowed BUT new accept's volume must
+  agree with independent OCCT boolean oracle (BRepAlgoAPI_Fuse/Cut/
+  Common) at 1e-9.
+
+### Key findings
+
+1. Rotated "union edge touch" accept is a 12-face single shell
+   (unmerged coplanar faces), BRepCheck valid, volume 2.0. Correct
+   union set (L-prism), not a wrong accept. Base case still refuses as
+   NonManifoldResult at assembly (conservative). Rotation-dependence of
+   the refusal is a known completeness limitation.
+
+2. Performance: boolean_brep on rotated near-coincident geometry is
+   slow (8-12 min per case) due to _shape_volume's 1e-10 adaptive
+   integration (VolumePropertiesGK_s) grinding on the assembled shell.
+   This is a pre-existing hotspot exposed by the correctness fix, not
+   caused by it. Out of scope for G10; G13 (performance) should address
+   it.
+
+### Verification (2026-09-26)
+
+- 75/75 rigid-motion checks pass (0 failures, 2 new-accepts verified
+  vs OCCT oracle at 1e-9).
+- Full suite: 29/29 test files green.
+- 200-trial snapped fuzz (--trials 200 --seed 5 --snap 0.5 --kinds
+  box,cyl): 0 WRONG, 0 CRASH.
+- Equivalence vs main-ref (--allow-new-accepts, --fuzz-trials 40):
+  137 cases, 0 blocking differences, 1 allowed new-accept (fuzz trial
+  28, cyl intersection box, refuse to accept). No accepted-volume
+  change beyond 1e-9.
+- G7 timing: the COM witness integration is now gated (was
+  unconditional) and at 1e-4 (was 1e-9); failure skips instead of
+  raising. Qualitative hotspot removal confirmed.
+
+### Cleanup
+
+- The duplicate shadowed `one_side` in _classify_pieces() was already
+  absent on main; no action needed.
