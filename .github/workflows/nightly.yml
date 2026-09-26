@@ -1,0 +1,34 @@
+name: Nightly slow tests and perf budgets
+
+# G13: slow tests and performance-budget enforcement run nightly, not per PR.
+# The full nightly suite is semantically identical to the fast suite plus
+# the slow files; nothing is skipped, only rescheduled.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # 06:00 UTC daily
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-freeform.txt
+      - name: Install geometry dependencies
+        run: python -m pip install -r requirements-freeform.txt
+      - name: Slow stress tests (Tier A)
+        run: python tests/test_stress.py
+      - name: Slow seam stress tests
+        run: python tests/test_g7_seam_stress.py
+      - name: Performance budget check (fails if a pinned case exceeds 2x)
+        run: python tools/review_probes/perf_budget.py --check

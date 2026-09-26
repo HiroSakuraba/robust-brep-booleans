@@ -26,7 +26,9 @@ import uuid
 from datetime import datetime, timezone
 
 import numpy as np
-from OCP.BRepTools import BRepTools
+# G13: OCP imports are lazy (inside functions) so that importing this
+# module does not pay for a broad OCP import. occt_version() in
+# particular must work without OCP.
 
 SCHEMA_ID = "brepkernel.evidence/1.0"
 NAMING_SCHEME_ID = "brepkernel.naming/1.0"
@@ -97,6 +99,7 @@ def canonical_brep_bytes(shape):
     deterministic for identically constructed shapes, so the bytes are a
     stable content fingerprint of the operand.
     """
+    from OCP.BRepTools import BRepTools
     fd, path = tempfile.mkstemp(suffix=".brep")
     os.close(fd)
     try:

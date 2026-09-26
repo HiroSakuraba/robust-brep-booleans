@@ -438,8 +438,11 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
                               model_max_tolerance)
     from .intersection import intersect_models
     from .split import split_models
-    from .assembly import assemble_boolean, _shape_volume
+    from .assembly import assemble_boolean, _shape_volume, clear_volume_cache
     from .same_domain import same_domain_models
+
+    # G13: one Boolean call, one volume-cache lifetime.
+    clear_volume_cache()
 
     if op not in ("union", "intersection", "difference"):
         raise ValueError(f"unknown op {op!r}")
@@ -992,8 +995,10 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
 
     # Cheap operation-level volume invariants catch catastrophic selection or
     # shell-orientation errors without using a second Boolean engine.
-    va = abs(float(_shape_volume(a.shape)))
-    vb = abs(float(_shape_volume(b.shape)))
+    # G13: coarse bounds only; the documented error budget applies.
+    from .assembly import _COARSE_VOLUME_TOL
+    va = abs(float(_shape_volume(a.shape, tol=_COARSE_VOLUME_TOL)))
+    vb = abs(float(_shape_volume(b.shape, tol=_COARSE_VOLUME_TOL)))
     vr = abs(float(assembled.volume))
     all_faces = a.faces + b.faces
     if all_faces:

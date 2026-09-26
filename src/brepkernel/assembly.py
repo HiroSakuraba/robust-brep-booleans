@@ -926,17 +926,55 @@ def _empty_compound():
     return c
 
 
-def _shape_volume(shape) -> float:
-    """Adaptive volume measurement, including B-spline span integration."""
+# G13: per-Boolean-call volume cache.  Input volumes are measured several
+# times during one Boolean call (operation invariants, evidence, shell
+# checks); recomputing the adaptive 1e-10 integration each time is the
+# dominant cost on rotated/titled geometry.  The cache is keyed by
+# (id(shape), tol) and holds a strong reference to the shape so id() reuse
+# after GC cannot alias a dead entry.  It is cleared at the start of every
+# top-level Boolean call (see clear_volume_cache callers); entries never
+# outlive one call, so stale results from mutated shapes are impossible.
+_VOLUME_CACHE: dict = {}
+
+
+def clear_volume_cache() -> None:
+    """Drop all cached volume measurements.  Called once per Boolean call."""
+    _VOLUME_CACHE.clear()
+
+
+# Error budget for lower-precision internal volume checks (G13).  The
+# coarse 1e-4 tolerance is used only for sign checks (vol > 0) on result
+# shells and for operation-level volume invariants, where a relative
+# error of 1e-4 cannot flip the verdict: volumes entering these checks
+# are either exactly zero (degenerate, refused elsewhere) or bounded
+# away from zero by construction tolerances >= 1e-7.  Any volume that is
+# reported as evidence keeps the full 1e-10 adaptive integration.
+_COARSE_VOLUME_TOL = 1e-4
+
+
+def _shape_volume(shape, tol: float = 1e-10) -> float:
+    """Adaptive volume measurement, including B-spline span integration.
+
+    Results are cached for the duration of one Boolean call.  The default
+    tol=1e-10 is the high-accuracy path used wherever a volume is reported
+    as evidence.  Internal sign/coarse-bound checks may pass
+    tol=_COARSE_VOLUME_TOL (1e-4); the error budget is documented above.
+    """
+    key = (id(shape), float(tol))
+    hit = _VOLUME_CACHE.get(key)
+    if hit is not None and hit[0] is shape:
+        return hit[1]
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
     g = GProp_GProps()
     err = BRepGProp.VolumePropertiesGK_s(
-        shape, g, 1e-10, True, True, False, False, False)
+        shape, g, tol, True, True, False, False, False)
     if float(err) < 0.0:
         raise AssemblyError("adaptive volume integration failed",
                             kind="VolumeIntegrationFailed")
-    return float(g.Mass())
+    vol = float(g.Mass())
+    _VOLUME_CACHE[key] = (shape, vol)
+    return vol
 
 
 def _extract_shells(shape) -> list[object]:
@@ -1158,7 +1196,9 @@ def _shell_records(shells: list[object], tol: float
     tmp = []
     for i, sh in enumerate(shells):
         solid, outward = _make_outward_solid(sh)
-        vol = abs(_shape_volume(solid))
+        # G13: sign check only; coarse precision is safe per the documented
+        # error budget above.
+        vol = abs(_shape_volume(solid, tol=_COARSE_VOLUME_TOL))
         if not vol > 0:
             raise AssemblyError("assembled shell has non-positive volume",
                                 kind="ZeroVolumeShell")
@@ -1282,7 +1322,9 @@ def _build_nested_solids(records: list[ShellAssemblyRecord]
         if not BRepCheck_Analyzer(solid, True).IsValid():
             raise AssemblyError("nested result solid is B-rep invalid",
                                 kind="SolidInvalid")
-        vol = _shape_volume(solid)
+        # G13: sign check only; coarse precision is safe per the documented
+        # error budget above.
+        vol = _shape_volume(solid, tol=_COARSE_VOLUME_TOL)
         if not vol > 0:
             raise AssemblyError("result solid has non-positive volume",
                                 kind="SolidInvalid")
@@ -1599,6 +1641,8 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     allow_nonmanifold=True returns a compound of touching solids for a
     touching-only union instead of refusing NonManifoldResult.
     """
+    # G13: one Boolean call, one volume-cache lifetime.
+    clear_volume_cache()
     from OCP.BRep import BRep_Tool
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
     from OCP.BRepCheck import BRepCheck_Analyzer

@@ -137,13 +137,33 @@ def exclusion_band(*shapes, deflection: float = 2e-4) -> float:
     return BAND_SAFETY * float(deflection) + tmax
 
 
+# G13: per-audit tessellation cache.  Keyed by (id(shape), deflection)
+# with a strong reference to the shape so id() reuse after GC cannot
+# alias a dead entry.  Cleared at the start of every membership_audit;
+# entries never outlive one audit.
+_TRIANGLE_CACHE: dict = {}
+
+
+def clear_triangle_cache() -> None:
+    """Drop cached tessellations.  Called once per membership audit."""
+    _TRIANGLE_CACHE.clear()
+
+
 def triangles(shape, deflection: float = 2e-4) -> np.ndarray:
     """Oriented triangle soup (n, 3, 3) of a shape's faces.
 
     The input shape is never modified: it is deep-copied
     (BRepBuilderAPI_Copy, which duplicates the TShapes, so tessellations
     attach to the copy only) and the copy is cleaned and tessellated.
+
+    G13: tessellations are cached per audit (see clear_triangle_cache,
+    called at the start of membership_audit) so a shape appearing more
+    than once in one audit is tessellated once.
     """
+    key = (id(shape), float(deflection))
+    hit = _TRIANGLE_CACHE.get(key)
+    if hit is not None and hit[0] is shape:
+        return hit[1]
     work = BRepBuilderAPI_Copy(shape).Shape()
     BRepTools.Clean_s(work)
     BRepMesh_IncrementalMesh(work, deflection, False, 0.1, True)
@@ -162,7 +182,9 @@ def triangles(shape, deflection: float = 2e-4) -> np.ndarray:
             p = [np.array(tri.Node(j).Transformed(trsf).Coord()) for j in (i1, i2, i3)]
             out.append([p[0], p[2], p[1]] if rev else p)
         ex.Next()
-    return np.asarray(out, dtype=np.float64).reshape(-1, 3, 3)
+    tris = np.asarray(out, dtype=np.float64).reshape(-1, 3, 3)
+    _TRIANGLE_CACHE[key] = (shape, tris)
+    return tris
 
 
 def winding(tris: np.ndarray, q: np.ndarray) -> float:
@@ -216,7 +238,11 @@ def membership_audit(a, b, out, op, rng, n=300, lo=None, hi=None,
     band defaults to None, meaning the surface-exclusion band is derived
     via exclusion_band(a, b, deflection=deflection); pass an explicit
     value for the legacy absolute behavior.
+
+    G13: the per-audit tessellation cache is cleared on entry, so each
+    distinct shape in this audit is tessellated at most once.
     """
+    clear_triangle_cache()
     if lo is None or hi is None:
         dlo, dhi = combined_domain(a, b, out)
         if lo is None:
