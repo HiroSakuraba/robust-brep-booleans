@@ -2442,3 +2442,105 @@ gate/G9-docs; the release actions are blocked on Ben per the checklist.
   evidence records instead of None.
 - Onshape API keys / OAuth app and CATIA access / sample files stay
   parked: blocked on Ben, untouched by design.
+
+---
+
+## G12a: call-scoped assembly indexes (26 Sept 2026, branch muse/g12a-assembly-indexes)
+
+Scope: plan section 6 gate G12a. Build per-call index structures for the
+edge-lineage matchers in `src/brepkernel/assembly.py` so the O(n*m)
+pairwise geometric scans share one call-scoped index instead of re-deriving
+edge sets, bounding boxes, and lengths per pair. Zero acceptance-logic
+change: every matcher pair either short-circuits on a provably conservative
+bbox pre-filter or runs the original geometric predicate verbatim.
+
+### What was built
+
+- `src/brepkernel/assembly.py` (modified):
+  - `_edge_bbox(edge)`: BRepBndLib bbox of one edge; void box maps to an
+    infinite bbox so the pre-filter never skips. `_bbox_separated(a, b, tol)`:
+    True only if the boxes are separated by more than `tol` on some axis,
+    which implies no sample point of the edge can be within `tol` of the
+    reference edge, so the original `_edge_matches_ref_edge` provably
+    returns False on such pairs.
+  - `_EdgeSet`: unique-edge set for one shape; `__contains__` uses TShape
+    identity (`IsSame`), pairwise-equal to the old `_shape_has_edge` scan
+    over the same edge multiset.
+  - `_RefEdgeData`: section/tool reference edge data (bbox, length, both
+    tolerances) computed once.
+  - `_AssemblyIndexes`: built once per `_build_edge_lineage` call. Caches
+    result-edge bboxes and lengths, per-decision sewed-face `_EdgeSet`s,
+    section/tool `_RefEdgeData`, and lazily built parent-face edge sets and
+    boundary-edge data. Also carries the `face_map` that replaced the old
+    `original` id-keyed dict (same content, renamed for clarity).
+  - `_build_edge_lineage` rewritten on top of the indexes. The per-pair
+    flow is: IsSame fast path, bbox pre-filter (skip only when provably
+    separated), length gate on cached lengths, then the original geometric
+    check unchanged. Result-edge loop uses cached lengths; the keep-map
+    merge keys and `EdgeLineageRecord` construction are byte-identical in
+    behavior to before.
+  - No module-level caches, no mutable default arguments.
+- `tests/test_assembly_indexes.py` (new, 6 test groups):
+  - Failing test first: failed with ImportError before the implementation.
+  - `_EdgeSet` membership pairwise-equal to `_shape_has_edge` over all
+    (face, edge) pairs of 7 battery shapes (4176 pairs).
+  - Indexed `edge_matches_section` / `edge_matches_tool` pairwise-equal to
+    the original linear functions over all (result edge, ref) pairs on the
+    battery (15138 pairs), including True cases via IsSame.
+  - Indexed `face_boundary_data` pairwise-equal to the original
+    per-face edge loop (693 pairs).
+  - No module-level state leaks (module `__dict__` key snapshot before and
+    after calls), repeat calls bit-identical including full lineage records,
+    no mutable default args (inspect.signature).
+  - 6th group: no em dashes in the new source or test.
+
+### Verification
+
+- New test: ALL PASS (4176 + 15138 + 693 pairwise checks).
+- Full suite: 29/29 test files exit 0, 0 [FAIL] (28 prior files + the new
+  test_assembly_indexes.py). Environment ~/workspace/brep-booleans/.venv,
+  PYTHONPATH=<worktree>/src.
+- Equivalence (tools/review_probes/verdict_equivalence.py, PR0 harness):
+  --before ~/workspace/brep-gates-wt/main-ref/src
+  --after <worktree>/src, full 97-case manifest, no --allow-new-accepts:
+  accepts before=75 after=75, zero differences (verdict, volume, refusal
+  kind all identical). No blocking differences, no tolerance change.
+- Fuzz: --trials 150 --seed 7: 136 accept + 14 named refusals, 0 WRONG,
+  0 CRASH. --snap 0.5 --trials 150 --seed 11: 120 accept + 30 named
+  refusals, 0 WRONG, 0 CRASH. Refusal kinds: SectionCompletenessMismatch,
+  InsufficientPatchWitnesses, PatchClassificationInconsistent,
+  SectionToleranceTooLoose, BoundaryOrUnknownPatch, UnresolvedContact,
+  CoincidenceUndecidable, SectionOutsideTrim.
+- Perf (report["timings_ms"]["assembly"], quiet machine, 2 reps each,
+  before main-ref vs after this branch):
+  - plate with 64 holes, final (heaviest) difference call: 1096/1068 ms
+    before, 906/901 ms after (about 17% faster on the lineage stage).
+  - box minus tilted cylinder: 178/146 ms before, 150/155 ms after (noise).
+  - boxes union: 178/221 ms before, 195/206 ms after (noise).
+  - The assembly/lineage stage is about 1% of total pipeline time on these
+    cases, so the wall-clock effect is small; the win is structural
+    (one index build per call instead of repeated quadratic scans).
+
+### Invariants
+
+- I1: no acceptance logic touched; the pre-filter only skips pairs the
+  original predicate provably rejects, and the geometric predicate itself
+  is unchanged.
+- I2/I3: no refusal or tolerance behavior changed; equivalence shows
+  identical verdicts and identical refusal kinds on all 97 cases.
+- I4: failing test committed first (ImportError before implementation).
+- I5: suite green 29/29. I6: this entry; nothing hidden.
+- I7: no crashes; no accept-to-refuse or refuse-to-accept flips anywhere.
+- I8: zero U+2014 in new/modified files (grep checked).
+- I9: boolean() / boolean_brep() contracts untouched.
+
+### Open / not in this change
+
+- The indexes are built inside `_build_edge_lineage` (once per
+  assemble_boolean); they are not shared across calls, by design.
+- `_RefEdgeData` duck-types section-likes on (edge, verify_tolerance,
+  edge_tolerance, face_a, face_b, edge_index) and tools on dict
+  ["edge"]/["operand"]; both match current callers exactly.
+
+G12a gate: COMPLETE. Semantics preserved (97-case equivalence, zero
+differences), fuzz clean on both seeds, suite 29/29 green.

@@ -1414,24 +1414,240 @@ def _edge_matches_section(edge, sec, base_tol: float) -> bool:
         float(sec.edge_tolerance), float(base_tol))
 
 
+# ---------------------------------------------------------------------------
+# G12a: call-scoped assembly indexes.
+#
+# _build_edge_lineage used to re-explore every face's edges and recompute
+# every reference edge's length for each (result edge, candidate) pair.
+# The classes below hoist that repeated work into per-call indexes built
+# once at the top of _build_edge_lineage. Every predicate below is
+# pairwise-equal to the linear scan it replaces:
+#   - _EdgeSet.__contains__ uses the same TShape-identity (IsSame)
+#     predicate as _shape_has_edge over the same edge multiset.
+#   - _AssemblyIndexes._match_ref_edge runs the original
+#     _edge_matches_ref_edge for every pair the conservative box
+#     pre-filter cannot rule out. The pre-filter only skips pairs whose
+#     bounding boxes are farther apart than the match tolerance, in
+#     which case no sample point of the edge could be within the
+#     tolerance of the reference edge and the original would return
+#     False. Skips are therefore provably verdict-neutral.
+# All state is created fresh per call. There is no module-level cache,
+# no mutable default argument, and nothing is shared between calls.
+# ---------------------------------------------------------------------------
+
+
+def _edge_bbox(edge) -> tuple[np.ndarray, np.ndarray]:
+    """Axis-aligned bounding box of an edge as (lo, hi)."""
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+
+    box = Bnd_Box()
+    BRepBndLib.Add_s(edge, box)
+    if box.IsVoid():
+        inf = float("inf")
+        return (np.full(3, -inf), np.full(3, inf))
+    lo = np.array([box.GetXMin(), box.GetYMin(), box.GetZMin()],
+                  dtype=np.float64)
+    hi = np.array([box.GetXMax(), box.GetYMax(), box.GetZMax()],
+                  dtype=np.float64)
+    return (lo, hi)
+
+
+def _bbox_separated(bb1, bb2, margin: float) -> bool:
+    """True only if every point of box 1 is farther than margin from
+    every point of box 2.
+
+    If the boxes are separated by more than margin on any axis, the
+    Euclidean distance between any two points (one per box) exceeds
+    margin on that axis alone. An edge is contained in its box, so a
+    True result proves the geometric edge matcher (which needs sample
+    points within margin of the reference edge) would return False.
+    """
+    (lo1, hi1), (lo2, hi2) = bb1, bb2
+    m = float(margin)
+    return bool(np.any(hi1 + m < lo2) or np.any(hi2 + m < lo1))
+
+
+class _EdgeSet:
+    """Call-scoped unique-edge set for one shape.
+
+    Membership uses TShape identity (IsSame), exactly like
+    _shape_has_edge; the explorer scan happens once here instead of
+    once per query.
+    """
+
+    __slots__ = ("_edges",)
+
+    def __init__(self, shape):
+        self._edges = _unique_edges(shape)
+
+    def __contains__(self, edge) -> bool:
+        return any(e.IsSame(edge) for e in self._edges)
+
+    def __len__(self) -> int:
+        return len(self._edges)
+
+
+class _RefEdgeData:
+    """Call-scoped cached data for one reference edge (section edge,
+    coincident-boundary tool edge, or parent-face boundary edge)."""
+
+    __slots__ = ("edge", "bbox", "length", "verify_tolerance",
+                 "edge_tolerance")
+
+    def __init__(self, edge, verify_tolerance: float,
+                 edge_tolerance: float):
+        self.edge = edge
+        self.bbox = _edge_bbox(edge)
+        self.length = _edge_length(edge)
+        self.verify_tolerance = float(verify_tolerance)
+        self.edge_tolerance = float(edge_tolerance)
+
+
+class _AssemblyIndexes:
+    """Call-scoped indexes for one _build_edge_lineage call.
+
+    Built once per call from (result_shape, selected, sections, tools,
+    models). Sections/tools are duck-typed: section-likes expose
+    .edge/.verify_tolerance/.edge_tolerance/.face_a/.face_b/.edge_index,
+    tool-likes are dicts with "edge"/"operand"/"face_id"/"edge_id",
+    models maps operand -> BRepModel.
+    """
+
+    def __init__(self, result_shape, selected, sections, tools,
+                 models, base_tol: float):
+        self.base_tol = float(base_tol)
+        self.result_edges = _unique_edges(result_shape)
+        self.result_bboxes = [_edge_bbox(e) for e in self.result_edges]
+        self.result_lengths = [_edge_length(e) for e in self.result_edges]
+        self.n_result_edges = len(self.result_edges)
+        self.selected = list(selected)
+        self.sewed_sets = [self._sewed_edge_set(d) for d in self.selected]
+        self.sections = [_RefEdgeData(s.edge, s.verify_tolerance,
+                                      s.edge_tolerance) for s in sections]
+        self.section_keys = [(s.face_a, s.face_b, s.edge_index)
+                             for s in sections]
+        self.n_sections = len(self.sections)
+        self.tools = [_RefEdgeData(t["edge"], self.base_tol,
+                                   self.base_tol) for t in tools]
+        self.tool_keys = [(t["operand"], t["face_id"], t["edge_id"])
+                          for t in tools]
+        self.n_tools = len(self.tools)
+        self.face_map = {op: {f.face_id: f.face for f in m.faces}
+                         for op, m in models.items()}
+        self._parent_sets: dict = {}
+        self._parent_boundary: dict = {}
+
+    @staticmethod
+    def _sewed_edge_set(d):
+        sf = d.sewed_face if d.sewed_face is not None else d.selected_face
+        return _EdgeSet(sf) if sf is not None else None
+
+    def register_parent_face(self, key, face) -> None:
+        """Register a parent face under an arbitrary key (used by the
+        lazy parent lookup and directly by tests)."""
+        self._parent_sets[key] = _EdgeSet(face)
+        self._parent_boundary[key] = [_RefEdgeData(b, self.base_tol,
+                                                   self.base_tol)
+                                      for b in _unique_edges(face)]
+
+    def _parent_key(self, operand, face_id):
+        return (operand, face_id)
+
+    def parent_set(self, operand, face_id):
+        key = self._parent_key(operand, face_id)
+        if key not in self._parent_sets:
+            face = self.face_map[operand].get(face_id)
+            if face is None:
+                return None
+            self.register_parent_face(key, face)
+        return self._parent_sets[key]
+
+    def sewed_contains(self, di: int, edge) -> bool:
+        s = self.sewed_sets[di]
+        return s is not None and edge in s
+
+    def parent_contains(self, operand, face_id, edge) -> bool:
+        s = self.parent_set(operand, face_id)
+        return s is not None and edge in s
+
+    def _match_ref_edge(self, edge_idx: int, ref: _RefEdgeData,
+                        base_tol: float) -> bool:
+        """Indexed form of _edge_matches_ref_edge.
+
+        Pairwise-equal to the original: the IsSame fast path and the
+        length gate run first on cached values; the box pre-filter only
+        skips pairs the original provably answers False for; otherwise
+        the original function decides.
+        """
+        edge = self.result_edges[edge_idx]
+        if edge.IsSame(ref.edge):
+            return True
+        le = self.result_lengths[edge_idx]
+        ls = ref.length
+        tol = max(float(base_tol), ref.verify_tolerance,
+                  ref.edge_tolerance)
+        len_tol = max(16.0 * tol, 1e-8 * max(le, ls, 1.0))
+        if le > ls + len_tol:
+            return False
+        match_tol = max(8.0 * tol, 1e-9 * max(le, ls, 1.0))
+        if _bbox_separated(self.result_bboxes[edge_idx], ref.bbox,
+                           match_tol):
+            return False
+        return _edge_matches_ref_edge(edge, ref.edge,
+                                      ref.verify_tolerance,
+                                      ref.edge_tolerance,
+                                      float(base_tol))
+
+    def edge_matches_section(self, edge_idx: int, sec_idx: int,
+                             base_tol: float) -> bool:
+        """Indexed form of _edge_matches_section (pairwise-equal)."""
+        return self._match_ref_edge(edge_idx, self.sections[sec_idx],
+                                    base_tol)
+
+    def edge_matches_tool(self, edge_idx: int, tool_idx: int,
+                          base_tol: float) -> bool:
+        """Indexed form of the coincident-tool _edge_matches_ref_edge
+        call (pairwise-equal)."""
+        return self._match_ref_edge(edge_idx, self.tools[tool_idx],
+                                    base_tol)
+
+    def edge_on_face_boundary(self, edge_idx: int, key,
+                              base_tol: float) -> bool:
+        """Indexed form of _edge_on_face_boundary (pairwise-equal)."""
+        if key not in self._parent_boundary:
+            return False
+        for ref in self._parent_boundary[key]:
+            if self._match_ref_edge(edge_idx, ref, base_tol):
+                return True
+        return False
+
+
 def _build_edge_lineage(result_shape, selected: list[PatchDecision],
                         split: ModelSplitResult,
                         model_a: BRepModel, model_b: BRepModel,
                         base_tol: float) -> list[EdgeLineageRecord]:
-    """Attach final result edges to selected patches and section evidence."""
-    original = {
-        "A": {f.face_id: f.face for f in model_a.faces},
-        "B": {f.face_id: f.face for f in model_b.faces},
-    }
+    """Attach final result edges to selected patches and section evidence.
+
+    G12a: all repeated scans go through the call-scoped _AssemblyIndexes
+    built below (one per call). The lineage records produced are
+    identical to the old linear scans by construction: every predicate
+    is pairwise-equal to the scan it replaces.
+    """
+    btol = float(base_tol)
+    idx = _AssemblyIndexes(
+        result_shape, selected,
+        list(split.section_edges), list(split.coincident_boundary_tools),
+        {"A": model_a, "B": model_b}, btol)
     out = []
-    for i, edge in enumerate(_unique_edges(result_shape)):
+    for i in range(idx.n_result_edges):
+        edge = idx.result_edges[i]
         refs = []
         parents = []
         operands = []
         source_boundary = []
-        for d in selected:
-            sf = d.sewed_face if d.sewed_face is not None else d.selected_face
-            if sf is not None and _shape_has_edge(sf, edge):
+        for di, d in enumerate(selected):
+            if idx.sewed_contains(di, edge):
                 ref = (d.operand, d.parent_face_id, d.piece_index)
                 if ref not in refs:
                     refs.append(ref)
@@ -1440,18 +1656,16 @@ def _build_edge_lineage(result_shape, selected: list[PatchDecision],
                     parents.append(pf)
                 if d.operand not in operands:
                     operands.append(d.operand)
-                parent_face = original[d.operand].get(d.parent_face_id)
-                if parent_face is not None and (
-                        _shape_has_edge(parent_face, edge)
-                        or _edge_on_face_boundary(
-                            edge, parent_face, float(base_tol))):
+                if (idx.parent_contains(d.operand, d.parent_face_id, edge)
+                        or idx.edge_on_face_boundary(
+                            i, (d.operand, d.parent_face_id), btol)):
                     if pf not in source_boundary:
                         source_boundary.append(pf)
 
         intersections = []
-        for sec in split.section_edges:
-            if _edge_matches_section(edge, sec, float(base_tol)):
-                key = (sec.face_a, sec.face_b, sec.edge_index)
+        for sj in range(idx.n_sections):
+            if idx.edge_matches_section(i, sj, btol):
+                key = idx.section_keys[sj]
                 if key not in intersections:
                     intersections.append(key)
 
@@ -1463,19 +1677,15 @@ def _build_edge_lineage(result_shape, selected: list[PatchDecision],
         # via the overlap split.
         coincident_sources = []
         interior_to_a_parent = False
-        for tool in split.coincident_boundary_tools:
-            if _edge_matches_ref_edge(
-                    edge, tool["edge"], float(base_tol),
-                    float(base_tol), float(base_tol)):
-                key = (tool["operand"], tool["face_id"],
-                       tool["edge_id"])
+        for tj in range(idx.n_tools):
+            if idx.edge_matches_tool(i, tj, btol):
+                key = idx.tool_keys[tj]
                 if key not in coincident_sources:
                     coincident_sources.append(key)
         if coincident_sources:
             for operand, fid in parents:
-                parent_face = original[operand].get(fid)
-                if parent_face is not None and not _edge_on_face_boundary(
-                        edge, parent_face, float(base_tol)):
+                if idx.parent_set(operand, fid) is not None and not (
+                        idx.edge_on_face_boundary(i, (operand, fid), btol)):
                     interior_to_a_parent = True
                     break
             source_boundary.extend(
