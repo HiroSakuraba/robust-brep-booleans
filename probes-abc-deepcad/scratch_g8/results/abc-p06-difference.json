@@ -1,0 +1,32 @@
+{
+ "case_id": "abc-p06-difference",
+ "corpus": "abc",
+ "model_a": "00277683_640b44922dd8b86d2c2066aa_step_000",
+ "model_b": "00277684_57f868642c914910f87ec7be_step_000",
+ "op": "difference",
+ "outcome": "refused",
+ "load_s": 4.953571699999998,
+ "shift_applied": [
+  36.00925961744856,
+  6.50547724151982,
+  269.08728968314995
+ ],
+ "diag_a": 145.91204413223545,
+ "boolean_s": 46.653905279000014,
+ "refusal_stage": "assembly",
+ "refusal_kind": "InsufficientPatchWitnesses",
+ "refusal_type": "AssemblyError",
+ "refusal_message": "only 1 stable interior witness(es) found; 3 required",
+ "refusal_evidence": null,
+ "broadphase_max_tolerance": 0.00023358218940368306,
+ "stage_keys": [
+  "ingest",
+  "intersection",
+  "same_domain",
+  "split"
+ ],
+ "exception_type": "BRepAmbiguousResult",
+ "exception_message": "B-rep result refused in assembly: only 1 stable interior witness(es) found; 3 required",
+ "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 713, in boolean_brep\n    assembled = assemble_boolean(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 1612, in assemble_boolean\n    decisions = _classify_pieces(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 916, in _classify_pieces\n    one_side(\"B\", split.faces_b, model_a)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 883, in one_side\n    points = _face_points(piece.face, tol)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 233, in _face_points\n    raise AssemblyError(\nbrepkernel.assembly.AssemblyError: only 1 stable interior witness(es) found; 3 required\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 720, in boolean_brep\n    refuse(\"assembly\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in assembly: only 1 stable interior witness(es) found; 3 required\n",
+ "wall_s": 52.19371928800001
+}

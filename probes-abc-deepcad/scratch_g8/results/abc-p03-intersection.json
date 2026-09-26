@@ -1,0 +1,43 @@
+{
+ "case_id": "abc-p03-intersection",
+ "corpus": "abc",
+ "model_a": "00273424_5d63f56c7f6fd30b2b3a0df0_step_000",
+ "model_b": "00273425_cb285a35e4407299696abb3a_step_000",
+ "op": "intersection",
+ "outcome": "accepted",
+ "load_s": 4.756988416000013,
+ "shift_applied": [
+  68.14992309881889,
+  82.52829622084664,
+  -21.11439593136314
+ ],
+ "diag_a": 135.44907694155538,
+ "boolean_s": 81.87876518799999,
+ "result_solids": 1,
+ "result_volume": 44528.73850732274,
+ "volume_a": 258878.48736467125,
+ "volume_b": 320840.1814634239,
+ "stage_keys": [
+  "assembly",
+  "ingest",
+  "intersection",
+  "same_domain",
+  "split",
+  "verification"
+ ],
+ "broadphase_max_tolerance": 0.00026982534183081627,
+ "timings_ms": {
+  "ingest": 44.8142809999581,
+  "same_domain": 1704.361047999896,
+  "intersection": 61613.38049699998,
+  "split": 989.031008999973,
+  "assembly": 16842.810626999948,
+  "verification": 539.2707420000988,
+  "total": 81745.69482300001
+ },
+ "intersection_summary": {},
+ "assembly_summary": {
+  "volume": 44528.73850732274
+ },
+ "wall_s": 87.56033475800007
+}

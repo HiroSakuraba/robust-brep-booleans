@@ -1,0 +1,43 @@
+{
+ "case_id": "deepcad-p01-intersection",
+ "corpus": "deepcad",
+ "model_a": "m000",
+ "model_b": "m001",
+ "op": "intersection",
+ "outcome": "accepted",
+ "load_s": 5.033365960000026,
+ "shift_applied": [
+  0.05203428439270508,
+  -0.044605111108875,
+  0.34600667777922994
+ ],
+ "diag_a": 1.2990384520868203,
+ "boolean_s": 7.172552794000012,
+ "result_solids": 1,
+ "result_volume": 0.0026135500126362493,
+ "volume_a": 0.4218750000000002,
+ "volume_b": 0.004707312837275136,
+ "stage_keys": [
+  "assembly",
+  "ingest",
+  "intersection",
+  "same_domain",
+  "split",
+  "verification"
+ ],
+ "broadphase_max_tolerance": 1e-07,
+ "timings_ms": {
+  "ingest": 57.34815199997456,
+  "same_domain": 199.55017400002362,
+  "intersection": 381.8142880000437,
+  "split": 130.97382000000835,
+  "assembly": 6211.344809999957,
+  "verification": 57.83523200000218,
+  "total": 7051.3272759999945
+ },
+ "intersection_summary": {},
+ "assembly_summary": {
+  "volume": 0.0026135500126362493
+ },
+ "wall_s": 12.67553390300003
+}

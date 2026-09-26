@@ -1,0 +1,299 @@
+"""Public Tier B/C pipeline regressions.
+
+These tests exercise the one-call API rather than manually chaining the
+internal stages.
+"""
+import json
+import math
+import sys
+
+sys.path.insert(0, "src")
+sys.path.insert(0, "tests")
+
+import _arbiter
+
+from brepkernel import boolean_brep, BRepAmbiguousResult
+
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
+from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
+from OCP.BRepGProp import BRepGProp
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeSphere
+from OCP.GProp import GProp_GProps
+from OCP.TopAbs import TopAbs_SOLID
+from OCP.TopExp import TopExp_Explorer
+from OCP.gp import gp_Pnt
+
+
+def check(name, cond, detail=""):
+    print(f"[{'PASS' if cond else 'FAIL'}] {name} {detail}")
+    return bool(cond)
+
+
+def volume(shape):
+    p = GProp_GProps()
+    err = BRepGProp.VolumePropertiesGK_s(
+        shape, p, 1e-10, True, True, False, False, False)
+    assert float(err) >= 0.0
+    return float(p.Mass())
+
+
+def solid_count(shape):
+    n = 0
+    ex = TopExp_Explorer(shape, TopAbs_SOLID)
+    while ex.More():
+        n += 1
+        ex.Next()
+    return n
+
+
+def t1_one_call_true_nurbs_union():
+    a0 = BRepPrimAPI_MakeSphere(gp_Pnt(0, 0, 0), 1.0).Shape()
+    b0 = BRepPrimAPI_MakeSphere(gp_Pnt(1, 0, 0), 1.0).Shape()
+    a = BRepBuilderAPI_NurbsConvert(a0, True).Shape()
+    b = BRepBuilderAPI_NurbsConvert(b0, True).Shape()
+
+    out, report = boolean_brep(
+        a, b, "union", include_full_evidence=True,
+        shadow_section_crosscheck=True)
+    ing = report["stages"]["ingest"]
+    ix = report["stages"]["intersection"]
+    asm = report["stages"]["assembly"]
+    ok = check("p1 accepted", report["accepted"])
+    ok &= check(
+        "p1 periodic accelerators visible in report",
+        ing["A"]["freeform_accels"] == 1
+        and ing["B"]["freeform_accels"] == 1
+        and ing["A"]["local_patches"] >= 8
+        and ing["B"]["local_patches"] >= 8,
+        f"ingest={ing}")
+    ok &= check(
+        "p1 conservative exact workset",
+        ix["candidate_face_pairs"] == 1 and ix["section_calls"] == 1
+        and ix["verified_edges"] >= 1
+        and ix["shadow_section_calls"] == 1
+        and ix["shadow_verified_edges"] >= 1
+        and ix["ambiguous_contacts"] == 0,
+        f"intersection={ix}")
+    want = 9.0 * math.pi / 4.0
+    ok &= check(
+        "p1 result volume",
+        abs(volume(out) - want) < 3e-6
+        and abs(asm["volume"] - want) < 3e-6,
+        f"shape={volume(out):.12g} report={asm['volume']:.12g}")
+    ver = report["stages"]["verification"]
+    ok &= check(
+        "p1 final verification",
+        ver["brep_valid"]
+        and ver["closed"]
+        and ver["manifold_edges"]
+        and ver["complete_edge_lineage"]
+        and ver["exact_curve_on_surface_complete"]
+        and ver["shadow_section_crosscheck_requested"]
+        and ver["shadow_section_crosscheck_complete"]
+        and ver["volume_bounds_ok"]
+        and not ver["unattributed_edges"]
+        and not ver["section_edges_missing_verified_pcurves"],
+        f"verification={ver}")
+    lin = asm["edge_lineage"]
+    ok &= check(
+        "p1 final edge/p-curve lineage",
+        lin["result_edges"] >= 1
+        and lin["boolean_section_edges"] >= 1
+        and any(r["verified_pcurves"] and r["intersection_refs"]
+                and set(r["operands"]) == {"A", "B"}
+                for r in lin["records"]),
+        f"edge_lineage={lin}")
+    payloads = asm["section_payloads"]
+    ok &= check(
+        "p1 section payload summaries",
+        bool(payloads)
+        and all(p["samples"] >= 2 and p["verify_tolerance"] > 0
+                and p["exact_curve_on_surface_checked"]
+                and p["exact_surface_error_A"] is not None
+                and p["exact_surface_error_B"] is not None
+                and p["exact_surface_error_A"] <= p["verify_tolerance"]
+                and p["exact_surface_error_B"] <= p["verify_tolerance"]
+                and p["shadow_crosschecked"]
+                and p["shadow_max_distance"] is not None
+                and p["shadow_length_rel_error"] is not None
+                for p in payloads)
+        and any(p["result_edges"] for p in payloads),
+        f"section_payloads={payloads}")
+    full = asm.get("full_section_payloads", [])
+    ok &= check(
+        "p1 full evidence JSON export",
+        len(full) == len(payloads)
+        and all(
+            len(p["parameters"]) == len(p["xyz"])
+            == len(p["uv_A"]) == len(p["uv_B"])
+            and len(p["parameters"]) >= 2
+            and all(len(x) == 3 for x in p["xyz"])
+            and all(len(x) == 2 for x in p["uv_A"])
+            and all(len(x) == 2 for x in p["uv_B"])
+            and p["exact_curve_on_surface_checked"]
+            and p["exact_surface_error_A"] is not None
+            and p["exact_surface_error_B"] is not None
+            and p["shadow_crosschecked"]
+            for p in full)
+        and isinstance(json.dumps(report), str),
+        f"full_payloads={len(full)}")
+    sampling = asm["section_sampling"]
+    ok &= check(
+        "p1 section sampling summary",
+        sampling["sections"] == len(payloads)
+        and sampling["total_samples"] == sum(p["samples"] for p in payloads)
+        and sampling["max_samples"] == max(p["samples"] for p in payloads)
+        and sampling["mean_samples"] >= 2.0,
+        f"sampling={sampling}")
+    timings = report["timings_ms"]
+    required = {"ingest", "same_domain", "intersection",
+                "split", "assembly", "verification", "total"}
+    ok &= check(
+        "p1 stage timings",
+        required.issubset(timings)
+        and all(timings[k] >= 0.0 for k in required)
+        and timings["total"] >= max(timings[k] for k in required - {"total"}),
+        f"timings={timings}")
+    ok &= _arbiter.check_accepted("p1", check, a, b, out, "union")[0]
+    return ok
+
+
+def t2_exact_identity_fast_path():
+    a = BRepPrimAPI_MakeSphere(1.0).Shape()
+    u, ru = boolean_brep(a, a, "union")
+    d, rd = boolean_brep(a, a, "difference")
+    ok = check(
+        "p2 union exact identity",
+        u.IsSame(a) and ru["accepted"]
+        and ru["stages"]["identity"]["resolution"] == "A"
+        and "intersection" not in ru["stages"])
+    ok &= check(
+        "p2 difference exact empty",
+        rd["accepted"]
+        and rd["stages"]["identity"]["resolution"] == "empty"
+        and solid_count(d) == 0)
+    ok &= _arbiter.check_accepted("p2 union", check, a, a, u, "union")[0]
+    ok &= _arbiter.check_accepted(
+        "p2 difference", check, a, a, d, "difference")[0]
+    return ok
+
+
+def t3_tangent_contact_structured_refusal():
+    a = BRepPrimAPI_MakeSphere(gp_Pnt(0, 0, 0), 1.0).Shape()
+    b = BRepPrimAPI_MakeSphere(gp_Pnt(2, 0, 0), 1.0).Shape()
+    try:
+        boolean_brep(a, b, "union")
+    except BRepAmbiguousResult as e:
+        refusal = e.report.get("refusal", {})
+        split = e.report["stages"].get("split", {})
+        return check(
+            "p3 tangent refuses with report",
+            not e.report["accepted"]
+            and refusal.get("stage") == "assembly"
+            and refusal.get("kind") == "UnresolvedContact"
+            and split.get("unresolved_contacts"),
+            f"refusal={refusal} split={split}")
+    return check("p3 tangent refuses with report", False, "no refusal")
+
+
+
+def t4_independent_same_domain_fast_path():
+    a = BRepPrimAPI_MakeBox(1.0, 2.0, 3.0).Shape()
+    b = BRepPrimAPI_MakeBox(1.0, 2.0, 3.0).Shape()
+    assert not a.IsSame(b)
+    u, ru = boolean_brep(a, b, "union")
+    d, rd = boolean_brep(a, b, "difference")
+    sd_u = ru["stages"].get("same_domain", {})
+    sd_d = rd["stages"].get("same_domain", {})
+    ok = check(
+        "p4 independent same-domain union",
+        ru["accepted"] and sd_u.get("equivalent")
+        and sd_u.get("matched_faces") == 6
+        and sd_u.get("resolution") == "A"
+        and "intersection" not in ru["stages"]
+        and solid_count(u) == 1,
+        f"same_domain={sd_u}")
+    ok &= check(
+        "p4 independent same-domain difference",
+        rd["accepted"] and sd_d.get("equivalent")
+        and sd_d.get("resolution") == "empty"
+        and "intersection" not in rd["stages"]
+        and solid_count(d) == 0,
+        f"same_domain={sd_d}")
+    ok &= _arbiter.check_accepted("p4 union", check, a, b, u, "union")[0]
+    ok &= _arbiter.check_accepted(
+        "p4 difference", check, a, b, d, "difference")[0]
+    return ok
+
+
+def t5_different_decomposition_public_fast_path():
+    a = BRepPrimAPI_MakeBox(2.0, 1.0, 1.0).Shape()
+    left = BRepPrimAPI_MakeBox(
+        gp_Pnt(0, 0, 0), gp_Pnt(1, 1, 1)).Shape()
+    right = BRepPrimAPI_MakeBox(
+        gp_Pnt(1, 0, 0), gp_Pnt(2, 1, 1)).Shape()
+    f = BRepAlgoAPI_Fuse(left, right)
+    f.Build()
+    assert f.IsDone()
+    b = f.Shape()
+
+    out, report = boolean_brep(a, b, "union")
+    sd = report["stages"].get("same_domain", {})
+    cb = sd.get("canonical_B") or {}
+    ok = check(
+        "p5 different decomposition canonical fast path",
+        report["accepted"]
+        and sd.get("equivalent")
+        and sd.get("canonicalized")
+        and cb.get("faces_before", 0) > cb.get("faces_after", 0)
+        and cb.get("faces_after") == 6
+        and sd.get("resolution") == "A"
+        and "intersection" not in report["stages"]
+        and solid_count(out) == 1,
+        f"same_domain={sd}")
+    ok &= _arbiter.check_accepted("p5", check, a, b, out, "union")[0]
+    return ok
+
+
+def t6_public_volume_invariants_intersection_and_difference():
+    a0 = BRepPrimAPI_MakeSphere(gp_Pnt(0, 0, 0), 1.0).Shape()
+    b0 = BRepPrimAPI_MakeSphere(gp_Pnt(1, 0, 0), 1.0).Shape()
+    a = BRepBuilderAPI_NurbsConvert(a0, True).Shape()
+    b = BRepBuilderAPI_NurbsConvert(b0, True).Shape()
+
+    expected = {
+        "intersection": 5.0 * math.pi / 12.0,
+        "difference": 11.0 * math.pi / 12.0,
+    }
+    ok = True
+    for op in ("intersection", "difference"):
+        out, report = boolean_brep(a, b, op)
+        ver = report["stages"]["verification"]
+        got = volume(out)
+        ok &= check(
+            f"p6 {op} operation invariants",
+            report["accepted"]
+            and ver["brep_valid"]
+            and ver["complete_edge_lineage"]
+            and ver["volume_bounds_ok"]
+            and not ver["unattributed_edges"]
+            and abs(got - expected[op]) < 3e-6,
+            f"volume={got:.12g} expected={expected[op]:.12g} "
+            f"verification={ver}")
+        ok &= _arbiter.check_accepted(f"p6 {op}", check, a, b, out, op)[0]
+    return ok
+
+def main():
+    ok = True
+    ok &= t1_one_call_true_nurbs_union()
+    ok &= t2_exact_identity_fast_path()
+    ok &= t3_tangent_contact_structured_refusal()
+    ok &= t4_independent_same_domain_fast_path()
+    ok &= t5_different_decomposition_public_fast_path()
+    ok &= t6_public_volume_invariants_intersection_and_difference()
+    print("\nALL PASS" if ok else "\nSOME FAILURES")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

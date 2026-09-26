@@ -1,0 +1,63 @@
+name: Freeform NURBS CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - "src/brepkernel/freeform.py"
+      - "src/brepkernel/step_ingest.py"
+      - "src/brepkernel/intersection.py"
+      - "src/brepkernel/split.py"
+      - "src/brepkernel/assembly.py"
+      - "tests/test_freeform_nurbs.py"
+      - "tests/test_freeform_intersection.py"
+      - "tests/test_freeform_split.py"
+      - "tests/test_freeform_assembly.py"
+      - "tests/test_nurbs_boolean_end_to_end.py"
+      - "tests/test_brep_pipeline.py"
+      - "tests/test_same_domain.py"
+      - "tests/test_step_nurbs_multiface.py"
+      - "tests/test_nurbs_adversarial_corpus.py"
+      - "docs/NURBS_ACCEL.md"
+      - ".github/workflows/freeform-ci.yml"
+      - "requirements-freeform.txt"
+
+concurrency:
+  group: freeform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  freeform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-freeform.txt
+      - name: Install geometry dependencies
+        run: python -m pip install -r requirements-freeform.txt
+      - name: NURBS evaluator / broadphase regressions
+        run: python tests/test_freeform_nurbs.py
+      - name: Trimmed surface intersection regressions
+        run: python tests/test_freeform_intersection.py
+      - name: Local face split regressions
+        run: python tests/test_freeform_split.py
+      - name: Global B-rep assembly regressions
+        run: python tests/test_freeform_assembly.py
+      - name: True NURBS end-to-end Boolean regression
+        run: python tests/test_nurbs_boolean_end_to_end.py
+      - name: Strict same-domain equivalence regressions
+        run: python tests/test_same_domain.py
+      - name: Public exact B-rep pipeline regressions
+        run: python tests/test_brep_pipeline.py
+      - name: Imported multi-face NURBS STEP regression
+        run: python tests/test_step_nurbs_multiface.py
+      - name: Adversarial NURBS corpus
+        run: python tests/test_nurbs_adversarial_corpus.py
+      - name: Multi-shell semantic regressions
+        run: python tests/test_multishell_semantics.py

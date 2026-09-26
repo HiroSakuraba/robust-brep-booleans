@@ -1,0 +1,351 @@
+"""STEP/B-rep ingest that preserves Solid -> Shell -> Face provenance.
+
+This is the bridge from the current anonymous-mesh prototype to Tier B/C.
+It deliberately keeps OCCT topology instead of flattening STEP into one
+triangle soup and trying to rediscover cavities/provenance later.
+
+The face broad phase is two-tier:
+  1. precise OCCT face AABBs remove obviously disjoint face pairs;
+  2. BSpline/NURBS pairs are refined by conservative knot-span control-hull
+     AABBs from freeform.NurbsPatchIndex.
+Only surviving pairs need expensive surface/surface intersection or fine
+meshing.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+import numpy as np
+
+from .freeform import FreeformFaceAccel, FreeformError, candidate_patch_pairs
+
+
+@dataclass
+class FaceRecord:
+    face_id: int
+    solid_id: int
+    shell_id: int
+    face: object
+    orientation: str
+    surface_type: str
+    uv_bounds: tuple[float, float, float, float]
+    bbox_lo: np.ndarray
+    bbox_hi: np.ndarray
+    freeform: Optional[FreeformFaceAccel] = None
+    # G6 rework: max OCCT tolerance over the face and its incident edges
+    # and vertices (BRep_Tool.Tolerance). The per-face broad-phase pad is
+    # contact_tol + tol_face, so one damaged edge no longer inflates the
+    # pad of every other face in the model.
+    tol_face: float = 0.0
+
+
+@dataclass
+class ShellRecord:
+    shell_id: int
+    solid_id: int
+    shell: object
+    orientation: str
+    face_ids: list[int] = field(default_factory=list)
+
+
+@dataclass
+class SolidRecord:
+    solid_id: int
+    solid: object
+    shell_ids: list[int] = field(default_factory=list)
+
+
+@dataclass
+class BRepModel:
+    shape: object
+    solids: list[SolidRecord]
+    shells: list[ShellRecord]
+    faces: list[FaceRecord]
+
+    @property
+    def nurbs_faces(self) -> list[FaceRecord]:
+        return [f for f in self.faces if f.freeform is not None]
+
+
+def _shape_bbox(shape) -> tuple[np.ndarray, np.ndarray]:
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    b = Bnd_Box()
+    # Geometry-aware bounding; does not require us to create a fine
+    # triangulation merely to decide that two faces are far apart.
+    # G6: useShapeTolerance=True so a high-tolerance face cannot hide
+    # inside a tight geometric box and vanish from the broad phase.
+    # This only ever enlarges boxes, never shrinks them.
+    BRepBndLib.AddOptimal_s(shape, b, False, True)
+    if b.IsVoid():
+        z = np.zeros(3, dtype=np.float64)
+        return z, z
+    # OCCT 8 changed Bnd_Box.Get() to return Bnd_Box::Limits, which the
+    # Python binding does not currently convert. CornerMin/CornerMax are
+    # stable gp_Pnt accessors in both OCP 7.x and 8.x.
+    p0 = b.CornerMin()
+    p1 = b.CornerMax()
+    return (np.array([p0.X(), p0.Y(), p0.Z()], dtype=np.float64),
+            np.array([p1.X(), p1.Y(), p1.Z()], dtype=np.float64))
+
+
+def _surface_type_name(face) -> str:
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    t = BRepAdaptor_Surface(face).GetType()
+    return getattr(t, "name", str(t))
+
+
+def index_shape(shape, *, build_freeform: bool = True,
+                trim_tol: float = 1e-8) -> BRepModel:
+    """Preserve OCCT Solid->Shell->Face hierarchy and per-face provenance."""
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopAbs import TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE
+    from OCP.TopoDS import TopoDS
+    from OCP.BRepTools import BRepTools
+
+    solids: list[SolidRecord] = []
+    shells: list[ShellRecord] = []
+    faces: list[FaceRecord] = []
+
+    es = TopExp_Explorer(shape, TopAbs_SOLID)
+    solid_id = shell_id = face_id = 0
+    while es.More():
+        solid = TopoDS.Solid(es.Current())
+        sr = SolidRecord(solid_id, solid)
+        esh = TopExp_Explorer(solid, TopAbs_SHELL)
+        while esh.More():
+            shell = TopoDS.Shell(esh.Current())
+            shr = ShellRecord(shell_id, solid_id, shell,
+                              getattr(shell.Orientation(), "name",
+                                      str(shell.Orientation())))
+            ef = TopExp_Explorer(shell, TopAbs_FACE)
+            while ef.More():
+                face = TopoDS.Face(ef.Current())
+                lo, hi = _shape_bbox(face)
+                ftol = _face_max_tolerance(face)
+                st = _surface_type_name(face)
+                ff = None
+                if build_freeform and "BSpline" in st:
+                    try:
+                        ff = FreeformFaceAccel.from_occt_face(
+                            face, trim_tol=trim_tol)
+                    except FreeformError:
+                        # Provenance remains even if acceleration cannot be
+                        # built; callers can fall back to OCCT directly.
+                        pass
+                faces.append(FaceRecord(
+                    face_id, solid_id, shell_id, face,
+                    getattr(face.Orientation(), "name", str(face.Orientation())),
+                    st, tuple(float(x) for x in BRepTools.UVBounds_s(face)),
+                    lo, hi, ff, ftol))
+                shr.face_ids.append(face_id)
+                face_id += 1
+                ef.Next()
+            shells.append(shr)
+            sr.shell_ids.append(shell_id)
+            shell_id += 1
+            esh.Next()
+        solids.append(sr)
+        solid_id += 1
+        es.Next()
+
+    # Do not silently discard shell-only STEP content.
+    if not solids:
+        esh = TopExp_Explorer(shape, TopAbs_SHELL)
+        while esh.More():
+            shell = TopoDS.Shell(esh.Current())
+            shr = ShellRecord(shell_id, -1, shell,
+                              getattr(shell.Orientation(), "name",
+                                      str(shell.Orientation())))
+            ef = TopExp_Explorer(shell, TopAbs_FACE)
+            while ef.More():
+                face = TopoDS.Face(ef.Current())
+                lo, hi = _shape_bbox(face)
+                ftol = _face_max_tolerance(face)
+                st = _surface_type_name(face)
+                ff = None
+                if build_freeform and "BSpline" in st:
+                    try:
+                        ff = FreeformFaceAccel.from_occt_face(
+                            face, trim_tol=trim_tol)
+                    except FreeformError:
+                        pass
+                faces.append(FaceRecord(
+                    face_id, -1, shell_id, face,
+                    getattr(face.Orientation(), "name", str(face.Orientation())),
+                    st, tuple(float(x) for x in BRepTools.UVBounds_s(face)),
+                    lo, hi, ff, ftol))
+                shr.face_ids.append(face_id)
+                face_id += 1
+                ef.Next()
+            shells.append(shr)
+            shell_id += 1
+            esh.Next()
+
+    return BRepModel(shape, solids, shells, faces)
+
+
+def load_step(path: str, *, build_freeform: bool = True,
+              trim_tol: float = 1e-8) -> BRepModel:
+    """Read STEP with OCCT and preserve its B-rep hierarchy."""
+    from OCP.STEPControl import STEPControl_Reader
+    from OCP.IFSelect import IFSelect_RetDone
+
+    r = STEPControl_Reader()
+    stat = r.ReadFile(path)
+    if stat != IFSelect_RetDone:
+        raise FreeformError(f"STEP read failed with status {stat}",
+                            "StepReadFailed")
+    if r.TransferRoots() == 0:
+        raise FreeformError("STEP contains no transferable roots",
+                            "StepReadFailed")
+    return index_shape(r.OneShape(), build_freeform=build_freeform,
+                       trim_tol=trim_tol)
+
+
+def _face_max_tolerance(face) -> float:
+    """Max OCCT tolerance over a face and its incident edges/vertices."""
+    from OCP.BRep import BRep_Tool
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_VERTEX
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    tol = float(BRep_Tool.Tolerance_s(face))
+    ex = TopExp_Explorer(face, TopAbs_EDGE)
+    while ex.More():
+        edge = TopoDS.Edge(ex.Current())
+        tol = max(tol, float(BRep_Tool.Tolerance_s(edge)))
+        ev = TopExp_Explorer(edge, TopAbs_VERTEX)
+        while ev.More():
+            tol = max(tol,
+                      float(BRep_Tool.Tolerance_s(TopoDS.Vertex(ev.Current()))))
+            ev.Next()
+        ex.Next()
+    return tol
+
+
+def face_broadphase_pads(model: "BRepModel", contact_tol: float) -> "np.ndarray":
+    """Per-face conservative broad-phase pad.
+
+    pad_i = contact_tol + tol_face_i, where tol_face_i is the max OCCT
+    tolerance over face i and its incident edges and vertices. The pad is
+    derived from entity tolerances, not tuned: a face whose boundary
+    entities carry tolerance t is geometrically uncertain over a band of
+    about t around it, and the exact contact classifier needs a further
+    contact_tol band to avoid dropping tolerance-near contacts as
+    "disjoint". Adding the pad only widens the candidate set, which can
+    add typed refusals but never new acceptances.
+    """
+    return np.array([float(contact_tol) + float(f.tol_face)
+                     for f in model.faces], dtype=np.float64)
+
+
+def model_max_tolerance(model: "BRepModel") -> float:
+    """Maximum OCCT tolerance over every vertex, edge, and face.
+
+    G6: the per-model pad is derived from this quantity, so the broad
+    phase can never treat a high-tolerance face as disjoint from a
+    nearby solid.
+    """
+    from OCP.BRep import BRep_Tool
+    from OCP.TopAbs import TopAbs_VERTEX, TopAbs_EDGE, TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    tol = 0.0
+    for ttype, cast in ((TopAbs_VERTEX, TopoDS.Vertex),
+                        (TopAbs_EDGE, TopoDS.Edge),
+                        (TopAbs_FACE, TopoDS.Face)):
+        ex = TopExp_Explorer(model.shape, ttype)
+        while ex.More():
+            tol = max(tol, float(BRep_Tool.Tolerance_s(cast(ex.Current()))))
+            ex.Next()
+    return tol
+
+
+def _effective_face_pads(model: "BRepModel", pad: float,
+                       pads: "np.ndarray | None") -> "np.ndarray":
+    """Per-face effective pad: the per-face array, floored by the scalar."""
+    n = len(model.faces)
+    if pads is None:
+        return np.full(n, float(pad), dtype=np.float64)
+    return np.maximum(np.asarray(pads, dtype=np.float64).reshape(n),
+                      float(pad))
+
+
+def _face_pairs_aabb(a: BRepModel, b: BRepModel,
+                     pad: float = 0.0,
+                     pads_a: "np.ndarray | None" = None,
+                     pads_b: "np.ndarray | None" = None
+                     ) -> list[tuple[int, int]]:
+    """Sweep-and-prune on precise face AABBs, expanded per face.
+
+    Each face's box is expanded by its own pad (G6 rework: pad_i =
+    contact_tol + max tolerance over face i and its incident edges and
+    vertices). When no per-face arrays are given the scalar pad applies
+    uniformly, preserving the old call signature and behavior.
+    """
+    if not a.faces or not b.faces:
+        return []
+    pa = _effective_face_pads(a, pad, pads_a)
+    pb = _effective_face_pads(b, pad, pads_b)
+    alo = np.vstack([f.bbox_lo for f in a.faces]) - pa[:, None]
+    ahi = np.vstack([f.bbox_hi for f in a.faces]) + pa[:, None]
+    blo = np.vstack([f.bbox_lo for f in b.faces]) - pb[:, None]
+    bhi = np.vstack([f.bbox_hi for f in b.faces]) + pb[:, None]
+    oa = np.argsort(alo[:, 0], kind="mergesort")
+    ob = np.argsort(blo[:, 0], kind="mergesort")
+    active: list[int] = []
+    jb = 0
+    pairs = []
+    for ia in oa:
+        xmin, xmax = alo[ia, 0], ahi[ia, 0]
+        while jb < len(ob) and blo[ob[jb], 0] <= xmax:
+            active.append(int(ob[jb]))
+            jb += 1
+        # A minima are monotone, but A maxima are not.  Therefore
+        # only expire B intervals that end before the current xmin.  A B
+        # interval whose start is beyond this *particular* xmax may still
+        # overlap a later, wider A interval and must remain active.
+        active = [j for j in active if bhi[j, 0] >= xmin]
+        for j in active:
+            if (blo[j, 0] <= xmax and bhi[j, 0] >= xmin
+                    and alo[ia, 1] <= bhi[j, 1] and ahi[ia, 1] >= blo[j, 1]
+                    and alo[ia, 2] <= bhi[j, 2]
+                    and ahi[ia, 2] >= blo[j, 2]):
+                pairs.append((int(ia), int(j)))
+    return pairs
+
+
+def candidate_face_pairs(a: BRepModel, b: BRepModel,
+                         pad: float = 0.0,
+                         pads_a: "np.ndarray | None" = None,
+                         pads_b: "np.ndarray | None" = None) -> list[dict]:
+    """Conservative face/patch interaction candidates.
+
+    NURBS pairs get a second conservative control-hull filter. Analytic or
+    unsupported freeform pairs remain face-level candidates, so accuracy is
+    never traded away for speed.
+
+    pads_a / pads_b are optional per-face pads (see face_broadphase_pads);
+    when given, each face's box is expanded by its own pad instead of the
+    uniform scalar. The NURBS patch filter then uses the pair sum
+    pads_a[i] + pads_b[j].
+    """
+    out = []
+    pa = _effective_face_pads(a, float(pad), pads_a)
+    pb = _effective_face_pads(b, float(pad), pads_b)
+    for ia, ib in _face_pairs_aabb(a, b, float(pad), pads_a, pads_b):
+        fa, fb = a.faces[ia], b.faces[ib]
+        patch_pairs = None
+        if fa.freeform is not None and fb.freeform is not None:
+            pp = candidate_patch_pairs(
+                fa.freeform.index, fb.freeform.index,
+                pad=float(pa[ia] + pb[ib]))
+            if not pp:
+                continue
+            patch_pairs = pp
+        out.append({"face_a": fa.face_id, "face_b": fb.face_id,
+                    "surface_a": fa.surface_type,
+                    "surface_b": fb.surface_type,
+                    "patch_pairs": patch_pairs})
+    return out

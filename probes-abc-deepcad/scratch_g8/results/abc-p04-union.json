@@ -1,0 +1,43 @@
+{
+ "case_id": "abc-p04-union",
+ "corpus": "abc",
+ "model_a": "00274640_57f551c18faa3110d3af43b6_step_000",
+ "model_b": "00274641_f6201113d1d0435653e88270_step_000",
+ "op": "union",
+ "outcome": "accepted",
+ "load_s": 6.143653863000054,
+ "shift_applied": [
+  119.8029117685798,
+  31.75,
+  3.174999999999997
+ ],
+ "diag_a": 212.5116470743192,
+ "boolean_s": 49.843694477999975,
+ "result_solids": 1,
+ "result_volume": 458437.84339333395,
+ "volume_a": 357566.40293564886,
+ "volume_b": 119984.48904638532,
+ "stage_keys": [
+  "assembly",
+  "ingest",
+  "intersection",
+  "same_domain",
+  "split",
+  "verification"
+ ],
+ "broadphase_max_tolerance": 1e-05,
+ "timings_ms": {
+  "ingest": 32.11228800000754,
+  "same_domain": 537.464172,
+  "intersection": 33504.640623,
+  "split": 611.8979720000652,
+  "assembly": 14651.9921150001,
+  "verification": 347.0797469999525,
+  "total": 49727.27988700001
+ },
+ "intersection_summary": {},
+ "assembly_summary": {
+  "volume": 458437.84339333395
+ },
+ "wall_s": 57.082153120000044
+}

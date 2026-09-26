@@ -1,0 +1,1722 @@
+{
+ "manifest": {
+  "date": "2026-09-25",
+  "repo": "/home/hatch/workspace/brep-gates-g8",
+  "commit": "10ea7d8",
+  "pipeline": "boolean_brep defaults (base_tol=1e-7, contact_tol=4e-7, no tuning)",
+  "venv": "/home/hatch/workspace/brep-booleans/.venv/bin/python",
+  "src_path": "/home/hatch/workspace/brep-gates-g8/src",
+  "timeout_s": 120.0,
+  "max_workers": 4,
+  "pairing": "distinct models; B rigid-motion translated so its bbox center lands near A's center (0.25*diagA x offset); guaranteed overlap",
+  "recovery_note": "9 timeout records reconstructed from the sweep log after the driver crashed in its own aggregation step (KeyError on worker records missing 'pair'); worker files were intact. Harness fixed: worker now records 'pair'; driver persists driver-side records to disk."
+ },
+ "summary": {
+  "total": 45,
+  "by_outcome": {
+   "refused": 15,
+   "timeout": 9,
+   "accepted": 21
+  },
+  "refusal_histogram": {
+   "assembly/InsufficientPatchWitnesses": 6,
+   "intersection/SectionOutsideTrim": 9
+  },
+  "by_corpus": {
+   "abc": {
+    "accepted": 6,
+    "refused": 9,
+    "other": 6,
+    "cases": [
+     "abc-p01-difference",
+     "abc-p01-intersection",
+     "abc-p01-union",
+     "abc-p02-difference",
+     "abc-p02-intersection",
+     "abc-p02-union",
+     "abc-p03-difference",
+     "abc-p03-intersection",
+     "abc-p03-union",
+     "abc-p04-difference",
+     "abc-p04-intersection",
+     "abc-p04-union",
+     "abc-p05-difference",
+     "abc-p05-intersection",
+     "abc-p05-union",
+     "abc-p06-difference",
+     "abc-p06-intersection",
+     "abc-p06-union",
+     "abc-p07-difference",
+     "abc-p07-intersection",
+     "abc-p07-union"
+    ]
+   },
+   "deepcad": {
+    "accepted": 15,
+    "refused": 0,
+    "other": 0,
+    "cases": [
+     "deepcad-p01-difference",
+     "deepcad-p01-intersection",
+     "deepcad-p01-union",
+     "deepcad-p02-difference",
+     "deepcad-p02-intersection",
+     "deepcad-p02-union",
+     "deepcad-p03-difference",
+     "deepcad-p03-intersection",
+     "deepcad-p03-union",
+     "deepcad-p04-difference",
+     "deepcad-p04-intersection",
+     "deepcad-p04-union",
+     "deepcad-p05-difference",
+     "deepcad-p05-intersection",
+     "deepcad-p05-union"
+    ]
+   },
+   "nist": {
+    "accepted": 0,
+    "refused": 6,
+    "other": 3,
+    "cases": [
+     "nist-p01-difference",
+     "nist-p01-intersection",
+     "nist-p01-union",
+     "nist-p02-difference",
+     "nist-p02-intersection",
+     "nist-p02-union",
+     "nist-p03-difference",
+     "nist-p03-intersection",
+     "nist-p03-union"
+    ]
+   }
+  },
+  "by_op": {
+   "difference": {
+    "accepted": 7,
+    "refused": 5,
+    "other": 3
+   },
+   "intersection": {
+    "accepted": 7,
+    "refused": 5,
+    "other": 3
+   },
+   "union": {
+    "accepted": 7,
+    "refused": 5,
+    "other": 3
+   }
+  },
+  "timeouts": 9,
+  "worker_died": 0,
+  "exceptions": 0,
+  "accepted": 21,
+  "refused": 15,
+  "timeout_s": 1081.6,
+  "accept_s": 625.8051700380001
+ },
+ "inclusion_exclusion": [
+  {
+   "corpus": "abc",
+   "pair": "p03",
+   "identity_u_plus_i": {
+    "abs_err": 2.0494800992310047e-05,
+    "rel_err": 6.387853572089591e-11
+   },
+   "identity_d": {
+    "abs_err": 8.026836439967155e-08,
+    "rel_err": 2.501817697320503e-13
+   },
+   "flag": false
+  },
+  {
+   "corpus": "abc",
+   "pair": "p04",
+   "identity_u_plus_i": {
+    "abs_err": 3.366731107234955e-07,
+    "rel_err": 9.41568077871361e-13
+   },
+   "identity_d": {
+    "abs_err": 2.918532118201256e-07,
+    "rel_err": 8.162210135627601e-13
+   },
+   "flag": false
+  },
+  {
+   "corpus": "deepcad",
+   "pair": "p01",
+   "identity_u_plus_i": {
+    "abs_err": 1.1102230246251565e-16,
+    "rel_err": 2.6316397620744435e-16
+   },
+   "identity_d": {
+    "abs_err": 1.1102230246251565e-16,
+    "rel_err": 2.6316397620744435e-16
+   },
+   "flag": false
+  },
+  {
+   "corpus": "deepcad",
+   "pair": "p02",
+   "identity_u_plus_i": {
+    "abs_err": 1.6653345369377348e-15,
+    "rel_err": 2.7593892650877673e-15
+   },
+   "identity_d": {
+    "abs_err": 3.1086244689504383e-15,
+    "rel_err": 5.150859961497165e-15
+   },
+   "flag": false
+  },
+  {
+   "corpus": "deepcad",
+   "pair": "p03",
+   "identity_u_plus_i": {
+    "abs_err": 6.943839947481933e-10,
+    "rel_err": 1.2729299088286693e-08
+   },
+   "identity_d": {
+    "abs_err": 4.163336342344337e-16,
+    "rel_err": 7.632139264104563e-15
+   },
+   "flag": false
+  },
+  {
+   "corpus": "deepcad",
+   "pair": "p04",
+   "identity_u_plus_i": {
+    "abs_err": 5.134781488891349e-16,
+    "rel_err": 4.62217789758696e-15
+   },
+   "identity_d": {
+    "abs_err": 8.326672684688674e-17,
+    "rel_err": 7.495423617708583e-16
+   },
+   "flag": false
+  },
+  {
+   "corpus": "deepcad",
+   "pair": "p05",
+   "identity_u_plus_i": {
+    "abs_err": 0.0,
+    "rel_err": 0.0
+   },
+   "identity_d": {
+    "abs_err": 0.0,
+    "rel_err": 0.0
+   },
+   "flag": false
+  }
+ ],
+ "results": [
+  {
+   "case_id": "abc-p01-difference",
+   "corpus": "abc",
+   "model_a": "00270000_f721b803728e0d7882a3b586_step_000",
+   "model_b": "00270001_17f57cbca294b7452500921e_step_000",
+   "op": "difference",
+   "outcome": "refused",
+   "load_s": 5.263495972999976,
+   "shift_applied": [
+    612.5587928603823,
+    -2.499999999999943,
+    31.489066300494073
+   ],
+   "diag_a": 182.4672231229048,
+   "boolean_s": 13.357652596000037,
+   "refusal_stage": "assembly",
+   "refusal_kind": "InsufficientPatchWitnesses",
+   "refusal_type": "AssemblyError",
+   "refusal_message": "only 2 stable interior witness(es) found; 3 required",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.00023031367655241294,
+   "stage_keys": [
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in assembly: only 2 stable interior witness(es) found; 3 required",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 713, in boolean_brep\n    assembled = assemble_boolean(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 1612, in assemble_boolean\n    decisions = _classify_pieces(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 916, in _classify_pieces\n    one_side(\"B\", split.faces_b, model_a)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 883, in one_side\n    points = _face_points(piece.face, tol)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 233, in _face_points\n    raise AssemblyError(\nbrepkernel.assembly.AssemblyError: only 2 stable interior witness(es) found; 3 required\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 720, in boolean_brep\n    refuse(\"assembly\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in assembly: only 2 stable interior witness(es) found; 3 required\n",
+   "wall_s": 19.09203252200001,
+   "pair": "p01"
+  },
+  {
+   "case_id": "abc-p01-intersection",
+   "corpus": "abc",
+   "model_a": "00270000_f721b803728e0d7882a3b586_step_000",
+   "model_b": "00270001_17f57cbca294b7452500921e_step_000",
+   "op": "intersection",
+   "outcome": "refused",
+   "load_s": 5.283135281999989,
+   "shift_applied": [
+    612.5587928603823,
+    -2.499999999999943,
+    31.489066300494073
+   ],
+   "diag_a": 182.4672231229048,
+   "boolean_s": 13.646468256999981,
+   "refusal_stage": "assembly",
+   "refusal_kind": "InsufficientPatchWitnesses",
+   "refusal_type": "AssemblyError",
+   "refusal_message": "only 2 stable interior witness(es) found; 3 required",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.00023031367655241294,
+   "stage_keys": [
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in assembly: only 2 stable interior witness(es) found; 3 required",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 713, in boolean_brep\n    assembled = assemble_boolean(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 1612, in assemble_boolean\n    decisions = _classify_pieces(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 916, in _classify_pieces\n    one_side(\"B\", split.faces_b, model_a)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 883, in one_side\n    points = _face_points(piece.face, tol)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 233, in _face_points\n    raise AssemblyError(\nbrepkernel.assembly.AssemblyError: only 2 stable interior witness(es) found; 3 required\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 720, in boolean_brep\n    refuse(\"assembly\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in assembly: only 2 stable interior witness(es) found; 3 required\n",
+   "wall_s": 19.445152549,
+   "pair": "p01"
+  },
+  {
+   "case_id": "abc-p01-union",
+   "corpus": "abc",
+   "model_a": "00270000_f721b803728e0d7882a3b586_step_000",
+   "model_b": "00270001_17f57cbca294b7452500921e_step_000",
+   "op": "union",
+   "outcome": "refused",
+   "load_s": 4.837223547999997,
+   "shift_applied": [
+    612.5587928603823,
+    -2.499999999999943,
+    31.489066300494073
+   ],
+   "diag_a": 182.4672231229048,
+   "boolean_s": 14.806935029000044,
+   "refusal_stage": "assembly",
+   "refusal_kind": "InsufficientPatchWitnesses",
+   "refusal_type": "AssemblyError",
+   "refusal_message": "only 2 stable interior witness(es) found; 3 required",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.00023031367655241294,
+   "stage_keys": [
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in assembly: only 2 stable interior witness(es) found; 3 required",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 713, in boolean_brep\n    assembled = assemble_boolean(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 1612, in assemble_boolean\n    decisions = _classify_pieces(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 916, in _classify_pieces\n    one_side(\"B\", split.faces_b, model_a)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 883, in one_side\n    points = _face_points(piece.face, tol)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 233, in _face_points\n    raise AssemblyError(\nbrepkernel.assembly.AssemblyError: only 2 stable interior witness(es) found; 3 required\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 720, in boolean_brep\n    refuse(\"assembly\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in assembly: only 2 stable interior witness(es) found; 3 required\n",
+   "wall_s": 20.12529815199997,
+   "pair": "p01"
+  },
+  {
+   "case_id": "abc-p02-difference",
+   "corpus": "abc",
+   "pair": "p02",
+   "model_a": "00271652_57f306c0546dad10b4476287_step_000",
+   "model_b": "00271653_b2d2c3d7d6040dfd53955a21_step_000",
+   "op": "difference",
+   "outcome": "timeout",
+   "worker_rc": -9,
+   "wall_s": 120.2,
+   "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+  },
+  {
+   "case_id": "abc-p02-intersection",
+   "corpus": "abc",
+   "pair": "p02",
+   "model_a": "00271652_57f306c0546dad10b4476287_step_000",
+   "model_b": "00271653_b2d2c3d7d6040dfd53955a21_step_000",
+   "op": "intersection",
+   "outcome": "timeout",
+   "worker_rc": -9,
+   "wall_s": 120.2,
+   "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+  },
+  {
+   "case_id": "abc-p02-union",
+   "corpus": "abc",
+   "pair": "p02",
+   "model_a": "00271652_57f306c0546dad10b4476287_step_000",
+   "model_b": "00271653_b2d2c3d7d6040dfd53955a21_step_000",
+   "op": "union",
+   "outcome": "timeout",
+   "worker_rc": -9,
+   "wall_s": 120.1,
+   "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+  },
+  {
+   "case_id": "abc-p03-difference",
+   "corpus": "abc",
+   "model_a": "00273424_5d63f56c7f6fd30b2b3a0df0_step_000",
+   "model_b": "00273425_cb285a35e4407299696abb3a_step_000",
+   "op": "difference",
+   "outcome": "accepted",
+   "load_s": 4.833602557000063,
+   "shift_applied": [
+    68.14992309881889,
+    82.52829622084664,
+    -21.11439593136314
+   ],
+   "diag_a": 135.44907694155538,
+   "boolean_s": 77.06686577599999,
+   "result_solids": 1,
+   "result_volume": 214349.74885726825,
+   "volume_a": 258878.48736467125,
+   "volume_b": 320840.1814634239,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 0.00026982534183081627,
+   "timings_ms": {
+    "ingest": 131.25425999999152,
+    "same_domain": 1452.6533380000046,
+    "intersection": 57594.48152899995,
+    "split": 868.7479550000035,
+    "assembly": 15675.74679900008,
+    "verification": 1049.042295999925,
+    "total": 76831.99336899997
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 214349.74885726825
+   },
+   "wall_s": 83.32576668900003,
+   "pair": "p03"
+  },
+  {
+   "case_id": "abc-p03-intersection",
+   "corpus": "abc",
+   "model_a": "00273424_5d63f56c7f6fd30b2b3a0df0_step_000",
+   "model_b": "00273425_cb285a35e4407299696abb3a_step_000",
+   "op": "intersection",
+   "outcome": "accepted",
+   "load_s": 4.756988416000013,
+   "shift_applied": [
+    68.14992309881889,
+    82.52829622084664,
+    -21.11439593136314
+   ],
+   "diag_a": 135.44907694155538,
+   "boolean_s": 81.87876518799999,
+   "result_solids": 1,
+   "result_volume": 44528.73850732274,
+   "volume_a": 258878.48736467125,
+   "volume_b": 320840.1814634239,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 0.00026982534183081627,
+   "timings_ms": {
+    "ingest": 44.8142809999581,
+    "same_domain": 1704.361047999896,
+    "intersection": 61613.38049699998,
+    "split": 989.031008999973,
+    "assembly": 16842.810626999948,
+    "verification": 539.2707420000988,
+    "total": 81745.69482300001
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 44528.73850732274
+   },
+   "wall_s": 87.56033475800007,
+   "pair": "p03"
+  },
+  {
+   "case_id": "abc-p03-union",
+   "corpus": "abc",
+   "model_a": "00273424_5d63f56c7f6fd30b2b3a0df0_step_000",
+   "model_b": "00273425_cb285a35e4407299696abb3a_step_000",
+   "op": "union",
+   "outcome": "accepted",
+   "load_s": 5.896263640000029,
+   "shift_applied": [
+    68.14992309881889,
+    82.52829622084664,
+    -21.11439593136314
+   ],
+   "diag_a": 135.44907694155538,
+   "boolean_s": 82.745945291,
+   "result_solids": 1,
+   "result_volume": 535189.9303002775,
+   "volume_a": 258878.48736467125,
+   "volume_b": 320840.1814634239,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 0.00026982534183081627,
+   "timings_ms": {
+    "ingest": 78.0172460000017,
+    "same_domain": 1633.2504030000337,
+    "intersection": 61966.44129599997,
+    "split": 795.2845100001014,
+    "assembly": 17030.456073999972,
+    "verification": 1060.9770070000195,
+    "total": 82582.53600799998
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 535189.9303002775
+   },
+   "wall_s": 90.44107316399999,
+   "pair": "p03"
+  },
+  {
+   "case_id": "abc-p04-difference",
+   "corpus": "abc",
+   "model_a": "00274640_57f551c18faa3110d3af43b6_step_000",
+   "model_b": "00274641_f6201113d1d0435653e88270_step_000",
+   "op": "difference",
+   "outcome": "accepted",
+   "load_s": 5.0674644880000415,
+   "shift_applied": [
+    119.8029117685798,
+    31.75,
+    3.174999999999997
+   ],
+   "diag_a": 212.5116470743192,
+   "boolean_s": 51.459516439000026,
+   "result_solids": 1,
+   "result_volume": 338453.35434699344,
+   "volume_a": 357566.40293564886,
+   "volume_b": 119984.48904638532,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-05,
+   "timings_ms": {
+    "ingest": 39.59787700000561,
+    "same_domain": 742.9604950000339,
+    "intersection": 38220.6188240001,
+    "split": 730.9757379999837,
+    "assembly": 11308.206012000028,
+    "verification": 226.58909200004018,
+    "total": 51312.96351100002
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 338453.35434699344
+   },
+   "wall_s": 57.362579728000014,
+   "pair": "p04"
+  },
+  {
+   "case_id": "abc-p04-intersection",
+   "corpus": "abc",
+   "model_a": "00274640_57f551c18faa3110d3af43b6_step_000",
+   "model_b": "00274641_f6201113d1d0435653e88270_step_000",
+   "op": "intersection",
+   "outcome": "accepted",
+   "load_s": 4.595800025000017,
+   "shift_applied": [
+    119.8029117685798,
+    31.75,
+    3.174999999999997
+   ],
+   "diag_a": 212.5116470743192,
+   "boolean_s": 49.66266667800005,
+   "result_solids": 1,
+   "result_volume": 19113.048588363596,
+   "volume_a": 357566.40293564886,
+   "volume_b": 119984.48904638532,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-05,
+   "timings_ms": {
+    "ingest": 65.75364000002537,
+    "same_domain": 712.3746570000549,
+    "intersection": 36366.01651499995,
+    "split": 856.0337540000091,
+    "assembly": 11377.61863000003,
+    "verification": 121.2366340000699,
+    "total": 49514.65543299992
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 19113.048588363596
+   },
+   "wall_s": 54.810879688,
+   "pair": "p04"
+  },
+  {
+   "case_id": "abc-p04-union",
+   "corpus": "abc",
+   "model_a": "00274640_57f551c18faa3110d3af43b6_step_000",
+   "model_b": "00274641_f6201113d1d0435653e88270_step_000",
+   "op": "union",
+   "outcome": "accepted",
+   "load_s": 6.143653863000054,
+   "shift_applied": [
+    119.8029117685798,
+    31.75,
+    3.174999999999997
+   ],
+   "diag_a": 212.5116470743192,
+   "boolean_s": 49.843694477999975,
+   "result_solids": 1,
+   "result_volume": 458437.84339333395,
+   "volume_a": 357566.40293564886,
+   "volume_b": 119984.48904638532,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-05,
+   "timings_ms": {
+    "ingest": 32.11228800000754,
+    "same_domain": 537.464172,
+    "intersection": 33504.640623,
+    "split": 611.8979720000652,
+    "assembly": 14651.9921150001,
+    "verification": 347.0797469999525,
+    "total": 49727.27988700001
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 458437.84339333395
+   },
+   "wall_s": 57.082153120000044,
+   "pair": "p04"
+  },
+  {
+   "case_id": "abc-p05-difference",
+   "corpus": "abc",
+   "model_a": "00276306_054795ab5ffc023ecdb325b3_step_000",
+   "model_b": "00276308_ac93f9efc71ac47d62bf0bb3_step_000",
+   "op": "difference",
+   "outcome": "refused",
+   "load_s": 11.332719702999952,
+   "shift_applied": [
+    98.15377650574192,
+    0.0,
+    0.5051802013703508
+   ],
+   "diag_a": 166.34622154182668,
+   "boolean_s": 46.25042899699997,
+   "refusal_stage": "intersection",
+   "refusal_kind": "SectionOutsideTrim",
+   "refusal_type": "IntersectionError",
+   "refusal_message": "section edge 0: p-curve left a trimmed input face",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.0021688177201117983,
+   "stage_keys": [
+    "ingest",
+    "same_domain"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 646, in boolean_brep\n    ix = intersect_models(\n         ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1428, in intersect_models\n    r = section_face_pair(\n        ^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1243, in section_face_pair\n    _verify_section_edge(\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 468, in _verify_section_edge\n    raise IntersectionError(\nbrepkernel.intersection.IntersectionError: section edge 0: p-curve left a trimmed input face\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 662, in boolean_brep\n    refuse(\"intersection\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face\n",
+   "wall_s": 58.13596324799994,
+   "pair": "p05"
+  },
+  {
+   "case_id": "abc-p05-intersection",
+   "corpus": "abc",
+   "model_a": "00276306_054795ab5ffc023ecdb325b3_step_000",
+   "model_b": "00276308_ac93f9efc71ac47d62bf0bb3_step_000",
+   "op": "intersection",
+   "outcome": "refused",
+   "load_s": 11.10165874300003,
+   "shift_applied": [
+    98.15377650574192,
+    0.0,
+    0.5051802013703508
+   ],
+   "diag_a": 166.34622154182668,
+   "boolean_s": 44.18042942500006,
+   "refusal_stage": "intersection",
+   "refusal_kind": "SectionOutsideTrim",
+   "refusal_type": "IntersectionError",
+   "refusal_message": "section edge 0: p-curve left a trimmed input face",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.0021688177201117983,
+   "stage_keys": [
+    "ingest",
+    "same_domain"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 646, in boolean_brep\n    ix = intersect_models(\n         ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1428, in intersect_models\n    r = section_face_pair(\n        ^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1243, in section_face_pair\n    _verify_section_edge(\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 468, in _verify_section_edge\n    raise IntersectionError(\nbrepkernel.intersection.IntersectionError: section edge 0: p-curve left a trimmed input face\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 662, in boolean_brep\n    refuse(\"intersection\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face\n",
+   "wall_s": 55.77726704200006,
+   "pair": "p05"
+  },
+  {
+   "case_id": "abc-p05-union",
+   "corpus": "abc",
+   "model_a": "00276306_054795ab5ffc023ecdb325b3_step_000",
+   "model_b": "00276308_ac93f9efc71ac47d62bf0bb3_step_000",
+   "op": "union",
+   "outcome": "refused",
+   "load_s": 11.795265918000041,
+   "shift_applied": [
+    98.15377650574192,
+    0.0,
+    0.5051802013703508
+   ],
+   "diag_a": 166.34622154182668,
+   "boolean_s": 43.687112813,
+   "refusal_stage": "intersection",
+   "refusal_kind": "SectionOutsideTrim",
+   "refusal_type": "IntersectionError",
+   "refusal_message": "section edge 0: p-curve left a trimmed input face",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.0021688177201117983,
+   "stage_keys": [
+    "ingest",
+    "same_domain"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 646, in boolean_brep\n    ix = intersect_models(\n         ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1428, in intersect_models\n    r = section_face_pair(\n        ^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1243, in section_face_pair\n    _verify_section_edge(\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 468, in _verify_section_edge\n    raise IntersectionError(\nbrepkernel.intersection.IntersectionError: section edge 0: p-curve left a trimmed input face\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 662, in boolean_brep\n    refuse(\"intersection\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face\n",
+   "wall_s": 55.909954581999955,
+   "pair": "p05"
+  },
+  {
+   "case_id": "abc-p06-difference",
+   "corpus": "abc",
+   "model_a": "00277683_640b44922dd8b86d2c2066aa_step_000",
+   "model_b": "00277684_57f868642c914910f87ec7be_step_000",
+   "op": "difference",
+   "outcome": "refused",
+   "load_s": 4.953571699999998,
+   "shift_applied": [
+    36.00925961744856,
+    6.50547724151982,
+    269.08728968314995
+   ],
+   "diag_a": 145.91204413223545,
+   "boolean_s": 46.653905279000014,
+   "refusal_stage": "assembly",
+   "refusal_kind": "InsufficientPatchWitnesses",
+   "refusal_type": "AssemblyError",
+   "refusal_message": "only 1 stable interior witness(es) found; 3 required",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.00023358218940368306,
+   "stage_keys": [
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in assembly: only 1 stable interior witness(es) found; 3 required",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 713, in boolean_brep\n    assembled = assemble_boolean(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 1612, in assemble_boolean\n    decisions = _classify_pieces(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 916, in _classify_pieces\n    one_side(\"B\", split.faces_b, model_a)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 883, in one_side\n    points = _face_points(piece.face, tol)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 233, in _face_points\n    raise AssemblyError(\nbrepkernel.assembly.AssemblyError: only 1 stable interior witness(es) found; 3 required\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 720, in boolean_brep\n    refuse(\"assembly\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in assembly: only 1 stable interior witness(es) found; 3 required\n",
+   "wall_s": 52.19371928800001,
+   "pair": "p06"
+  },
+  {
+   "case_id": "abc-p06-intersection",
+   "corpus": "abc",
+   "model_a": "00277683_640b44922dd8b86d2c2066aa_step_000",
+   "model_b": "00277684_57f868642c914910f87ec7be_step_000",
+   "op": "intersection",
+   "outcome": "refused",
+   "load_s": 5.082113460999949,
+   "shift_applied": [
+    36.00925961744856,
+    6.50547724151982,
+    269.08728968314995
+   ],
+   "diag_a": 145.91204413223545,
+   "boolean_s": 44.56992823899998,
+   "refusal_stage": "assembly",
+   "refusal_kind": "InsufficientPatchWitnesses",
+   "refusal_type": "AssemblyError",
+   "refusal_message": "only 1 stable interior witness(es) found; 3 required",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.00023358218940368306,
+   "stage_keys": [
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in assembly: only 1 stable interior witness(es) found; 3 required",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 713, in boolean_brep\n    assembled = assemble_boolean(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 1612, in assemble_boolean\n    decisions = _classify_pieces(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 916, in _classify_pieces\n    one_side(\"B\", split.faces_b, model_a)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 883, in one_side\n    points = _face_points(piece.face, tol)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 233, in _face_points\n    raise AssemblyError(\nbrepkernel.assembly.AssemblyError: only 1 stable interior witness(es) found; 3 required\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 720, in boolean_brep\n    refuse(\"assembly\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in assembly: only 1 stable interior witness(es) found; 3 required\n",
+   "wall_s": 50.172206142999926,
+   "pair": "p06"
+  },
+  {
+   "case_id": "abc-p06-union",
+   "corpus": "abc",
+   "model_a": "00277683_640b44922dd8b86d2c2066aa_step_000",
+   "model_b": "00277684_57f868642c914910f87ec7be_step_000",
+   "op": "union",
+   "outcome": "refused",
+   "load_s": 5.256942713000058,
+   "shift_applied": [
+    36.00925961744856,
+    6.50547724151982,
+    269.08728968314995
+   ],
+   "diag_a": 145.91204413223545,
+   "boolean_s": 44.51567542099997,
+   "refusal_stage": "assembly",
+   "refusal_kind": "InsufficientPatchWitnesses",
+   "refusal_type": "AssemblyError",
+   "refusal_message": "only 1 stable interior witness(es) found; 3 required",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.00023358218940368306,
+   "stage_keys": [
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in assembly: only 1 stable interior witness(es) found; 3 required",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 713, in boolean_brep\n    assembled = assemble_boolean(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 1612, in assemble_boolean\n    decisions = _classify_pieces(\n                ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 916, in _classify_pieces\n    one_side(\"B\", split.faces_b, model_a)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 883, in one_side\n    points = _face_points(piece.face, tol)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/assembly.py\", line 233, in _face_points\n    raise AssemblyError(\nbrepkernel.assembly.AssemblyError: only 1 stable interior witness(es) found; 3 required\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 720, in boolean_brep\n    refuse(\"assembly\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in assembly: only 1 stable interior witness(es) found; 3 required\n",
+   "wall_s": 50.16088776600009,
+   "pair": "p06"
+  },
+  {
+   "case_id": "abc-p07-difference",
+   "corpus": "abc",
+   "pair": "p07",
+   "model_a": "00278938_a93ea5222a2983d78928d266_step_000",
+   "model_b": "00278942_57faa02e03533510d98e5216_step_000",
+   "op": "difference",
+   "outcome": "timeout",
+   "worker_rc": -9,
+   "wall_s": 120.2,
+   "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+  },
+  {
+   "case_id": "abc-p07-intersection",
+   "corpus": "abc",
+   "pair": "p07",
+   "model_a": "00278938_a93ea5222a2983d78928d266_step_000",
+   "model_b": "00278942_57faa02e03533510d98e5216_step_000",
+   "op": "intersection",
+   "outcome": "timeout",
+   "worker_rc": -9,
+   "wall_s": 120.2,
+   "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+  },
+  {
+   "case_id": "abc-p07-union",
+   "corpus": "abc",
+   "pair": "p07",
+   "model_a": "00278938_a93ea5222a2983d78928d266_step_000",
+   "model_b": "00278942_57faa02e03533510d98e5216_step_000",
+   "op": "union",
+   "outcome": "timeout",
+   "worker_rc": -9,
+   "wall_s": 120.1,
+   "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+  },
+  {
+   "case_id": "deepcad-p01-difference",
+   "corpus": "deepcad",
+   "model_a": "m000",
+   "model_b": "m001",
+   "op": "difference",
+   "outcome": "accepted",
+   "load_s": 4.6839532440000085,
+   "shift_applied": [
+    0.05203428439270508,
+    -0.044605111108875,
+    0.34600667777922994
+   ],
+   "diag_a": 1.2990384520868203,
+   "boolean_s": 5.5067932770000425,
+   "result_solids": 1,
+   "result_volume": 0.4192614499873641,
+   "volume_a": 0.4218750000000002,
+   "volume_b": 0.004707312837275136,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 20.988402000000406,
+    "same_domain": 161.6766639999696,
+    "intersection": 315.02907099996946,
+    "split": 165.48399500004507,
+    "assembly": 4682.058241999983,
+    "verification": 36.72768100000212,
+    "total": 5419.758736999995
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.4192614499873641
+   },
+   "wall_s": 10.528564094999979,
+   "pair": "p01"
+  },
+  {
+   "case_id": "deepcad-p01-intersection",
+   "corpus": "deepcad",
+   "model_a": "m000",
+   "model_b": "m001",
+   "op": "intersection",
+   "outcome": "accepted",
+   "load_s": 5.033365960000026,
+   "shift_applied": [
+    0.05203428439270508,
+    -0.044605111108875,
+    0.34600667777922994
+   ],
+   "diag_a": 1.2990384520868203,
+   "boolean_s": 7.172552794000012,
+   "result_solids": 1,
+   "result_volume": 0.0026135500126362493,
+   "volume_a": 0.4218750000000002,
+   "volume_b": 0.004707312837275136,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 57.34815199997456,
+    "same_domain": 199.55017400002362,
+    "intersection": 381.8142880000437,
+    "split": 130.97382000000835,
+    "assembly": 6211.344809999957,
+    "verification": 57.83523200000218,
+    "total": 7051.3272759999945
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.0026135500126362493
+   },
+   "wall_s": 12.67553390300003,
+   "pair": "p01"
+  },
+  {
+   "case_id": "deepcad-p01-union",
+   "corpus": "deepcad",
+   "model_a": "m000",
+   "model_b": "m001",
+   "op": "union",
+   "outcome": "accepted",
+   "load_s": 4.531324442000027,
+   "shift_applied": [
+    0.05203428439270508,
+    -0.044605111108875,
+    0.34600667777922994
+   ],
+   "diag_a": 1.2990384520868203,
+   "boolean_s": 5.576188779999995,
+   "result_solids": 1,
+   "result_volume": 0.42396876282463924,
+   "volume_a": 0.4218750000000002,
+   "volume_b": 0.004707312837275136,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 10.68424700002879,
+    "same_domain": 142.49633299999687,
+    "intersection": 410.6734469999651,
+    "split": 149.33078500001784,
+    "assembly": 4757.092162000049,
+    "verification": 40.5680709999956,
+    "total": 5535.457434000023
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.42396876282463924
+   },
+   "wall_s": 10.383674962000043,
+   "pair": "p01"
+  },
+  {
+   "case_id": "deepcad-p02-difference",
+   "corpus": "deepcad",
+   "model_a": "m002",
+   "model_b": "m003",
+   "op": "difference",
+   "outcome": "accepted",
+   "load_s": 4.495608548999996,
+   "shift_applied": [
+    0.4677072535251167,
+    0.0,
+    -0.125
+   ],
+   "diag_a": 1.870829014100467,
+   "boolean_s": 8.035583903999964,
+   "result_solids": 1,
+   "result_volume": 0.5930764362733663,
+   "volume_a": 0.6035156250000001,
+   "volume_b": 0.015658783089946064,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 31.65005400001064,
+    "same_domain": 202.16189100000292,
+    "intersection": 4549.999623999952,
+    "split": 43.928082000036284,
+    "assembly": 2910.3569430000107,
+    "verification": 100.94836100000748,
+    "total": 7862.032598000042
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.5930764362733663
+   },
+   "wall_s": 13.044742343999985,
+   "pair": "p02"
+  },
+  {
+   "case_id": "deepcad-p02-intersection",
+   "corpus": "deepcad",
+   "model_a": "m002",
+   "model_b": "m003",
+   "op": "intersection",
+   "outcome": "accepted",
+   "load_s": 4.596649447999994,
+   "shift_applied": [
+    0.4677072535251167,
+    0.0,
+    -0.125
+   ],
+   "diag_a": 1.870829014100467,
+   "boolean_s": 8.837113731999978,
+   "result_solids": 1,
+   "result_volume": 0.01043918872663071,
+   "volume_a": 0.6035156250000001,
+   "volume_b": 0.015658783089946064,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 40.63569300001291,
+    "same_domain": 203.8889820000236,
+    "intersection": 4345.8197159999945,
+    "split": 294.38577700000224,
+    "assembly": 3802.5861700000405,
+    "verification": 13.867770999979712,
+    "total": 8744.551510000008
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.01043918872663071
+   },
+   "wall_s": 13.855247394000003,
+   "pair": "p02"
+  },
+  {
+   "case_id": "deepcad-p02-union",
+   "corpus": "deepcad",
+   "model_a": "m002",
+   "model_b": "m003",
+   "op": "union",
+   "outcome": "accepted",
+   "load_s": 4.279556431000003,
+   "shift_applied": [
+    0.4677072535251167,
+    0.0,
+    -0.125
+   ],
+   "diag_a": 1.870829014100467,
+   "boolean_s": 8.802012191000017,
+   "result_solids": 1,
+   "result_volume": 0.6087352193633171,
+   "volume_a": 0.6035156250000001,
+   "volume_b": 0.015658783089946064,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 41.31652500001337,
+    "same_domain": 199.4153520000168,
+    "intersection": 3683.7233269999956,
+    "split": 112.48808099998087,
+    "assembly": 4538.004581999985,
+    "verification": 37.68740099997103,
+    "total": 8633.49151099999
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.6087352193633171
+   },
+   "wall_s": 13.582233055000017,
+   "pair": "p02"
+  },
+  {
+   "case_id": "deepcad-p03-difference",
+   "corpus": "deepcad",
+   "model_a": "m004",
+   "model_b": "m005",
+   "op": "difference",
+   "outcome": "accepted",
+   "load_s": 4.934463236999989,
+   "shift_applied": [
+    0.45160342019525235,
+    0.375,
+    -0.05729166666650002
+   ],
+   "diag_a": 1.8064136807808762,
+   "boolean_s": 15.270964900000024,
+   "result_solids": 1,
+   "result_volume": 0.046877601052481656,
+   "volume_a": 0.05455005730733084,
+   "volume_b": 0.03576713049546773,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 9.003616000029524,
+    "same_domain": 66.87054500002887,
+    "intersection": 2204.022366000004,
+    "split": 524.6299199999953,
+    "assembly": 12312.664943000016,
+    "verification": 80.71434099997532,
+    "total": 15205.592442000012
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.046877601052481656
+   },
+   "wall_s": 20.484431239000003,
+   "pair": "p03"
+  },
+  {
+   "case_id": "deepcad-p03-intersection",
+   "corpus": "deepcad",
+   "model_a": "m004",
+   "model_b": "m005",
+   "op": "intersection",
+   "outcome": "accepted",
+   "load_s": 5.511337763999961,
+   "shift_applied": [
+    0.45160342019525235,
+    0.375,
+    -0.05729166666650002
+   ],
+   "diag_a": 1.8064136807808762,
+   "boolean_s": 14.839028378000023,
+   "result_solids": 1,
+   "result_volume": 0.007672456254848767,
+   "volume_a": 0.05455005730733084,
+   "volume_b": 0.03576713049546773,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 43.51893800003381,
+    "same_domain": 253.43884599999456,
+    "intersection": 4258.260347999965,
+    "split": 797.4626280000052,
+    "assembly": 9242.005127000028,
+    "verification": 8.32999499999687,
+    "total": 14644.734870000037
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.007672456254848767
+   },
+   "wall_s": 21.003358365999986,
+   "pair": "p03"
+  },
+  {
+   "case_id": "deepcad-p03-union",
+   "corpus": "deepcad",
+   "model_a": "m004",
+   "model_b": "m005",
+   "op": "union",
+   "outcome": "accepted",
+   "load_s": 4.989588114000014,
+   "shift_applied": [
+    0.45160342019525235,
+    0.375,
+    -0.05729166666650002
+   ],
+   "diag_a": 1.8064136807808762,
+   "boolean_s": 19.28931494400001,
+   "result_solids": 1,
+   "result_volume": 0.0826447322423338,
+   "volume_a": 0.05455005730733084,
+   "volume_b": 0.03576713049546773,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 35.71271800001341,
+    "same_domain": 282.65699399997857,
+    "intersection": 3499.1432980000354,
+    "split": 589.3339460000107,
+    "assembly": 14439.441792000025,
+    "verification": 149.38493599998992,
+    "total": 19038.203829
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.0826447322423338
+   },
+   "wall_s": 25.040956883000035,
+   "pair": "p03"
+  },
+  {
+   "case_id": "deepcad-p04-difference",
+   "corpus": "deepcad",
+   "model_a": "m006",
+   "model_b": "m007",
+   "op": "difference",
+   "outcome": "accepted",
+   "load_s": 5.536265284999956,
+   "shift_applied": [
+    0.36836203592160377,
+    -0.41420885712494016,
+    -0.027382268036266276
+   ],
+   "diag_a": 1.2597280758164138,
+   "boolean_s": 6.66823602300002,
+   "result_solids": 1,
+   "result_volume": 0.10913160129129856,
+   "volume_a": 0.1110900878906456,
+   "volume_b": 0.0029137799126538752,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 21.274932000039826,
+    "same_domain": 102.57598300000836,
+    "intersection": 1363.7446569999838,
+    "split": 259.38842000005025,
+    "assembly": 4698.171280999986,
+    "verification": 54.82922400000234,
+    "total": 6510.992498000007
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.10913160129129856
+   },
+   "wall_s": 12.791137076999973,
+   "pair": "p04"
+  },
+  {
+   "case_id": "deepcad-p04-intersection",
+   "corpus": "deepcad",
+   "model_a": "m006",
+   "model_b": "m007",
+   "op": "intersection",
+   "outcome": "accepted",
+   "load_s": 5.480804415000023,
+   "shift_applied": [
+    0.36836203592160377,
+    -0.41420885712494016,
+    -0.027382268036266276
+   ],
+   "diag_a": 1.2597280758164138,
+   "boolean_s": 5.383378074999996,
+   "result_solids": 1,
+   "result_volume": 0.0019584865993471177,
+   "volume_a": 0.1110900878906456,
+   "volume_b": 0.0029137799126538752,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 26.390365999986898,
+    "same_domain": 106.97881700002654,
+    "intersection": 1205.087571999968,
+    "split": 194.6798380000132,
+    "assembly": 3602.310578000015,
+    "verification": 40.04463600000463,
+    "total": 5191.99152799996
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.0019584865993471177
+   },
+   "wall_s": 11.500013631999991,
+   "pair": "p04"
+  },
+  {
+   "case_id": "deepcad-p04-union",
+   "corpus": "deepcad",
+   "model_a": "m006",
+   "model_b": "m007",
+   "op": "union",
+   "outcome": "accepted",
+   "load_s": 4.268521669999984,
+   "shift_applied": [
+    0.36836203592160377,
+    -0.41420885712494016,
+    -0.027382268036266276
+   ],
+   "diag_a": 1.2597280758164138,
+   "boolean_s": 6.2718213640000045,
+   "result_solids": 1,
+   "result_volume": 0.11204538120395184,
+   "volume_a": 0.1110900878906456,
+   "volume_b": 0.0029137799126538752,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 29.314051000028485,
+    "same_domain": 59.395451999989746,
+    "intersection": 1963.0488479999713,
+    "split": 211.72070900001927,
+    "assembly": 3900.3262589999963,
+    "verification": 23.9852679999899,
+    "total": 6192.319080999994
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.11204538120395184
+   },
+   "wall_s": 11.033541157000002,
+   "pair": "p04"
+  },
+  {
+   "case_id": "deepcad-p05-difference",
+   "corpus": "deepcad",
+   "model_a": "m008",
+   "model_b": "m009",
+   "op": "difference",
+   "outcome": "accepted",
+   "load_s": 3.806261251999956,
+   "shift_applied": [
+    0.5525803390631866,
+    0.3411858974355003,
+    0.02884615384615499
+   ],
+   "diag_a": 0.8257059716373669,
+   "boolean_s": 2.053886884999997,
+   "result_solids": 0,
+   "result_volume": 0.0,
+   "volume_a": 0.004781378015461239,
+   "volume_b": 0.3580729166669581,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 15.94079099999135,
+    "same_domain": 76.33302800002184,
+    "intersection": 6.833590999974604,
+    "split": 23.994912999967255,
+    "assembly": 1814.41783300005,
+    "verification": 1.027962000023308,
+    "total": 1942.0562189999941
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.0
+   },
+   "wall_s": 6.175882785999988,
+   "pair": "p05"
+  },
+  {
+   "case_id": "deepcad-p05-intersection",
+   "corpus": "deepcad",
+   "model_a": "m008",
+   "model_b": "m009",
+   "op": "intersection",
+   "outcome": "accepted",
+   "load_s": 4.680760013999986,
+   "shift_applied": [
+    0.5525803390631866,
+    0.3411858974355003,
+    0.02884615384615499
+   ],
+   "diag_a": 0.8257059716373669,
+   "boolean_s": 1.7699197960000106,
+   "result_solids": 1,
+   "result_volume": 0.004781378015461239,
+   "volume_a": 0.004781378015461239,
+   "volume_b": 0.3580729166669581,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 45.827841999994234,
+    "same_domain": 59.685768000008466,
+    "intersection": 27.61836700000231,
+    "split": 23.670706000018527,
+    "assembly": 1399.8107759999812,
+    "verification": 14.050506000046425,
+    "total": 1576.5436730000033
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.004781378015461239
+   },
+   "wall_s": 6.898455539999986,
+   "pair": "p05"
+  },
+  {
+   "case_id": "deepcad-p05-union",
+   "corpus": "deepcad",
+   "model_a": "m008",
+   "model_b": "m009",
+   "op": "union",
+   "outcome": "accepted",
+   "load_s": 3.993918346999976,
+   "shift_applied": [
+    0.5525803390631866,
+    0.3411858974355003,
+    0.02884615384615499
+   ],
+   "diag_a": 0.8257059716373669,
+   "boolean_s": 1.7033862769999928,
+   "result_solids": 1,
+   "result_volume": 0.3580729166669581,
+   "volume_a": 0.004781378015461239,
+   "volume_b": 0.3580729166669581,
+   "stage_keys": [
+    "assembly",
+    "ingest",
+    "intersection",
+    "same_domain",
+    "split",
+    "verification"
+   ],
+   "broadphase_max_tolerance": 1e-07,
+   "timings_ms": {
+    "ingest": 57.61735500004761,
+    "same_domain": 38.552728999945884,
+    "intersection": 8.084096000004592,
+    "split": 11.47889800000712,
+    "assembly": 1404.4065589999946,
+    "verification": 6.932328000004873,
+    "total": 1531.4895719999981
+   },
+   "intersection_summary": {},
+   "assembly_summary": {
+    "volume": 0.3580729166669581
+   },
+   "wall_s": 6.224610457999972,
+   "pair": "p05"
+  },
+  {
+   "case_id": "nist-p01-difference",
+   "corpus": "nist",
+   "model_a": "nist_ftc_06_asme1_ap242-e2",
+   "model_b": "nist_ftc_07_asme1_ap242-e2",
+   "op": "difference",
+   "outcome": "refused",
+   "load_s": 9.582287237000003,
+   "shift_applied": [
+    121.73741907969088,
+    103.99441209720376,
+    -145.26201246681302
+   ],
+   "diag_a": 406.2816264536868,
+   "boolean_s": 14.248577036,
+   "refusal_stage": "intersection",
+   "refusal_kind": "SectionOutsideTrim",
+   "refusal_type": "IntersectionError",
+   "refusal_message": "section edge 0: p-curve left a trimmed input face",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.10426621631172882,
+   "stage_keys": [
+    "ingest",
+    "same_domain"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 646, in boolean_brep\n    ix = intersect_models(\n         ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1428, in intersect_models\n    r = section_face_pair(\n        ^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1243, in section_face_pair\n    _verify_section_edge(\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 468, in _verify_section_edge\n    raise IntersectionError(\nbrepkernel.intersection.IntersectionError: section edge 0: p-curve left a trimmed input face\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 662, in boolean_brep\n    refuse(\"intersection\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face\n",
+   "wall_s": 24.47318104300001,
+   "pair": "p01"
+  },
+  {
+   "case_id": "nist-p01-intersection",
+   "corpus": "nist",
+   "model_a": "nist_ftc_06_asme1_ap242-e2",
+   "model_b": "nist_ftc_07_asme1_ap242-e2",
+   "op": "intersection",
+   "outcome": "refused",
+   "load_s": 8.018999296999993,
+   "shift_applied": [
+    121.73741907969088,
+    103.99441209720376,
+    -145.26201246681302
+   ],
+   "diag_a": 406.2816264536868,
+   "boolean_s": 13.950619382000014,
+   "refusal_stage": "intersection",
+   "refusal_kind": "SectionOutsideTrim",
+   "refusal_type": "IntersectionError",
+   "refusal_message": "section edge 0: p-curve left a trimmed input face",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.10426621631172882,
+   "stage_keys": [
+    "ingest",
+    "same_domain"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 646, in boolean_brep\n    ix = intersect_models(\n         ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1428, in intersect_models\n    r = section_face_pair(\n        ^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1243, in section_face_pair\n    _verify_section_edge(\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 468, in _verify_section_edge\n    raise IntersectionError(\nbrepkernel.intersection.IntersectionError: section edge 0: p-curve left a trimmed input face\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 662, in boolean_brep\n    refuse(\"intersection\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face\n",
+   "wall_s": 22.49302966100001,
+   "pair": "p01"
+  },
+  {
+   "case_id": "nist-p01-union",
+   "corpus": "nist",
+   "model_a": "nist_ftc_06_asme1_ap242-e2",
+   "model_b": "nist_ftc_07_asme1_ap242-e2",
+   "op": "union",
+   "outcome": "refused",
+   "load_s": 9.487323411999995,
+   "shift_applied": [
+    121.73741907969088,
+    103.99441209720376,
+    -145.26201246681302
+   ],
+   "diag_a": 406.2816264536868,
+   "boolean_s": 12.487811410999996,
+   "refusal_stage": "intersection",
+   "refusal_kind": "SectionOutsideTrim",
+   "refusal_type": "IntersectionError",
+   "refusal_message": "section edge 0: p-curve left a trimmed input face",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.10426621631172882,
+   "stage_keys": [
+    "ingest",
+    "same_domain"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 646, in boolean_brep\n    ix = intersect_models(\n         ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1428, in intersect_models\n    r = section_face_pair(\n        ^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1243, in section_face_pair\n    _verify_section_edge(\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 468, in _verify_section_edge\n    raise IntersectionError(\nbrepkernel.intersection.IntersectionError: section edge 0: p-curve left a trimmed input face\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 662, in boolean_brep\n    refuse(\"intersection\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in intersection: section edge 0: p-curve left a trimmed input face\n",
+   "wall_s": 22.424471433999997,
+   "pair": "p01"
+  },
+  {
+   "case_id": "nist-p02-difference",
+   "corpus": "nist",
+   "pair": "p02",
+   "model_a": "nist_ftc_08_asme1_ap242-e2",
+   "model_b": "nist_ftc_09_asme1_ap242-e1",
+   "op": "difference",
+   "outcome": "timeout",
+   "worker_rc": -9,
+   "wall_s": 120.2,
+   "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+  },
+  {
+   "case_id": "nist-p02-intersection",
+   "corpus": "nist",
+   "pair": "p02",
+   "model_a": "nist_ftc_08_asme1_ap242-e2",
+   "model_b": "nist_ftc_09_asme1_ap242-e1",
+   "op": "intersection",
+   "outcome": "timeout",
+   "worker_rc": -9,
+   "wall_s": 120.3,
+   "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+  },
+  {
+   "case_id": "nist-p02-union",
+   "corpus": "nist",
+   "pair": "p02",
+   "model_a": "nist_ftc_08_asme1_ap242-e2",
+   "model_b": "nist_ftc_09_asme1_ap242-e1",
+   "op": "union",
+   "outcome": "timeout",
+   "worker_rc": -9,
+   "wall_s": 120.1,
+   "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+  },
+  {
+   "case_id": "nist-p03-difference",
+   "corpus": "nist",
+   "model_a": "nist_ctc_01_asme1_ap242-e1",
+   "model_b": "nist_ctc_02_asme1_ap242-e2",
+   "op": "difference",
+   "outcome": "refused",
+   "load_s": 9.685999465000009,
+   "shift_applied": [
+    232.51344054699302,
+    -390.00000000000006,
+    134.92018021812893
+   ],
+   "diag_a": 930.053762187972,
+   "boolean_s": 22.187511266,
+   "refusal_stage": "intersection",
+   "refusal_kind": "SectionOutsideTrim",
+   "refusal_type": "IntersectionError",
+   "refusal_message": "section edge 1: p-curve left a trimmed input face",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.009621834295462154,
+   "stage_keys": [
+    "ingest",
+    "same_domain"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in intersection: section edge 1: p-curve left a trimmed input face",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 646, in boolean_brep\n    ix = intersect_models(\n         ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1428, in intersect_models\n    r = section_face_pair(\n        ^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1243, in section_face_pair\n    _verify_section_edge(\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 468, in _verify_section_edge\n    raise IntersectionError(\nbrepkernel.intersection.IntersectionError: section edge 1: p-curve left a trimmed input face\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 662, in boolean_brep\n    refuse(\"intersection\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in intersection: section edge 1: p-curve left a trimmed input face\n",
+   "wall_s": 32.46322789200002,
+   "pair": "p03"
+  },
+  {
+   "case_id": "nist-p03-intersection",
+   "corpus": "nist",
+   "model_a": "nist_ctc_01_asme1_ap242-e1",
+   "model_b": "nist_ctc_02_asme1_ap242-e2",
+   "op": "intersection",
+   "outcome": "refused",
+   "load_s": 10.652806827999996,
+   "shift_applied": [
+    232.51344054699302,
+    -390.00000000000006,
+    134.92018021812893
+   ],
+   "diag_a": 930.053762187972,
+   "boolean_s": 28.723768612000015,
+   "refusal_stage": "intersection",
+   "refusal_kind": "SectionOutsideTrim",
+   "refusal_type": "IntersectionError",
+   "refusal_message": "section edge 1: p-curve left a trimmed input face",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.009621834295462154,
+   "stage_keys": [
+    "ingest",
+    "same_domain"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in intersection: section edge 1: p-curve left a trimmed input face",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 646, in boolean_brep\n    ix = intersect_models(\n         ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1428, in intersect_models\n    r = section_face_pair(\n        ^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1243, in section_face_pair\n    _verify_section_edge(\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 468, in _verify_section_edge\n    raise IntersectionError(\nbrepkernel.intersection.IntersectionError: section edge 1: p-curve left a trimmed input face\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 662, in boolean_brep\n    refuse(\"intersection\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in intersection: section edge 1: p-curve left a trimmed input face\n",
+   "wall_s": 40.12972650099999,
+   "pair": "p03"
+  },
+  {
+   "case_id": "nist-p03-union",
+   "corpus": "nist",
+   "model_a": "nist_ctc_01_asme1_ap242-e1",
+   "model_b": "nist_ctc_02_asme1_ap242-e2",
+   "op": "union",
+   "outcome": "refused",
+   "load_s": 9.478274688999988,
+   "shift_applied": [
+    232.51344054699302,
+    -390.00000000000006,
+    134.92018021812893
+   ],
+   "diag_a": 930.053762187972,
+   "boolean_s": 26.495169981000004,
+   "refusal_stage": "intersection",
+   "refusal_kind": "SectionOutsideTrim",
+   "refusal_type": "IntersectionError",
+   "refusal_message": "section edge 1: p-curve left a trimmed input face",
+   "refusal_evidence": null,
+   "broadphase_max_tolerance": 0.009621834295462154,
+   "stage_keys": [
+    "ingest",
+    "same_domain"
+   ],
+   "exception_type": "BRepAmbiguousResult",
+   "exception_message": "B-rep result refused in intersection: section edge 1: p-curve left a trimmed input face",
+   "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 646, in boolean_brep\n    ix = intersect_models(\n         ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1428, in intersect_models\n    r = section_face_pair(\n        ^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1243, in section_face_pair\n    _verify_section_edge(\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 468, in _verify_section_edge\n    raise IntersectionError(\nbrepkernel.intersection.IntersectionError: section edge 1: p-curve left a trimmed input face\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 662, in boolean_brep\n    refuse(\"intersection\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in intersection: section edge 1: p-curve left a trimmed input face\n",
+   "wall_s": 36.84663657100003,
+   "pair": "p03"
+  }
+ ]
+}

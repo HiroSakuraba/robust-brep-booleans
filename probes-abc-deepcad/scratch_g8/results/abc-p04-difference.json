@@ -1,0 +1,43 @@
+{
+ "case_id": "abc-p04-difference",
+ "corpus": "abc",
+ "model_a": "00274640_57f551c18faa3110d3af43b6_step_000",
+ "model_b": "00274641_f6201113d1d0435653e88270_step_000",
+ "op": "difference",
+ "outcome": "accepted",
+ "load_s": 5.0674644880000415,
+ "shift_applied": [
+  119.8029117685798,
+  31.75,
+  3.174999999999997
+ ],
+ "diag_a": 212.5116470743192,
+ "boolean_s": 51.459516439000026,
+ "result_solids": 1,
+ "result_volume": 338453.35434699344,
+ "volume_a": 357566.40293564886,
+ "volume_b": 119984.48904638532,
+ "stage_keys": [
+  "assembly",
+  "ingest",
+  "intersection",
+  "same_domain",
+  "split",
+  "verification"
+ ],
+ "broadphase_max_tolerance": 1e-05,
+ "timings_ms": {
+  "ingest": 39.59787700000561,
+  "same_domain": 742.9604950000339,
+  "intersection": 38220.6188240001,
+  "split": 730.9757379999837,
+  "assembly": 11308.206012000028,
+  "verification": 226.58909200004018,
+  "total": 51312.96351100002
+ },
+ "intersection_summary": {},
+ "assembly_summary": {
+  "volume": 338453.35434699344
+ },
+ "wall_s": 57.362579728000014
+}

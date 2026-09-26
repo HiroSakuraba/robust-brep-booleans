@@ -1,0 +1,12 @@
+{
+ "case_id": "abc-p02-difference",
+ "corpus": "abc",
+ "pair": "p02",
+ "model_a": "00271652_57f306c0546dad10b4476287_step_000",
+ "model_b": "00271653_b2d2c3d7d6040dfd53955a21_step_000",
+ "op": "difference",
+ "outcome": "timeout",
+ "worker_rc": -9,
+ "wall_s": 120.2,
+ "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+}
