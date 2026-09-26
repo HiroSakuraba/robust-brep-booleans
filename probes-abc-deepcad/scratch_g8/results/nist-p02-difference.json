@@ -1,0 +1,12 @@
+{
+ "case_id": "nist-p02-difference",
+ "corpus": "nist",
+ "pair": "p02",
+ "model_a": "nist_ftc_08_asme1_ap242-e2",
+ "model_b": "nist_ftc_09_asme1_ap242-e1",
+ "op": "difference",
+ "outcome": "timeout",
+ "worker_rc": -9,
+ "wall_s": 120.2,
+ "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+}
