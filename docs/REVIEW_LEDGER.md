@@ -675,6 +675,16 @@ test_g3_f2_regression.py: ALL PASS (5/5 checks).
 | No tolerance loosened (I3); tol_i formula unchanged | PASS |
 | Full suite green (I5) | PARTIAL (4/18 pass; see G4 REWORK entry) |
 
+### Merged-main addendum (2026-09-25)
+
+The merged main (`10ea7d8`, includes the G3G4 rework) ran the full suite
+26/26 exit 0 with 0 [FAIL] lines (see the merge entry), including
+`tests/test_g3_probe_rework.py` and `tests/test_g3_f2_regression.py`. The
+I5 gap recorded on this branch (4/18, under CPU contention) is resolved.
+Every other criterion in this gate's table was already PASS, so:
+
+G3 rework: CLOSED.
+
 ## G4 - Completeness probe coverage for analytic pairs
 
 - Date: 2026-09-25
@@ -921,6 +931,18 @@ when the fuzz runs.
 | Median time increase recorded | OPEN (not measured; system load) |
 | Full suite green (I5) | PARTIAL (4/18 pass; 14 not run due to load) |
 | I1-I9 invariants held | PASS (no crash; refusals typed; no G3 constant touched; local branch only) |
+
+### Merged-main addendum (2026-09-25)
+
+The merged main (`10ea7d8`, includes the G3G4 rework) ran the full suite
+26/26 exit 0 with 0 [FAIL] lines (see the merge entry), including
+`tests/test_g4_probe_coverage.py` (12/12). The I5 partial recorded on
+this branch is resolved. The two fuzz criteria below stay OPEN: the
+150-trial ON/OFF comparison was not re-run on the merged code, and the
+median-time comparison was not measured. Not claimed, not closed.
+
+G4 rework: OPEN on the fuzz criteria only (analytic fuzz 150-trial
+ON/OFF comparison with 0 WRONG, and the median-time recording).
 ## G6 - Tolerance-aware broad phase
 
 - Date: 2026-09-25
@@ -2021,3 +2043,180 @@ test_step_nurbs_multiface, test_stress.
 G0, G1 (+rework), G2-planar, G3 (+rework), G4 (+rework), G5, G6 (+rework),
 probe-hardening, new G7: merged. Still open: curved coincident-face
 recognition (deferred), G8 real-data refusal rate, G9 docs/release, Part B.
+
+Note (2026-09-25): the G9 docs work below landed on branch gate/G9-docs
+(local only, never pushed). The merged-main addenda above close the G3
+rework I5 gap and record the G4 rework's remaining fuzz criteria as OPEN.
+
+---
+
+## G9 - Documentation and release (2026-09-25)
+
+- Branch: gate/G9-docs (local only; never pushed, never merged, no tag)
+- Base: `10ea7d8` "docs: merge ledger entry for the 7 gate branches plus
+  the shared-seam fix" (local main)
+- Scope: docs only. No `src/` or `tests/` behavior changed in this work.
+
+### What was written
+
+1. `README.md` rewritten for the merged state. The old text described
+   only the v0.2 mesh/Tier A prototype; it now documents both routes per
+   invariant I9 (route 1 `boolean()`: legacy mesh/Tier A, frozen;
+   route 2 `boolean_brep()`: current exact trimmed B-rep Tier B/C), the
+   full route-2 stage table, one subsection per merged gate stage naming
+   what it does, what it refuses, and where the code lives:
+   - G1 rework independent Boolean arbiter
+     (`tools/review_probes/arbiter.py`; testing only, scale-aware domain
+     and band, no input mutation),
+   - G2 planar three-case coincidence (`src/brepkernel/coincidence.py`;
+     EXACT / TOLERANCE-CERTIFIED / UNDECIDABLE; curved and NURBS deferred
+     in `coincidence_deferred.py` under `ENABLE_DEFERRED_COINCIDENCE`),
+   - G3/G4 completeness-probe reworks
+     (`src/brepkernel/intersection.py`; per-curve `tol_i`, per-interval
+     adaptive matching to depth 5, boundary-tail provision, raw-tolerance
+     ceiling, unconditional probe with the `BREPKERNEL_COMPLETENESS_PROBE`
+     kill switch),
+   - G5 multi-ray parity second classifier
+     (`src/brepkernel/assembly.py`; `IntCurvesFace_ShapeIntersector`-based,
+     bidirectional even-sum seating, dual agreement with typed
+     `ClassifierDisagreement`, 10x-tol witness band),
+   - G6 rework per-face broad-phase pads (`src/brepkernel/step_ingest.py`,
+     `intersection.py`, `pipeline.py`; `pad_i = contact_tol + tol_face_i`,
+     report fields `broadphase_pad`, `broadphase_pad_mode`,
+     `broadphase_contact_tol`, `broadphase_max_tolerance`,
+     `broadphase_pad_summary`),
+   - probe hardening (`tools/review_probes/common_cad_probes.py`:
+     `unexpected_accepts` forces nonzero exit; `repro_findings.py`: F2
+     volume/arbiter assertions, F4 winding/distance assertions),
+   - G7 seam stress round (`tests/test_g7_seam_stress.py`; 38 checks,
+     torus-heavy fuzz 0 WRONG, 0 seam-related refusals).
+   Plus: what route 2 accepts and refuses (headline refusal kinds),
+   quickstart, full-suite and probe commands, measured numbers with dates
+   (26/26 test files, probes, G7 fuzz, G0 baseline pointer), honest limits.
+2. `docs/PROTOTYPE.md`: header note added that it now describes the
+   legacy route-1 v0.2 design (historical record kept); the current
+   pipeline is documented in `README.md` and this ledger.
+3. `docs/RELEASE_CHECKLIST.md` (new): proposes tag **v0.9.0** (remote
+   tags v0.1-v0.4 cover the old prototype lineage; v0.8/v0.9 exist only
+   as merge-commit names; the work plan's G9 names the release v0.9.0),
+   the `brepkernel-v0.9.0.zip` asset list, the ordered pre-release
+   verification steps (clean tree, I8 em-dash scan, 26/26 suite, both
+   probes, ledger finalized, zip spot-check), and a clearly-marked
+   "Blocked on Ben" section (merge approval, push to origin/main, tag,
+   GitHub release with asset, I9 dispatcher decision, release-notes
+   wording for G8 and the deferred curved-coincidence gate).
+4. Ledger addenda on this branch: merged-main addenda on the G3 REWORK
+   and G4 REWORK entries (the I5 gaps recorded under CPU contention are
+   resolved by the merged-main 26/26 run; the G4 rework's 150-trial
+   ON/OFF fuzz comparison and median-time recording stay OPEN, honestly
+   not claimed).
+
+### Verification on this branch
+
+- `git grep -P '\x{2014}' -- src tests tools docs README.md`: 0 matches
+  (invariant I8; no em dashes in prose, comments, or the new files).
+- Full suite on `gate/G9-docs` (venv `~/workspace/brep-booleans/.venv`,
+  `PYTHONPATH=~/workspace/brep-gates/src`): 26/26 test files exit 0,
+  0 `[FAIL]` lines. Docs-only change, so this confirms the branch did not
+  disturb the code.
+- No G8 section written or touched (a separate worker owns G8; no G8
+  section exists in this ledger).
+
+### Not done (kept open honestly)
+
+The work plan's G9 also asks for: `CHANGELOG.md` (not written),
+`docs/NURBS_ACCEL.md` "What remains" update (not done), the I9
+dispatcher decision (left to Ben), the actual tag and GitHub release
+(Ben only), and G8 measured numbers for the release notes (separate
+worker, in progress). Those are recorded in
+`docs/RELEASE_CHECKLIST.md`, not claimed here.
+
+G9 gate: OPEN. The docs slice is complete and verified on
+gate/G9-docs; the release actions are blocked on Ben per the checklist.
+
+---
+
+## Part B: evidence schema + persistent naming (B11, B4 naming half)
+
+- Date: 2026-09-25
+- Branch: partB/evidence-schema (local only; never pushed)
+- Base: 10ea7d8 "docs: merge ledger entry for the 7 gate branches plus the shared-seam fix"
+- Commits:
+  - 69318ba "test: evidence schema + persistent naming tests (failing first, I4)"
+  - (implementation commit follows; see below)
+- Roadmap position: per the correction recorded 2026-09-25, evidence
+  certificate schema and persistent naming move earlier, right after G8,
+  ahead of B9 (certified intersection core, now a parallel research track)
+  and with FreeCAD integration before B9.
+
+### What was built
+
+- src/brepkernel/evidence.py: `brepkernel.evidence/1.0` schema module.
+  `brep_sha256()` / `canonical_brep_bytes()` hash the canonical BREP text
+  (BRepTools_Write, byte-deterministic for identically constructed
+  shapes). `evidence_name(op, sha_a, sha_b)` implements
+  `brepkernel.naming/1.0`: name = f(op, input hashes, pipeline version),
+  e.g. `ev_e10_union_b0caafc89533_73d09a490069_55810891`; the trailing
+  component is sha256(version|commit)[:8], so evidence from different
+  builds never shares a name silently. `build_record()` assembles the
+  record (operation id, inputs, op + effective tolerances, kernel
+  version/commit, timestamps, outcome, stage summaries, artifacts);
+  `validate_evidence()` is a dependency-free schema checker;
+  `write_evidence_file()` writes `<evidence_dir>/<name>.json` atomically
+  and refuses invalid records.
+- src/brepkernel/pipeline.py: `boolean_brep()` is now a thin wrapper that
+  calls the renamed `_boolean_brep_impl()` and attaches the evidence
+  record at `report["evidence"]` on the accept path and on
+  typed-refusal paths (the BRepAmbiguousResult carries the report, so
+  the record rides along). New keyword-only `evidence_dir=None`: when
+  given, the record is written as `<name>.json`. Emission is strictly
+  additive and fully guarded: any failure inside evidence code degrades
+  to `report["evidence_error"]` and a failing sidecar write is recorded
+  in `artifacts.evidence_write_error`; the accept/refuse outcome is
+  never altered. `boolean()` (Tier A) untouched (I9).
+- docs/EVIDENCE_SCHEMA.md: schema field table, naming rules, emission
+  guarantees, abridged example, and the open remainder (G10 CLI +
+  `brepkernel verify`; per-entity persistent naming service B4 items 1-4).
+- tests/test_evidence.py: 40 checks. I4: committed failing first
+  (ImportError: no evidence module), then implemented. Two test bugs
+  fixed along the way, both in the test, not the implementation:
+  expected union volume was written as 1.75 instead of 1.875, and the
+  refusal stage-report assertion demanded an "assembly" key that the
+  pipeline only writes after successful assembly.
+
+### Verification
+
+- tests/test_evidence.py: 40/40 PASS (accept record validates, refusal
+  record validates with category UnresolvedContact + stage assembly,
+  naming deterministic across fresh rebuilds, name changes with input/op
+  change, input hashes match independent BRepTools_Write hashing,
+  broken evidence_dir still accepts at the right volume and still
+  refuses with the right kind, sidecar written at the persistent name
+  and re-validates from disk, no em dashes in new files).
+- Full suite: 27/27 test files exit 0, 0 [FAIL] lines (26 prior files +
+  test_evidence).
+
+### Invariants
+
+- I1: no acceptance logic touched; evidence code only reads shapes and
+  the report.
+- I2: refusals stay typed; the evidence record adds category + stage +
+  full stage_report but the refusal kind/stage/message are unchanged.
+- I3: evidence code reads tolerances, never writes them.
+- I4: failing test committed first (69318ba).
+- I5: suite green (27/27).
+- I6: this entry; the two test bugs above are recorded, not hidden.
+- I7: no crashes encountered.
+- I8: grepped new/changed files for U+2014; none present (also enforced
+  by a test).
+- I9: boolean() and boolean_brep() contracts separate; only boolean_brep
+  gained the additive evidence_dir parameter.
+
+### Open / not in this change
+
+- G10 CLI and `brepkernel verify` (re-check a certificate without
+  trusting it).
+- Per-entity persistent naming (B4 items 1-4): deterministic face/edge
+  names, report["naming"] ancestor mapping, resolve() with geometric
+  fallback. Raw material (edge lineage) exists in the assembly report.
+- Nothing in this change needed Ben's keys or files; nothing blocked.

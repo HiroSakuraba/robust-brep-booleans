@@ -1,122 +1,198 @@
 # robust-brep-booleans
 
-A prototype of robust B-rep Boolean operations for CAD. Geometry comes from a
-fast mesh engine; every topological verdict is then audited against exact
-analytic implicits, and anything that cannot be verified is reported, never
-guessed.
+A prototype of robust B-rep Boolean operations for CAD. The guiding rule is
+certify-or-refuse: the pipeline returns a verified result, or it raises a
+typed refusal carrying the full report. It never guesses.
 
-This implements the Tier A (analytic solids) slice of the design in `docs/`.
+This repo carries two routes. Invariant I9 keeps their contracts separate;
+see `docs/REVIEW_LEDGER.md` for the gate history (G0 through G7 merged
+2026-09-25; G8 and the G9 release in progress).
 
-## The idea in one paragraph
+## The two routes
 
-Boolean operations on boundary representations fail in practice because
-floating-point geometry is used to make topological decisions (is this face
-inside or outside?). This prototype splits the job: a mesh engine
-(manifold3d, float64) computes the arrangement geometry, then an exact layer
-audits every kept face against the closed-form implicits of the input solids.
-Faces the exact layer cannot decide are blocked, not guessed. The result is a
-pipeline that either returns a verified solid or raises `AmbiguousResult`
-with the partial mesh and a full report.
+### Route 2 (current): exact trimmed B-rep, Tier B/C
 
-## Pipeline (7 stages)
+`boolean_brep(shapeA, shapeB, op)` in `src/brepkernel/pipeline.py` is the
+current pipeline. It operates directly on OCCT trimmed B-reps (analytic
+faces and freeform NURBS, including STEP ingest) and returns
+`(TopoDS_Shape, report)`. Anything it cannot verify raises
+`BRepAmbiguousResult` carrying the full report with a typed
+`report["refusal"] = {stage, type, kind, message, evidence}`.
+
+Pipeline stages:
 
 | Stage | Module | What it does |
 |---|---|---|
-| 0 | `ingest.py` | Audits input parameters; `ToleranceLedger` records every epsilon in one place |
-| 1 | `proxy.py` | `certified_proxy()`: mesh with a *proven* chordal-error bound, computed from the actual mesh (raises, never asserts) |
-| 2 | `arrange.py` | Proxy boolean in float64 (`manifold3d` Mesh64) with per-face origin tags. The exact CGAL/libigl core plugs in behind this interface |
-| 3 | `classify.py` | **Tier A**: exact degeneracy detection from defining parameters (touching boxes, tangent spheres/cylinders). Exact closed-form volumes, shell counts, and Euler predictions for box-box |
-| 4 | `classify.py` | Per-face audit: each kept face is checked against the *other* solid's exact implicit, with per-operation polarity. `s*f > margin` is verified, `< -margin` is a violation, inside the band is ambiguous and blocks |
-| 5 | `assemble.py` | Attaches provenance and the audit to the arrangement mesh |
-| 6 | `verify.py` | Independent verification, 8 checks: directed-edge closure, Euler vs prediction, orientation, exact/MC volume, OCCT cross-check, vertex-on-surface, sample membership, shell count |
+| ingest | `step_ingest.py` | `index_shape` builds a `BRepModel`: one `FaceRecord` per face with `tol_face`, the max OCCT tolerance over the face and its incident edges and vertices |
+| identity | `pipeline.py` | exact topological identity (`IsEqual`) and strict `same_domain_models` equivalence fast paths; difference of identical inputs returns empty |
+| broad phase | `step_ingest.py`, `intersection.py`, `pipeline.py` | per-face tolerance pads (G6 rework): `pad_i = contact_tol + tol_face_i`; `candidate_face_pairs` expands each face box by its own pad, so one damaged edge no longer inflates every face in the model. Report: `broadphase_pad`, `broadphase_pad_mode`, `broadphase_contact_tol`, `broadphase_max_tolerance`, `broadphase_pad_summary` |
+| intersection | `intersection.py` | `section_face_pair`: per-face contact band `max(contact_tol, 4*base_tol, 2*tol(fa), 2*tol(fb))`; section edges verified against a tolerance ceiling (`RawIntersectionToleranceTooLoose` when OCCT's own curve tolerance exceeds it); planar coincidence handled by the three-case rule (G2, `coincidence.py`); the completeness probe runs for every pair that produces section curves (G3/G4 reworks). Honest kill switch: `BREPKERNEL_COMPLETENESS_PROBE=0` |
+| split | `split.py` | verified face splitting from section p-curves. v0.9 seam routing: a section edge that is a seam on exactly one operand reuses that operand's existing closing boundary there and stays a splitting tool on the other; a seam on both operands refuses (`shared_seam_curve`). Report: `reused_seam_edges_a/b`, `shared_seam_refusals` |
+| assembly | `assembly.py` | 24-cell keep table for coincident pieces (G2), boundary-contact rule (boundary contacts create no split; unmatched ones raise `UnresolvedContact`), touching-only unions refuse `NonManifoldResult` (`allow_nonmanifold=True` returns the touching compound with the contact recorded), per-shell signed volume vs role, and the dual classifier (G5) |
+| verification | `pipeline.py`, `verify.py` | BRepCheck validity of the result; OCCT cross-check oracle (solid/shell counts via `TopExp_Explorer`, chi from an OCCT tessellation vs the mesh's own shell counts and chi); optional `crosscheck_ops=True` runs the two companion ops and requires the volume identities `vol(AuB)+vol(AnB)=vol(A)+vol(B)` and `vol(A-B)=vol(A)-vol(AnB)` within the scale-aware volume tolerance, else typed `OperationIdentityFailed` |
 
-## The contract
+### Gate landmarks (what each stage refuses, where the code lives)
 
-```python
-from brepkernel import boolean, AmbiguousResult
-from brepkernel.solids import Box, Sphere
+- **G1 rework, independent Boolean arbiter** (`tools/review_probes/arbiter.py`).
+  Testing-only arbiter, deliberately not a production classifier.
+  `membership_audit` samples a scale-derived domain: the combined bounding
+  box of A, B, and the result padded by 10 percent of its largest edge
+  (`combined_domain`; the old hard-coded cube survives only as documented
+  `FALLBACK_DOMAIN`). The surface-exclusion band is
+  `2.0 * deflection + max entity tolerance` (`exclusion_band`); points with
+  non-decisive winding or inside the band are skipped, never guessed. A
+  result is a kernel error only when the winding verdict on the result
+  disagrees with the set operation of the verdicts on the inputs;
+  OCCT-classifier disagreements are reported separately (finding F4).
+  The arbiter deep-copies shapes before tessellating, so inputs are never
+  mutated. G1 also added the difference volume lower bound and the optional
+  `crosscheck_ops` identities to the pipeline.
+- **G2 planar, three-case coincidence** (`src/brepkernel/coincidence.py`,
+  `classify_support_pair`). (a) EXACT: canonical analytic plane parameters
+  agree bit-identically (Fractions on the float inputs), including
+  parameters recovered through the same canonical recognizer
+  (`GeomLib_IsPlanarSurface`). (b) TOLERANCE-CERTIFIED: only when a
+  recognizer was involved, and the sampled support deviation is within the
+  entities' actual per-entity tolerances AND the pipeline `contact_tol`,
+  never a global constant. (c) UNDECIDABLE: a `CoincidenceUndecidable`
+  record carrying the reason, measured deviation, and every tolerance
+  consulted; the caller refuses with `NearCoincidentFaces` (planar,
+  in-band but not exact) or `CoincidenceUndecidable` (deferred). Curved
+  analytic (cylinder/sphere/cone/torus) and unrecognized NURBS coincidence
+  is deferred: the machinery is preserved verbatim in
+  `src/brepkernel/coincidence_deferred.py` under
+  `ENABLE_DEFERRED_COINCIDENCE = False`, and any such pair that could be
+  coincident is case (c) and refuses.
+- **G3/G4 reworks, completeness probe** (`src/brepkernel/intersection.py`).
+  `_raw_intersector_completeness_probe` runs unconditionally for every
+  candidate pair that produces section curves. Per-curve tolerance
+  `tol_i = max(16*base_tol, 4*max_verify_tol, 2*ic.Tolerance())`, derived
+  not tuned. Each raw component is checked per-interval: 20 initial
+  parameter intervals, a 3-point stencil per interval, binary subdivision
+  to depth 5; every leaf must match strictly or satisfy the boundary-tail
+  provision (raw end overshoots the trim along the curve while the edge
+  end sits ON the trim, the F2 shape). A component violating at max depth,
+  or a raw curve looser than the section tolerance ceiling
+  (`max(128*base_tol, 1e-8*scale)`), refuses with
+  `SectionCompletenessMismatch` / `RawIntersectionToleranceTooLoose`.
+- **G5, multi-ray parity second classifier** (`src/brepkernel/assembly.py`).
+  Production classifier, independent of the OCCT solid classifier it audits:
+  `_MultiRayClassifier` casts rays with `IntCurvesFace_ShapeIntersector`
+  and counts transverse crossings per solid (odd = inside). 12 fixed
+  deterministic directions; each is cast bidirectionally (+d and -d) and
+  seated only if every solid's crossing sum is even, which catches a
+  missed or added crossing on that line. Grazing hits (|n.d| < 0.05),
+  near-edge hits, and origin hits discard the ray, never count it; fewer
+  than 3 agreeing pairs, or disagreement among pairs, yields "unknown".
+  `_agreed_point_verdict` requires the OCCT classifier and the multi-ray
+  classifier to agree on every decision witness; a mismatch refuses with
+  typed `ClassifierDisagreement` carrying both verdicts and the point.
+  `_witness_material_verdict` prefers witnesses at least 10x tol from the
+  other operand's boundary: the far set must be unanimous, far
+  boundary/unknown verdicts refuse `BoundaryOrUnknownPatch`, and a near
+  witness that materially contradicts the far verdict (both classifiers
+  agreeing) still blocks with `PatchClassificationInconsistent`.
+- **G6 rework, per-face broad-phase pads** (see the stage table above).
+  `pad_i = contact_tol + tol_face_i` from the entities' own tolerances.
+  Additive padding only widens the candidate set: it can add typed
+  refusals, never new acceptances. An explicit `broadphase_pad` is honored
+  verbatim as a uniform scalar.
+- **Probe hardening** (`tools/review_probes/common_cad_probes.py`,
+  `repro_findings.py`). The probes enforce pass/fail: an accept on an
+  expect="refuse" case increments `unexpected_accepts` and forces a
+  nonzero exit (previously it exited 0). F2 asserts OCCT volume agreement
+  within 1e-6 and arbiter `kernel_errors == 0` on accept; F4 asserts the
+  kernel union winding verdict is OUT at the probe point with surface
+  distance > 1.0, and records the OCCT classifier states on A, B, the
+  kernel union, and the OCCT fuse.
+- **G7, seam stress round** (`tests/test_g7_seam_stress.py`). 38 checks:
+  equatorial/polar seam-plane cuts pinning `reused_seam_edges_A/B`,
+  torus-vs-torus union, torus-vs-box difference, revolved NURBS vs box;
+  every accepted volume matches the independent OCCT oracle and the
+  arbiter (200 points, 0 kernel errors). Torus-heavy fuzz (60 analytic +
+  60 NURBS trials) found 0 wrong accepts and 0 seam-related refusals.
 
-try:
-    mesh, report = boolean(Box([0,0,0],[2,2,2]), Sphere([1,0,0], 1.5), "union")
-except AmbiguousResult as e:
-    # e.mesh: partial result. e.report: full stage-by-stage report.
-    ...
-```
+What route 2 accepts and refuses: it accepts analytic and freeform
+(NURBS, STEP) Booleans that survive every stage above. It refuses with a
+typed `BRepAmbiguousResult` anything else: classifier disagreements,
+undecidable or near-coincident planar pairs, deferred curved/NURBS
+coincidence, incomplete sections, too-loose section evidence, unresolved
+or boundary-only contacts, shared seam curves on both operands,
+non-manifold touching unions (unless opted in), and violated operation
+identities. The full refusal-kind list is enumerated in the sources;
+headline kinds: `ClassifierDisagreement`, `NearCoincidentFaces`,
+`CoincidenceUndecidable`, `SectionCompletenessMismatch`,
+`SectionToleranceTooLoose`, `RawIntersectionToleranceTooLoose`,
+`InsufficientPatchWitnesses`, `PatchClassificationInconsistent`,
+`BoundaryOrUnknownPatch`, `UnresolvedContact`, `NonManifoldResult`,
+`OpenAssembly`, `OperationIdentityFailed`.
 
-`boolean()` returns a mesh only if every kept face verified against the exact
-implicits and all Stage 6 checks passed. Otherwise it raises
-`AmbiguousResult`. Degenerate inputs (tangent spheres, point contacts) are
-rejected explicitly. Identical inputs (A op A) resolve exactly without the
-engine.
+### Route 1 (legacy): mesh/Tier A prototype
 
-## Quickstart
+`boolean(solidA, solidB, op)` in `src/brepkernel/pipeline.py` is the
+v0.1-v0.4-era route, kept for its test battery and CI. A mesh engine
+(manifold3d Mesh64 float64) computes the arrangement; an exact layer
+audits every kept face against the other solid's analytic implicit, and
+Stage 6 verifies closure, orientation, volume, shell count, and the OCCT
+cross-check. Returns `(mesh, report)` or raises `AmbiguousResult`. It is
+frozen: gate work applies to route 2. `docs/PROTOTYPE.md` records its
+v0.2 design and results.
+
+## Quickstart (route 2)
 
 ```bash
+git clone https://github.com/HiroSakuraba/robust-brep-booleans.git
+cd robust-brep-booleans
 python3 -m venv .venv
-.venv/bin/pip install manifold3d cadquery-ocp
-.venv/bin/python tests/test_metamorphic.py
-.venv/bin/python tests/test_degenerate.py
-.venv/bin/python tests/test_regression.py
-.venv/bin/python tests/test_stress.py
+.venv/bin/pip install -r requirements-freeform.txt   # numpy, manifold3d, cadquery-ocp==8.0.1.0.0
+PYTHONPATH=src .venv/bin/python tests/test_brep_pipeline.py
 ```
 
-`cadquery-ocp` is needed for the OCCT cross-check (check V5); without it that
-check is skipped with a note. `rhino3dm` is needed only for the future
-STEP/freeform slice.
+Full suite (route 2):
 
-## Test results (23 Sept 2026)
+```bash
+for t in tests/test_*.py; do PYTHONPATH=src .venv/bin/python "$t" || echo "FAILED: $t"; done
+```
 
-- `tests/test_metamorphic.py`: 15/15 pass. Box cases assert exact volumes;
-  translation uses fractional offsets so float rounding is exercised.
-- `tests/test_degenerate.py`: 8/8 pass. Each case declares its expected
-  disposition: certifiable cases must return exact volumes, degenerate cases
-  (tangent cylinders/spheres, point contacts) must raise `AmbiguousResult`.
-- `tests/test_regression.py`: 11/11 pass (5 original + t6-t11 added 23 Sept
-  2026), and the original 5 fail on the pre-fix code. Covers the 1e-9-apart
-  boxes that used to fuse silently, a volume-preserving corner-push shape
-  attack, non-round coordinates, the sphere certificate bound, flipped
-  triangle winding, plus: an inside-out shell attack (caught by winding
-  number + per-shell orientation), a sphere bump poking through a box face
-  (caught by the per-face Lipschitz bound), slab-split and tunnel box
-  differences (exact grid-based shell/Euler predictors), a 1e8-offset
-  union (local-origin volume, scale-aware tolerances), and the thin-bridge
-  probe (t11: hairline bridge refused via sub_margin_thin_feature +
-  OCCT topology oracle; clean config accepted with 2 shells, chi=4).
-- `tests/test_stress.py`: 28/28 pass, zero silent failures found by this
-  battery. Adversarial
-  battery: near-degenerate box gaps (accepted at 1e-8, ambiguous at 5e-10
-  and 1e-12), a 2-micron sliver intersection, nested spheres, grazing
-  contacts, cone apex on a box face (accepted), cylinder through a box
-  (tilted and axis-aligned, accepted via patch-level classification),
-  6 randomized box-soup trials, invalid inputs refused loudly, and large
-  coordinate offsets.
+Review probes:
+
+```bash
+PYTHONPATH=src .venv/bin/python tools/review_probes/common_cad_probes.py   # exit 0 required
+PYTHONPATH=src .venv/bin/python tools/review_probes/repro_findings.py      # exit 0 required
+```
+
+## Test results (2026-09-25, merged main `10ea7d8`)
+
+- Full suite: 26/26 test files exit 0, 0 `[FAIL]` lines.
+- `common_cad_probes.py` (no `--baseline`): exit 0, `wrong=0`,
+  `unmet_accepts=0`, `unexpected_accepts=0` (17 cases: 15 accepted with
+  correct volumes; equal-radius crossing cylinders refuse as expected;
+  edge-touching union refuses `NonManifoldResult`, expect=either).
+- `repro_findings.py`: exit 0. F2 accepted: volume rel err 2.56e-09 vs the
+  OCCT oracle (limit 1e-6), arbiter checked=300, kernel_errors=0,
+  classifier_disagreements=0. F4 hardened assertions pass.
+- G7 torus-heavy fuzz: analytic 60 trials, 56 accept / 4
+  `SectionToleranceTooLoose`, 0 WRONG, 0 CRASH; NURBS 60 trials, 59 accept
+  / 1 `InsufficientPatchWitnesses`, 0 WRONG, 0 CRASH. Zero seam-related
+  refusals.
+- G0 baseline (2026-09-25, pre-gate): 14/14 files green; analytic fuzz
+  150 trials 0 WRONG, 0 CRASH. Full baseline tallies in
+  `docs/baseline_20260925/` and the per-gate entries of
+  `docs/REVIEW_LEDGER.md`.
 
 ## Honest limits
 
-- The mesh engine does the geometric work (intersection curves, face
-  splitting); the exact layer audits its topology decisions and blocks what
-  it cannot verify. The engine is not exact, and the audit cannot pin cut
-  locations tighter than the margin band. Faces fully inside the band block;
-  patches (edge-connected face groups split where A-faces meet B-faces) are
-  rescued only if some face verifies decisively and none violate, so a
-  transverse cylinder through a box is accepted while a true tangency is
-  still refused.
-- The per-face audit rule: a face is verified if its rigorous whole-face
-  lower bound clears the margin, or (failing that) its centroid is decisive
-  and an audit-only subdivision cannot prove a violation. A centroid inside
-  the band with a provable wrong-side dip is a violation and blocks.
-- The OCCT cross-check is engine-diverse (independent kernel, independent
-  geometry) but compares volumes, so it catches gross errors, not small
-  shape deviations. Small deviations are caught by the vertex-on-surface
-  and sample-membership checks instead.
-- The Monte-Carlo field check is statistical, used only where no closed-form
-  volume exists (non-box pairs). Box pairs are checked against exact volumes.
-- Freeform (NURBS) faces, Tier B/C, are not in this slice. Next build: OCCT
-  STEP ingest.
-- Exact arrangement core (libigl/CGAL): no pyigl wheel on PyPI (conda-only).
-  `arrange()` is the seam.
-
-See `docs/PROTOTYPE.md` for the full write-up.
+- Curved analytic and unrecognized-NURBS coincidence acceptance is
+  deferred (case (c) refuses rather than guesses); only planar
+  coincidence is accepted, exact or tolerance-certified.
+- Shared seam curves (a seam on both operands) refuse; the v0.9 routing
+  reuses a seam boundary only when exactly one operand is seam-side.
+- Torus-heavy operations are slow (about 360-384 s per op); the G7 test
+  file takes about 42 minutes. Worth profiling before any CI adoption.
+- The OCCT cross-check compares volumes and topology, so it catches gross
+  errors; small shape deviations are covered by vertex-on-surface, sample
+  membership, the volume identities, and the testing arbiter.
+- G8 (real-data refusal rate) is open work, owned by a separate worker.
 
 ## License
 
