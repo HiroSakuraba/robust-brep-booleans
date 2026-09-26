@@ -340,6 +340,16 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         try:
             a_bytes = _evidence.canonical_brep_bytes(_as_shape(shapeA))
             b_bytes = _evidence.canonical_brep_bytes(_as_shape(shapeB))
+            ix = report.get("stages", {}).get("intersection", {}) \
+                if isinstance(report, dict) else {}
+            probed = bool(ix.get("completeness_probes"))
+            certification = {
+                "mode": "strict",
+                "completeness_probe": probed,
+                "allow_nonmanifold": bool(allow_nonmanifold),
+            }
+            if not probed:
+                certification["unprobed"] = True
             record = _evidence.build_record(
                 op=op,
                 input_a={"sha256": _hashlib.sha256(a_bytes).hexdigest(),
@@ -353,6 +363,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                 finished_utc=_datetime.now(_timezone.utc).isoformat(),
                 duration_ms=(_time.perf_counter() - _t0) * 1000.0,
                 operation_id=_operation_id,
+                certification=certification,
             )
             if evidence_dir is not None:
                 try:

@@ -5,7 +5,7 @@ persistent-naming half of B4. Implemented in
 `src/brepkernel/evidence.py`, wired into `boolean_brep()` in
 `src/brepkernel/pipeline.py`, tested in `tests/test_evidence.py`.
 
-## Schema: `brepkernel.evidence/1.0`
+## Schema: `brepkernel.evidence/1.1`
 
 Every `boolean_brep()` call attaches one evidence record at
 `report["evidence"]`, on the accept path and on typed-refusal paths
@@ -14,11 +14,12 @@ The record is a plain JSON-serializable dict:
 
 | Field | Content |
 |---|---|
-| `schema` | `"brepkernel.evidence/1.0"` |
+| `schema` | `"brepkernel.evidence/1.1"` |
 | `name` | Persistent deterministic name (see below) |
 | `naming` | Naming scheme id, formula, op, input hashes, pipeline version and commit |
 | `operation_id` | Unique per-call id (uuid4 hex); distinguishes calls that share a name |
 | `kernel` | `{name, version, commit, occt, python}` identifying the pipeline build |
+| `certification` | `{mode, completeness_probe, allow_nonmanifold}` plus `"unprobed": true` when the completeness probe did not run (see below) |
 | `inputs` | Two operand records: `{role, sha256, brep_bytes, format, units, solids, shells, faces}`; `sha256` is the SHA-256 of the canonical BREP text |
 | `operation` | `{op, params}` with the effective tolerances and options (base_tol, contact_tol, fuzzy, broadphase_pad + mode, chord_tol, tangent_sin_tol, max_section_tol, area_rel_tol, sew_tol, allow_nonmanifold, crosscheck flags, parallel, use_obb) |
 | `timestamps` | `{started_utc, finished_utc, duration_ms}` (ISO 8601 UTC) |
@@ -53,9 +54,13 @@ Example: `ev_e10_union_b0caafc89533_73d09a490069_55810891`.
 
 Rules:
 
-- The canonical BREP text is what `BRepTools_Write` emits for the shape;
-  it is byte-deterministic for identically constructed shapes, so the
-  input hashes are stable across processes and machines.
+- The canonical BREP text is what `BRepTools_Write` emits for the shape
+  with triangulations and normals suppressed and the format version
+  pinned to 1; the mutable 7-bit TShape flags are normalized to zeros
+  before hashing (G17).  It is byte-deterministic for identically
+  constructed shapes, so the input hashes are stable across meshing,
+  validity checks, deep copies, processes, and machines, and they change
+  if and only if the geometry/topology input changes.
 - `version` is the pipeline version (`0.9.0`); `commit` is the git HEAD
   SHA at record build time (`"unknown"` outside a git checkout). Any
   code change that moves HEAD changes the trailing code component, so
@@ -87,6 +92,24 @@ file with a fresh record of the latest run; the in-record
 - `boolean()` (Tier A mesh API) is untouched; the evidence path applies
   to `boolean_brep()` only (I9).
 - No tolerance is read or changed by evidence code (I3).
+
+## Certification block (G17)
+
+`record["certification"]` is copied verbatim from the pipeline's
+certification dict:
+
+| Key | Content |
+|---|---|
+| `mode` | `"strict"` (this pipeline); `"imported_tolerant"` reserved for future import paths |
+| `completeness_probe` | `true` when the intersection stage ran its completeness probe |
+| `allow_nonmanifold` | The `boolean_brep()` option, as a bool |
+| `unprobed` | Present and `true` only when the completeness probe did not run |
+
+An accepted record generated with the completeness probe disabled
+carries the conspicuous `"unprobed": true` marker; validators require
+it, and CLI tooling must display it.  Evidence validation is additive:
+a missing or malformed certification block is reported by
+`validate_evidence()` but can never change the Boolean verdict.
 
 ## Example (abridged)
 
