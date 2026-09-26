@@ -40,6 +40,8 @@ jobs:
       - name: Stress test
         run: python tests/test_stress.py
       - name: 200-trial snapped fuzz (fail on WRONG or CRASH)
-        run: python tools/review_probes/fuzz_brep.py --trials 200 --seed 42 --out /tmp/nightly_fuzz.json
+        run: python tools/review_probes/fuzz_brep.py --trials 200 --seed 42 --snap 0.5 --kinds box,cyl --out /tmp/nightly_snapped_fuzz.json
+      - name: 200-trial generic fuzz (fail on WRONG or CRASH)
+        run: python tools/review_probes/fuzz_brep.py --trials 200 --seed 7 --out /tmp/nightly_generic_fuzz.json
       - name: Performance budget check (fails if a pinned case exceeds 2x)
         run: python tools/review_probes/perf_budget.py --check

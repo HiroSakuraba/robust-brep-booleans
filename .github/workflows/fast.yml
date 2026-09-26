@@ -24,7 +24,7 @@ concurrency:
 jobs:
   fast:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -53,7 +53,7 @@ jobs:
             echo "=== $t ==="
             python "$t"
           done
-      - name: CAD probes baseline (fail on wrong answers only)
-        run: python tools/review_probes/common_cad_probes.py --baseline
+      - name: "CAD probes, strict (wrong answers and unmet expected accepts fail)"
+        run: python tools/review_probes/common_cad_probes.py
       - name: Short deterministic fuzz (fail on WRONG or CRASH)
         run: python tools/review_probes/fuzz_brep.py --trials 30 --seed 7 --out /tmp/fast_fuzz.json
