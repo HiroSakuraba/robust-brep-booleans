@@ -860,6 +860,7 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
         int(len(p.parameters)) for p in assembled.section_payloads]
     report["stages"]["assembly"] = {
         "selected_faces": assembled.selected_faces,
+        "region_stats": getattr(assembled, "region_stats", None),
         "shells": len(assembled.shells),
         "solids": len(assembled.solids),
         "free_edges": assembled.free_edges,
