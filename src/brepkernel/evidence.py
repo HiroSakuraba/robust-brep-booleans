@@ -6,7 +6,7 @@ an evidence record to its report, on the accept path and on typed-refusal
 paths, and each record carries a deterministic, content-derived name so
 the same inputs under the same code always produce the same evidence name.
 
-Schema: ``brepkernel.evidence/1.0``
+Schema: ``brepkernel.evidence/1.1``
 Naming: ``brepkernel.naming/1.0``
 
 Evidence emission never changes the accept/refuse outcome. The pipeline
@@ -26,9 +26,11 @@ import uuid
 from datetime import datetime, timezone
 
 import numpy as np
-from OCP.BRepTools import BRepTools
+# G13: OCP imports are lazy (inside functions) so that importing this
+# module does not pay for a broad OCP import. occt_version() in
+# particular must work without OCP.
 
-SCHEMA_ID = "brepkernel.evidence/1.0"
+SCHEMA_ID = "brepkernel.evidence/1.1"
 NAMING_SCHEME_ID = "brepkernel.naming/1.0"
 
 # Pipeline generation this schema describes. The gates branch builds on
@@ -90,24 +92,44 @@ def kernel_info():
     }
 
 
+_FLAGS = re.compile(rb"^[01]{7}\r?$", re.M)
+
+
 def canonical_brep_bytes(shape):
     """Canonical BREP text of a shape, as bytes.
 
     BRepTools_Write emits entities in construction order, which is
     deterministic for identically constructed shapes, so the bytes are a
     stable content fingerprint of the operand.
+
+    G17: the serialization is pinned (no triangulations, no normals,
+    format version 1) and the mutable 7-bit TShape flags are normalized
+    to zeros before hashing, so the fingerprint identifies
+    geometry/topology input, not incidental runtime state (meshing,
+    validity checks, deep copies).
     """
+    from OCP.BRepTools import BRepTools
+    from OCP.TopTools import TopTools_FormatVersion
     fd, path = tempfile.mkstemp(suffix=".brep")
     os.close(fd)
     try:
-        BRepTools.Write_s(shape, path)
+        ok = BRepTools.Write_s(
+            shape,
+            path,
+            False,
+            False,
+            TopTools_FormatVersion.TopTools_FormatVersion_VERSION_1,
+        )
+        if not ok:
+            raise RuntimeError("BRepTools.Write failed")
         with open(path, "rb") as f:
-            return f.read()
+            data = f.read()
     finally:
         try:
             os.unlink(path)
         except OSError:
             pass
+    return _FLAGS.sub(b"0000000", data)
 
 
 def brep_sha256(shape):
@@ -242,7 +264,7 @@ def _stage_summary(stages):
 
 def build_record(*, op, input_a, input_b, params, report,
                  result_shape=None, started_utc=None, finished_utc=None,
-                 duration_ms=None, operation_id=None):
+                 duration_ms=None, operation_id=None, certification=None):
     """Build the evidence record dict for one boolean_brep() outcome.
 
     input_a/input_b: {"sha256": hex, "brep_bytes": int}.
@@ -250,6 +272,9 @@ def build_record(*, op, input_a, input_b, params, report,
     report: the pipeline report dict (stages, timings, refusal).
     result_shape: accepted result shape, or None on the refusal path.
     A refusal is detected from report.get("refusal").
+    certification: optional dict with "mode", "completeness_probe", and
+        "allow_nonmanifold"; copied verbatim into the record.  If omitted,
+        a default strict block is synthesized from the report.
     """
     if op not in VALID_OPS:
         raise ValueError(f"unknown op {op!r}")
@@ -321,6 +346,8 @@ def build_record(*, op, input_a, input_b, params, report,
         },
         "operation_id": operation_id or new_operation_id(),
         "kernel": info,
+        "certification": (dict(certification) if certification is not None
+                          else _default_certification(report)),
         "inputs": inputs,
         "operation": {"op": op, "params": _jsonable(params)},
         "timestamps": {
@@ -339,10 +366,35 @@ def build_record(*, op, input_a, input_b, params, report,
     return _jsonable(record)
 
 
+def _default_certification(report):
+    """Synthesize the certification block from a pipeline report.
+
+    G17: mode is "strict" (the only mode this pipeline implements;
+    "imported_tolerant" is reserved for future import paths).
+    completeness_probe reflects whether the intersection stage ran its
+    completeness probe; if not, the conspicuous "unprobed": true marker
+    is set so validators and the CLI can surface it.
+    """
+    stages = report.get("stages", {}) if isinstance(report, dict) else {}
+    ix = stages.get("intersection", {}) if isinstance(stages, dict) else {}
+    probed = bool(ix.get("completeness_probes"))
+    cert = {
+        "mode": "strict",
+        "completeness_probe": probed,
+        "allow_nonmanifold": False,
+    }
+    if not probed:
+        cert["unprobed"] = True
+    return cert
+
+
 def validate_evidence(record):
-    """Check a record against brepkernel.evidence/1.0.
+    """Check a record against brepkernel.evidence/1.1.
 
     Returns a list of problem strings; the empty list means valid.
+    G17: the certification block is validated additively; a missing or
+    malformed block is reported but never changes the Boolean verdict
+    (evidence failures are additive by design).
     """
     problems = []
 
@@ -378,6 +430,20 @@ def validate_evidence(record):
         for k in ("version", "commit", "occt", "python"):
             if not kernel.get(k):
                 _err(f"kernel.{k} missing")
+    cert = record.get("certification")
+    if not isinstance(cert, dict):
+        _err("certification block missing")
+    else:
+        if cert.get("mode") not in ("strict", "imported_tolerant"):
+            _err("certification.mode must be 'strict' or 'imported_tolerant'")
+        if not isinstance(cert.get("completeness_probe"), bool):
+            _err("certification.completeness_probe must be a bool")
+        if not isinstance(cert.get("allow_nonmanifold"), bool):
+            _err("certification.allow_nonmanifold must be a bool")
+        if cert.get("completeness_probe") is False and \
+                cert.get("unprobed") is not True:
+            _err("certification.unprobed must be true when the "
+                 "completeness probe did not run")
     inputs = record.get("inputs")
     if not isinstance(inputs, list) or len(inputs) != 2:
         _err("inputs must be a list of two operand records")

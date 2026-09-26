@@ -45,6 +45,10 @@ class PatchDecision:
     source_face: object
     selected_face: Optional[object] = None
     sewed_face: Optional[object] = None
+    # G12b: if set, this decision was propagated from another face's
+    # classification (the representative of an untouched region).
+    # The value is the parent_face_id of the representative.
+    propagated_from: Optional[int] = None
 
 
 @dataclass
@@ -122,6 +126,8 @@ class BooleanAssemblyResult:
     edge_lineage: list[EdgeLineageRecord] = field(default_factory=list)
     section_payloads: list[SectionPayloadRecord] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # G12b: untouched-region classification stats
+    region_stats: dict = field(default_factory=dict)
 
     @property
     def is_empty(self) -> bool:
@@ -812,6 +818,176 @@ def _classify_coincident_piece(piece, operand: str,
     return "ON_SAME" if sense == "same" else "ON_OPP"
 
 
+# G12b: untouched-region classification.
+#
+# If a face has no section edges (status "unchanged"), it did not
+# interact with the other model. Adjacent untouched faces connected
+# through "clean" edges (edges not near any section vertex) share the
+# same IN/OUT classification, so we classify one representative per
+# region and propagate.
+
+
+def _get_section_vertices(section_edges) -> list:
+    """Extract vertex points from section edges."""
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopAbs import TopAbs_VERTEX
+    from OCP.TopoDS import TopoDS
+    from OCP.BRep import BRep_Tool
+
+    verts = []
+    for sec in section_edges:
+        ex = TopExp_Explorer(sec.edge, TopAbs_VERTEX)
+        while ex.More():
+            v = TopoDS.Vertex(ex.Current())
+            p = BRep_Tool.Pnt_s(v)
+            verts.append((p.X(), p.Y(), p.Z()))
+            ex.Next()
+    return verts
+
+
+def _edge_bbox_6tuple(edge):
+    """Conservative bounding box of an edge as (xmin, ymin, zmin, xmax, ymax, zmax)."""
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+
+    box = Bnd_Box()
+    BRepBndLib.AddOptimal_s(edge, box, False, False)
+    if box.IsVoid():
+        return None
+    return (box.GetXMin(), box.GetYMin(), box.GetZMin(),
+            box.GetXMax(), box.GetYMax(), box.GetZMax())
+
+
+def _bbox_near_point(bbox, pt, tol) -> bool:
+    """Check if bbox is within tol of point."""
+    xmin, ymin, zmin, xmax, ymax, zmax = bbox
+    px, py, pz = pt
+    # Clamp point to bbox, compute distance
+    cx = max(xmin, min(px, xmax))
+    cy = max(ymin, min(py, ymax))
+    cz = max(zmin, min(pz, zmax))
+    dx, dy, dz = px - cx, py - cy, pz - cz
+    return (dx*dx + dy*dy + dz*dz) <= tol*tol
+
+
+def _edge_is_clean(edge, section_vertices, tol) -> bool:
+    """An edge is clean if its bbox is not within tol of any section vertex."""
+    bbox = _edge_bbox_6tuple(edge)
+    if bbox is None:
+        return False  # Cannot determine, treat as not clean
+    for v in section_vertices:
+        if _bbox_near_point(bbox, v, tol):
+            return False
+    return True
+
+
+def _build_untouched_regions(groups, section_edges, base_tol):
+    """Build regions of untouched faces connected via clean edges.
+
+    Returns (region_map, regions):
+    - region_map: dict face_id -> region_id
+    - regions: dict region_id -> list of face_ids
+    """
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopAbs import TopAbs_EDGE
+    from OCP.TopoDS import TopoDS
+
+    # Untouched faces: status "unchanged" (no section edges)
+    untouched = [fr for fr in groups if fr.status == "unchanged"]
+    if not untouched:
+        return {}, {}
+
+    # Get section vertices
+    section_vertices = _get_section_vertices(section_edges)
+
+    # Get edges for each untouched face
+    face_edges = {}
+    for fr in untouched:
+        # FaceSplitResult has pieces; for "unchanged", there's 1 piece
+        # with the original face. We need the face object.
+        # The piece has .face attribute.
+        if not fr.pieces:
+            continue
+        face = fr.pieces[0].face
+        edges = []
+        ex = TopExp_Explorer(face, TopAbs_EDGE)
+        while ex.More():
+            edges.append(TopoDS.Edge(ex.Current()))
+            ex.Next()
+        face_edges[fr.parent_face_id] = edges
+
+    # Union-find
+    parent = {fr.parent_face_id: fr.parent_face_id for fr in untouched}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            # Deterministic: smaller face_id becomes parent
+            if ra < rb:
+                parent[rb] = ra
+            else:
+                parent[ra] = rb
+
+    # Check all pairs of untouched faces for shared clean edges
+    face_ids = list(face_edges.keys())
+    for i in range(len(face_ids)):
+        for j in range(i + 1, len(face_ids)):
+            fid_a, fid_b = face_ids[i], face_ids[j]
+            # Check if they share an edge
+            shared_clean = False
+            for ea in face_edges[fid_a]:
+                for eb in face_edges[fid_b]:
+                    if ea.IsSame(eb):
+                        # Shared edge found, check if clean
+                        if _edge_is_clean(ea, section_vertices, base_tol):
+                            shared_clean = True
+                            break
+                if shared_clean:
+                    break
+            if shared_clean:
+                union(fid_a, fid_b)
+
+    # Build regions
+    regions = {}
+    region_map = {}
+    for fid in face_ids:
+        r = find(fid)
+        region_map[fid] = r
+        if r not in regions:
+            regions[r] = []
+        regions[r].append(fid)
+
+    return region_map, regions
+
+
+def _choose_representative(face_ids, groups):
+    """Choose representative face for a region: largest area, tie-break by face_id.
+
+    Deterministic: uses face_id for tie-breaking, not process-random ordering.
+    """
+    # Build map from face_id to FaceSplitResult
+    fr_map = {fr.parent_face_id: fr for fr in groups}
+    
+    best = None
+    best_area = -1.0
+    for fid in sorted(face_ids):  # Sorted for determinism
+        fr = fr_map.get(fid)
+        if fr is None:
+            continue
+        # Use area_before as the area metric
+        area = float(fr.area_before)
+        if area > best_area or (area == best_area and (best is None or fid < best)):
+            best = fid
+            best_area = area
+    return best
+
+
 def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                      split: ModelSplitResult, operation: str,
                      base_tol: float) -> list[PatchDecision]:
@@ -843,16 +1019,42 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
         # tolerance: a wider edge/near-origin discard band is the
         # conservative choice, and the per-piece OCCT tolerance still
         # governs the primary classifier.
+        #
+        # G12b: Build untouched-face regions. Only region representatives
+        # (and touched faces) are classified; results propagate to the
+        # rest of the region.
+        region_map, regions = _build_untouched_regions(
+            groups, split.section_edges, base_tol)
+        # Map face_id -> representative face_id (for non-representatives)
+        # Representative maps to itself.
+        rep_for = {}
+        for region_id, face_ids in regions.items():
+            rep = _choose_representative(face_ids, groups)
+            for fid in face_ids:
+                rep_for[fid] = rep
+        # Faces to actually classify: touched faces + representatives
+        # A face is classified if it's not in a region, or if it's the rep.
+        def should_classify(face_id):
+            if face_id not in rep_for:
+                return True  # Touched face, or untouched but not in region
+            return rep_for[face_id] == face_id
+
         jobs = []
+        skipped = []  # (face_id, piece) for propagation
         for fr in groups:
             for piece in fr.pieces:
                 tol = max(
                     float(base_tol),
                     2.0 * float(BRep_Tool.Tolerance_s(piece.face)))
-                jobs.append((piece, tol))
+                if should_classify(piece.parent_face_id):
+                    jobs.append((piece, tol))
+                else:
+                    skipped.append((piece.parent_face_id, piece, tol))
         ray_tol = max([t for _, t in jobs], default=float(base_tol))
         ray = _MultiRayClassifier(
             [sr.solid for sr in other.solids], ray_tol)
+        # Store decisions by (face_id, piece_index) for propagation
+        decisions_by_key = {}
         for piece, tol in jobs:
             # G2.6: coincident pieces get their ON state from the pair
             # relation, not from 3D witnesses. The witness still has
@@ -866,7 +1068,7 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                 selected = _reverse_face(source) if keep and rev else (
                     source if keep else None)
                 points = _face_points(source, tol)
-                out.append(PatchDecision(
+                dec = PatchDecision(
                     operand=operand,
                     parent_face_id=piece.parent_face_id,
                     piece_index=piece.piece_index,
@@ -878,7 +1080,9 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                     witness_classifications=tuple([cls] * len(points)),
                     source_face=source,
                     selected_face=selected,
-                ))
+                )
+                out.append(dec)
+                decisions_by_key[(piece.parent_face_id, piece.piece_index)] = dec
                 continue
             points = _face_points(piece.face, tol)
             classes = tuple(
@@ -897,7 +1101,7 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
             source = piece.face
             selected = _reverse_face(source) if keep and rev else (
                 source if keep else None)
-            out.append(PatchDecision(
+            dec = PatchDecision(
                 operand=operand,
                 parent_face_id=piece.parent_face_id,
                 piece_index=piece.piece_index,
@@ -909,11 +1113,58 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                 witness_classifications=classes,
                 source_face=source,
                 selected_face=selected,
+            )
+            out.append(dec)
+            decisions_by_key[(piece.parent_face_id, piece.piece_index)] = dec
+
+        # G12b: Propagate representative decisions to skipped faces.
+        for face_id, piece, tol in skipped:
+            rep_id = rep_for[face_id]
+            # Find the representative's decision (piece_index 0 for untouched)
+            rep_key = (rep_id, 0)
+            if rep_key not in decisions_by_key:
+                # Fallback: should not happen for untouched faces
+                continue
+            rep_dec = decisions_by_key[rep_key]
+            # Create propagated decision with this face's geometry
+            # but the representative's classification.
+            points = _face_points(piece.face, tol)
+            keep, rev = _decision_rule(operation, operand, rep_dec.classification)
+            source = piece.face
+            selected = _reverse_face(source) if keep and rev else (
+                source if keep else None)
+            out.append(PatchDecision(
+                operand=operand,
+                parent_face_id=face_id,
+                piece_index=piece.piece_index,
+                classification=rep_dec.classification,
+                keep=keep,
+                reverse_for_difference=rev,
+                witness_xyz=points[0],
+                witness_xyz_all=points,
+                witness_classifications=tuple(
+                    [rep_dec.classification] * len(points)),
+                source_face=source,
+                selected_face=selected,
+                propagated_from=rep_id,
             ))
 
+        # Return region stats for the report
+        return {
+            "n_regions": len(regions),
+            "n_propagated": len(skipped),
+            "n_classified": len(jobs),
+        }
 
-    one_side("A", split.faces_a, model_b)
-    one_side("B", split.faces_b, model_a)
+
+    stats_a = one_side("A", split.faces_a, model_b)
+    stats_b = one_side("B", split.faces_b, model_a)
+    # Attach region stats to the output for the report
+    # (stored on the function for access by caller)
+    _classify_pieces.region_stats = {
+        "A": stats_a,
+        "B": stats_b,
+    }
     return out
 
 
@@ -926,17 +1177,55 @@ def _empty_compound():
     return c
 
 
-def _shape_volume(shape) -> float:
-    """Adaptive volume measurement, including B-spline span integration."""
+# G13: per-Boolean-call volume cache.  Input volumes are measured several
+# times during one Boolean call (operation invariants, evidence, shell
+# checks); recomputing the adaptive 1e-10 integration each time is the
+# dominant cost on rotated/titled geometry.  The cache is keyed by
+# (id(shape), tol) and holds a strong reference to the shape so id() reuse
+# after GC cannot alias a dead entry.  It is cleared at the start of every
+# top-level Boolean call (see clear_volume_cache callers); entries never
+# outlive one call, so stale results from mutated shapes are impossible.
+_VOLUME_CACHE: dict = {}
+
+
+def clear_volume_cache() -> None:
+    """Drop all cached volume measurements.  Called once per Boolean call."""
+    _VOLUME_CACHE.clear()
+
+
+# Error budget for lower-precision internal volume checks (G13).  The
+# coarse 1e-4 tolerance is used only for sign checks (vol > 0) on result
+# shells and for operation-level volume invariants, where a relative
+# error of 1e-4 cannot flip the verdict: volumes entering these checks
+# are either exactly zero (degenerate, refused elsewhere) or bounded
+# away from zero by construction tolerances >= 1e-7.  Any volume that is
+# reported as evidence keeps the full 1e-10 adaptive integration.
+_COARSE_VOLUME_TOL = 1e-4
+
+
+def _shape_volume(shape, tol: float = 1e-10) -> float:
+    """Adaptive volume measurement, including B-spline span integration.
+
+    Results are cached for the duration of one Boolean call.  The default
+    tol=1e-10 is the high-accuracy path used wherever a volume is reported
+    as evidence.  Internal sign/coarse-bound checks may pass
+    tol=_COARSE_VOLUME_TOL (1e-4); the error budget is documented above.
+    """
+    key = (id(shape), float(tol))
+    hit = _VOLUME_CACHE.get(key)
+    if hit is not None and hit[0] is shape:
+        return hit[1]
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
     g = GProp_GProps()
     err = BRepGProp.VolumePropertiesGK_s(
-        shape, g, 1e-10, True, True, False, False, False)
+        shape, g, tol, True, True, False, False, False)
     if float(err) < 0.0:
         raise AssemblyError("adaptive volume integration failed",
                             kind="VolumeIntegrationFailed")
-    return float(g.Mass())
+    vol = float(g.Mass())
+    _VOLUME_CACHE[key] = (shape, vol)
+    return vol
 
 
 def _extract_shells(shape) -> list[object]:
@@ -1115,15 +1404,21 @@ def _solid_interior_points(solid, tol: float, *,
 
     # Fallback points are allowed to fill out the witness set, but never
     # replace the requirement for multiple consistent witnesses.
-    props = GProp_GProps()
-    err = BRepGProp.VolumePropertiesGK_s(
-        solid, props, 1e-9, True, True, True, False, False)
-    if float(err) < 0.0:
-        raise AssemblyError("adaptive center-of-mass integration failed",
-                            kind="VolumeIntegrationFailed")
-    cm = _p3(props.CentreOfMass())
-    if is_in(cm):
-        add(cm)
+    #
+    # G10 Problem B: the center-of-mass witness is optional. The adaptive
+    # volume integration behind it is expensive (it dominates NURBS
+    # witness time), so it runs only when the ordinary face-based
+    # strategy failed to produce enough points, at reduced accuracy, and
+    # a failed integration only skips this candidate: it must never turn
+    # an otherwise certifiable operation into a refusal.
+    if len(points) < min_points:
+        props = GProp_GProps()
+        err = BRepGProp.VolumePropertiesGK_s(
+            solid, props, 1e-4, True, True, True, False, False)
+        if float(err) >= 0.0:
+            cm = _p3(props.CentreOfMass())
+            if is_in(cm):
+                add(cm)
 
     if len(points) < min_points:
         for fx in frac:
@@ -1158,7 +1453,9 @@ def _shell_records(shells: list[object], tol: float
     tmp = []
     for i, sh in enumerate(shells):
         solid, outward = _make_outward_solid(sh)
-        vol = abs(_shape_volume(solid))
+        # G13: sign check only; coarse precision is safe per the documented
+        # error budget above.
+        vol = abs(_shape_volume(solid, tol=_COARSE_VOLUME_TOL))
         if not vol > 0:
             raise AssemblyError("assembled shell has non-positive volume",
                                 kind="ZeroVolumeShell")
@@ -1282,7 +1579,9 @@ def _build_nested_solids(records: list[ShellAssemblyRecord]
         if not BRepCheck_Analyzer(solid, True).IsValid():
             raise AssemblyError("nested result solid is B-rep invalid",
                                 kind="SolidInvalid")
-        vol = _shape_volume(solid)
+        # G13: sign check only; coarse precision is safe per the documented
+        # error budget above.
+        vol = _shape_volume(solid, tol=_COARSE_VOLUME_TOL)
         if not vol > 0:
             raise AssemblyError("result solid has non-positive volume",
                                 kind="SolidInvalid")
@@ -1414,24 +1713,240 @@ def _edge_matches_section(edge, sec, base_tol: float) -> bool:
         float(sec.edge_tolerance), float(base_tol))
 
 
+# ---------------------------------------------------------------------------
+# G12a: call-scoped assembly indexes.
+#
+# _build_edge_lineage used to re-explore every face's edges and recompute
+# every reference edge's length for each (result edge, candidate) pair.
+# The classes below hoist that repeated work into per-call indexes built
+# once at the top of _build_edge_lineage. Every predicate below is
+# pairwise-equal to the linear scan it replaces:
+#   - _EdgeSet.__contains__ uses the same TShape-identity (IsSame)
+#     predicate as _shape_has_edge over the same edge multiset.
+#   - _AssemblyIndexes._match_ref_edge runs the original
+#     _edge_matches_ref_edge for every pair the conservative box
+#     pre-filter cannot rule out. The pre-filter only skips pairs whose
+#     bounding boxes are farther apart than the match tolerance, in
+#     which case no sample point of the edge could be within the
+#     tolerance of the reference edge and the original would return
+#     False. Skips are therefore provably verdict-neutral.
+# All state is created fresh per call. There is no module-level cache,
+# no mutable default argument, and nothing is shared between calls.
+# ---------------------------------------------------------------------------
+
+
+def _edge_bbox(edge) -> tuple[np.ndarray, np.ndarray]:
+    """Axis-aligned bounding box of an edge as (lo, hi)."""
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+
+    box = Bnd_Box()
+    BRepBndLib.Add_s(edge, box)
+    if box.IsVoid():
+        inf = float("inf")
+        return (np.full(3, -inf), np.full(3, inf))
+    lo = np.array([box.GetXMin(), box.GetYMin(), box.GetZMin()],
+                  dtype=np.float64)
+    hi = np.array([box.GetXMax(), box.GetYMax(), box.GetZMax()],
+                  dtype=np.float64)
+    return (lo, hi)
+
+
+def _bbox_separated(bb1, bb2, margin: float) -> bool:
+    """True only if every point of box 1 is farther than margin from
+    every point of box 2.
+
+    If the boxes are separated by more than margin on any axis, the
+    Euclidean distance between any two points (one per box) exceeds
+    margin on that axis alone. An edge is contained in its box, so a
+    True result proves the geometric edge matcher (which needs sample
+    points within margin of the reference edge) would return False.
+    """
+    (lo1, hi1), (lo2, hi2) = bb1, bb2
+    m = float(margin)
+    return bool(np.any(hi1 + m < lo2) or np.any(hi2 + m < lo1))
+
+
+class _EdgeSet:
+    """Call-scoped unique-edge set for one shape.
+
+    Membership uses TShape identity (IsSame), exactly like
+    _shape_has_edge; the explorer scan happens once here instead of
+    once per query.
+    """
+
+    __slots__ = ("_edges",)
+
+    def __init__(self, shape):
+        self._edges = _unique_edges(shape)
+
+    def __contains__(self, edge) -> bool:
+        return any(e.IsSame(edge) for e in self._edges)
+
+    def __len__(self) -> int:
+        return len(self._edges)
+
+
+class _RefEdgeData:
+    """Call-scoped cached data for one reference edge (section edge,
+    coincident-boundary tool edge, or parent-face boundary edge)."""
+
+    __slots__ = ("edge", "bbox", "length", "verify_tolerance",
+                 "edge_tolerance")
+
+    def __init__(self, edge, verify_tolerance: float,
+                 edge_tolerance: float):
+        self.edge = edge
+        self.bbox = _edge_bbox(edge)
+        self.length = _edge_length(edge)
+        self.verify_tolerance = float(verify_tolerance)
+        self.edge_tolerance = float(edge_tolerance)
+
+
+class _AssemblyIndexes:
+    """Call-scoped indexes for one _build_edge_lineage call.
+
+    Built once per call from (result_shape, selected, sections, tools,
+    models). Sections/tools are duck-typed: section-likes expose
+    .edge/.verify_tolerance/.edge_tolerance/.face_a/.face_b/.edge_index,
+    tool-likes are dicts with "edge"/"operand"/"face_id"/"edge_id",
+    models maps operand -> BRepModel.
+    """
+
+    def __init__(self, result_shape, selected, sections, tools,
+                 models, base_tol: float):
+        self.base_tol = float(base_tol)
+        self.result_edges = _unique_edges(result_shape)
+        self.result_bboxes = [_edge_bbox(e) for e in self.result_edges]
+        self.result_lengths = [_edge_length(e) for e in self.result_edges]
+        self.n_result_edges = len(self.result_edges)
+        self.selected = list(selected)
+        self.sewed_sets = [self._sewed_edge_set(d) for d in self.selected]
+        self.sections = [_RefEdgeData(s.edge, s.verify_tolerance,
+                                      s.edge_tolerance) for s in sections]
+        self.section_keys = [(s.face_a, s.face_b, s.edge_index)
+                             for s in sections]
+        self.n_sections = len(self.sections)
+        self.tools = [_RefEdgeData(t["edge"], self.base_tol,
+                                   self.base_tol) for t in tools]
+        self.tool_keys = [(t["operand"], t["face_id"], t["edge_id"])
+                          for t in tools]
+        self.n_tools = len(self.tools)
+        self.face_map = {op: {f.face_id: f.face for f in m.faces}
+                         for op, m in models.items()}
+        self._parent_sets: dict = {}
+        self._parent_boundary: dict = {}
+
+    @staticmethod
+    def _sewed_edge_set(d):
+        sf = d.sewed_face if d.sewed_face is not None else d.selected_face
+        return _EdgeSet(sf) if sf is not None else None
+
+    def register_parent_face(self, key, face) -> None:
+        """Register a parent face under an arbitrary key (used by the
+        lazy parent lookup and directly by tests)."""
+        self._parent_sets[key] = _EdgeSet(face)
+        self._parent_boundary[key] = [_RefEdgeData(b, self.base_tol,
+                                                   self.base_tol)
+                                      for b in _unique_edges(face)]
+
+    def _parent_key(self, operand, face_id):
+        return (operand, face_id)
+
+    def parent_set(self, operand, face_id):
+        key = self._parent_key(operand, face_id)
+        if key not in self._parent_sets:
+            face = self.face_map[operand].get(face_id)
+            if face is None:
+                return None
+            self.register_parent_face(key, face)
+        return self._parent_sets[key]
+
+    def sewed_contains(self, di: int, edge) -> bool:
+        s = self.sewed_sets[di]
+        return s is not None and edge in s
+
+    def parent_contains(self, operand, face_id, edge) -> bool:
+        s = self.parent_set(operand, face_id)
+        return s is not None and edge in s
+
+    def _match_ref_edge(self, edge_idx: int, ref: _RefEdgeData,
+                        base_tol: float) -> bool:
+        """Indexed form of _edge_matches_ref_edge.
+
+        Pairwise-equal to the original: the IsSame fast path and the
+        length gate run first on cached values; the box pre-filter only
+        skips pairs the original provably answers False for; otherwise
+        the original function decides.
+        """
+        edge = self.result_edges[edge_idx]
+        if edge.IsSame(ref.edge):
+            return True
+        le = self.result_lengths[edge_idx]
+        ls = ref.length
+        tol = max(float(base_tol), ref.verify_tolerance,
+                  ref.edge_tolerance)
+        len_tol = max(16.0 * tol, 1e-8 * max(le, ls, 1.0))
+        if le > ls + len_tol:
+            return False
+        match_tol = max(8.0 * tol, 1e-9 * max(le, ls, 1.0))
+        if _bbox_separated(self.result_bboxes[edge_idx], ref.bbox,
+                           match_tol):
+            return False
+        return _edge_matches_ref_edge(edge, ref.edge,
+                                      ref.verify_tolerance,
+                                      ref.edge_tolerance,
+                                      float(base_tol))
+
+    def edge_matches_section(self, edge_idx: int, sec_idx: int,
+                             base_tol: float) -> bool:
+        """Indexed form of _edge_matches_section (pairwise-equal)."""
+        return self._match_ref_edge(edge_idx, self.sections[sec_idx],
+                                    base_tol)
+
+    def edge_matches_tool(self, edge_idx: int, tool_idx: int,
+                          base_tol: float) -> bool:
+        """Indexed form of the coincident-tool _edge_matches_ref_edge
+        call (pairwise-equal)."""
+        return self._match_ref_edge(edge_idx, self.tools[tool_idx],
+                                    base_tol)
+
+    def edge_on_face_boundary(self, edge_idx: int, key,
+                              base_tol: float) -> bool:
+        """Indexed form of _edge_on_face_boundary (pairwise-equal)."""
+        if key not in self._parent_boundary:
+            return False
+        for ref in self._parent_boundary[key]:
+            if self._match_ref_edge(edge_idx, ref, base_tol):
+                return True
+        return False
+
+
 def _build_edge_lineage(result_shape, selected: list[PatchDecision],
                         split: ModelSplitResult,
                         model_a: BRepModel, model_b: BRepModel,
                         base_tol: float) -> list[EdgeLineageRecord]:
-    """Attach final result edges to selected patches and section evidence."""
-    original = {
-        "A": {f.face_id: f.face for f in model_a.faces},
-        "B": {f.face_id: f.face for f in model_b.faces},
-    }
+    """Attach final result edges to selected patches and section evidence.
+
+    G12a: all repeated scans go through the call-scoped _AssemblyIndexes
+    built below (one per call). The lineage records produced are
+    identical to the old linear scans by construction: every predicate
+    is pairwise-equal to the scan it replaces.
+    """
+    btol = float(base_tol)
+    idx = _AssemblyIndexes(
+        result_shape, selected,
+        list(split.section_edges), list(split.coincident_boundary_tools),
+        {"A": model_a, "B": model_b}, btol)
     out = []
-    for i, edge in enumerate(_unique_edges(result_shape)):
+    for i in range(idx.n_result_edges):
+        edge = idx.result_edges[i]
         refs = []
         parents = []
         operands = []
         source_boundary = []
-        for d in selected:
-            sf = d.sewed_face if d.sewed_face is not None else d.selected_face
-            if sf is not None and _shape_has_edge(sf, edge):
+        for di, d in enumerate(selected):
+            if idx.sewed_contains(di, edge):
                 ref = (d.operand, d.parent_face_id, d.piece_index)
                 if ref not in refs:
                     refs.append(ref)
@@ -1440,18 +1955,16 @@ def _build_edge_lineage(result_shape, selected: list[PatchDecision],
                     parents.append(pf)
                 if d.operand not in operands:
                     operands.append(d.operand)
-                parent_face = original[d.operand].get(d.parent_face_id)
-                if parent_face is not None and (
-                        _shape_has_edge(parent_face, edge)
-                        or _edge_on_face_boundary(
-                            edge, parent_face, float(base_tol))):
+                if (idx.parent_contains(d.operand, d.parent_face_id, edge)
+                        or idx.edge_on_face_boundary(
+                            i, (d.operand, d.parent_face_id), btol)):
                     if pf not in source_boundary:
                         source_boundary.append(pf)
 
         intersections = []
-        for sec in split.section_edges:
-            if _edge_matches_section(edge, sec, float(base_tol)):
-                key = (sec.face_a, sec.face_b, sec.edge_index)
+        for sj in range(idx.n_sections):
+            if idx.edge_matches_section(i, sj, btol):
+                key = idx.section_keys[sj]
                 if key not in intersections:
                     intersections.append(key)
 
@@ -1463,19 +1976,15 @@ def _build_edge_lineage(result_shape, selected: list[PatchDecision],
         # via the overlap split.
         coincident_sources = []
         interior_to_a_parent = False
-        for tool in split.coincident_boundary_tools:
-            if _edge_matches_ref_edge(
-                    edge, tool["edge"], float(base_tol),
-                    float(base_tol), float(base_tol)):
-                key = (tool["operand"], tool["face_id"],
-                       tool["edge_id"])
+        for tj in range(idx.n_tools):
+            if idx.edge_matches_tool(i, tj, btol):
+                key = idx.tool_keys[tj]
                 if key not in coincident_sources:
                     coincident_sources.append(key)
         if coincident_sources:
             for operand, fid in parents:
-                parent_face = original[operand].get(fid)
-                if parent_face is not None and not _edge_on_face_boundary(
-                        edge, parent_face, float(base_tol)):
+                if idx.parent_set(operand, fid) is not None and not (
+                        idx.edge_on_face_boundary(i, (operand, fid), btol)):
                     interior_to_a_parent = True
                     break
             source_boundary.extend(
@@ -1599,6 +2108,8 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     allow_nonmanifold=True returns a compound of touching solids for a
     touching-only union instead of refusing NonManifoldResult.
     """
+    # G13: one Boolean call, one volume-cache lifetime.
+    clear_volume_cache()
     from OCP.BRep import BRep_Tool
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
     from OCP.BRepCheck import BRepCheck_Analyzer
@@ -1612,6 +2123,8 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     decisions = _classify_pieces(
         model_a, model_b, split, operation, float(base_tol))
     selected = [d for d in decisions if d.keep]
+    # G12b: capture region stats from _classify_pieces
+    region_stats = getattr(_classify_pieces, "region_stats", {})
 
     if not selected:
         empty = _empty_compound()
@@ -1621,7 +2134,8 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
             volume=0.0, free_edges=0, multiple_edges=0,
             edge_lineage=[],
             section_payloads=[],
-            notes=["empty material result"])
+            notes=["empty material result"],
+            region_stats=region_stats)
 
     if sew_tol is None:
         face_tols = [
@@ -1719,4 +2233,5 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         edge_lineage=edge_lineage,
         section_payloads=section_payloads,
         notes=notes,
+        region_stats=region_stats,
     )

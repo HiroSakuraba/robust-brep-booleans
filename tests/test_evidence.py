@@ -4,7 +4,7 @@ Contract under test:
 - every boolean_brep() call emits a machine-readable evidence record at
   report["evidence"], on the accept path AND on typed-refusal paths
   (the refusal exception carries the report, so the record rides along);
-- the record validates against brepkernel.evidence/1.0;
+- the record validates against brepkernel.evidence/1.1;
 - the record name is deterministic and content-derived:
   name = f(op, input hashes, pipeline version), so the same inputs under
   the same code always produce the same evidence name;
@@ -39,14 +39,9 @@ def box(x0, y0, z0, x1, y1, z1):
 
 
 def canonical_sha256(shape):
-    fd, path = tempfile.mkstemp(suffix=".brep")
-    os.close(fd)
-    try:
-        BRepTools.Write_s(shape, path)
-        with open(path, "rb") as f:
-            return hashlib.sha256(f.read()).hexdigest()
-    finally:
-        os.unlink(path)
+    # G17: use the pipeline's canonical bytes (pinned format, no
+    # triangulations/normals, normalized TShape flags).
+    return evidence.brep_sha256(shape)
 
 
 NAME_RE = re.compile(
@@ -59,7 +54,7 @@ def main():
 
     # 1. Schema module exists with the expected identifiers.
     ok &= check("evidence schema id",
-                evidence.SCHEMA_ID == "brepkernel.evidence/1.0",
+                evidence.SCHEMA_ID == "brepkernel.evidence/1.1",
                 evidence.SCHEMA_ID)
     ok &= check("naming scheme id",
                 evidence.NAMING_SCHEME_ID == "brepkernel.naming/1.0",

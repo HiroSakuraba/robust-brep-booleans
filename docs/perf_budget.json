@@ -1,0 +1,35 @@
+{
+  "cases": {
+    "box_union": {
+      "op": "union",
+      "measured_s": 0.297,
+      "budget_s": 0.595
+    },
+    "box_difference": {
+      "op": "difference",
+      "measured_s": 0.292,
+      "budget_s": 0.585
+    },
+    "box_intersection": {
+      "op": "intersection",
+      "measured_s": 0.291,
+      "budget_s": 0.581
+    },
+    "cylinder_through_box": {
+      "op": "union",
+      "measured_s": 0.942,
+      "budget_s": 1.883
+    },
+    "hole_plate_4": {
+      "op": "difference",
+      "measured_s": 0.513,
+      "budget_s": 1.025
+    },
+    "rotated_box_union": {
+      "op": "union",
+      "measured_s": 0.353,
+      "budget_s": 0.707
+    }
+  },
+  "note": "Best-of-3 seconds on the recording runner; budget = 2x measured. Nightly fails if a pinned case exceeds its budget."
+}

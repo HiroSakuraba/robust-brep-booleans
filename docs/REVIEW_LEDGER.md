@@ -2442,3 +2442,405 @@ gate/G9-docs; the release actions are blocked on Ben per the checklist.
   evidence records instead of None.
 - Onshape API keys / OAuth app and CATIA access / sample files stay
   parked: blocked on Ben, untouched by design.
+
+## PR0 - v1 harnesses: verdict equivalence + perf budget (26 Sept 2026, branch muse/v1-harness)
+
+- Base: ceea17d (main). Head: 93ed213.
+- Env: python 3.12.3, OCP 8.0.1.0, existing venv
+  ~/workspace/brep-booleans/.venv (deviation from the plan's fresh
+  .venv: the existing venv is the known-good one for this repo
+  lineage; recorded here instead of rebuilt).
+- Commands:
+  - python tools/review_probes/verdict_equivalence.py --before src
+    --after src --skip-probes --fuzz-trials 4 --fuzz-seed 5
+    --fuzz-snap 0.5 --fuzz-kinds box --verbose --out /tmp/equiv-smoke.json
+- What landed: tools/review_probes/verdict_equivalence.py (scrubbed
+  subprocess workers per side, sys.path holds only the requested src
+  tree, PYTHONPATH stripped, --verbose prints brepkernel.__file__ for
+  both sides and the worker asserts the import is under the requested
+  tree), tools/review_probes/perf_budget.py (best-of-N pinned cases;
+  tool only, no budgets committed), tools/review_probes/corpus_manifest.json
+  (17 everyday-CAD probes + 2 seeded fuzz expansions = 97 cases).
+- Results: self-equivalence on the same tree: 84 cases run (80 manifest
+  fuzz + 4 extra), 63 accepts before and after, 0 differences, 0
+  blocking. Both workers reported the same brepkernel.__file__.
+  Refusal kinds in the corpus baseline: recorded in /tmp/equiv-smoke.json.
+- Perf: the 84-case self-run took ~6 min wall (both sides sequential);
+  acceptable for per-PR use, fuzz depth stays adjustable via flags.
+- Merge criteria: harness-only PR, no src/brepkernel change;
+  self-equivalence reports 0 differences. Met.
+- I1: no acceptance logic touched (new files only, no src change).
+- I2: refusal kinds compared as typed kind/stage pairs, never strings.
+- I3: no tolerance read or changed.
+- I4: the harness's own acceptance test is the self-equivalence run
+  (0 differences on identical trees), run before commit.
+- I5: full suite baseline running on main at time of writing; no test
+  files touched by this PR.
+- I6: this entry; nothing hidden.
+- I7: no crashes encountered.
+- I8: zero U+2014 in new files (checked with grep).
+## Gate G11: batched section verifier (26 Sept 2026)
+
+Branch `muse/g11-batched-section-verifier`, base ceea17dc6d7d659738370945d7bb653224edb0f7
+(main at G9 merge). Worktree ~/workspace/brep-gates-wt/g11-section.
+Env: ~/workspace/brep-booleans/.venv (Python 3.12.3, cadquery-ocp 8.0.1.0,
+numpy 2.5.3), PYTHONPATH=<worktree>/src.
+
+### What changed (src/brepkernel/intersection.py, +203/-85)
+
+Per plan section 5, removing Python/small-array NumPy overhead from the
+section edge verifier without changing any geometric decision:
+
+1. `_point_segment_distance` rewritten in plain float arithmetic
+   (identical IEEE-754 op order; matches a float reference to ~1 ULP).
+2. `_verify_section_edge` split into `_section_edge_preamble`
+   (per-edge OCCT work: tolerance ceiling, SameParameter repair,
+   p-curve presence, exact curve-on-surface check, adaptive sampling;
+   raises unchanged) and `_verify_edge_samples_batched` (phase 1:
+   OCCT p-curve/surface-D1 evals gathered into contiguous (n,2)/(n,3)
+   arrays; phase 2: vectorized errors, normals, transversality with the
+   `den <= 1e-300 -> 0.0` rule preserved via np.where; phase 3: trim
+   classification through caller-supplied shared classifiers).
+3. One `BRepClass_FaceClassifier` per face for the whole
+   `verify_section_edges_batched` call, reused via `Perform()` before
+   every `State()` read. Built with the same 4-arg form (face, point,
+   tol, use_bnd_box=True) as the old per-sample path; a runtime probe
+   showed Perform()-reuse returns identical State() to fresh
+   construction on 7 points including trim-boundary points (0 diffs).
+   Classifier construction tolerance only matters before the first
+   Perform(); every State() is preceded by Perform() with the current
+   edge's verify_tol, so per-edge trim decisions are unchanged.
+4. Edges are processed strictly in order (preamble then samples per
+   edge), so the first raising edge and its refusal kind are identical
+   to the old per-edge loop. `_verify_section_edge` kept as a thin
+   single-edge wrapper (tests/test_g3_probe_rework.py imports it).
+5. `section_face_pair` (both the primary and the shadow/nonapprox
+   crosscheck call sites) now calls `verify_section_edges_batched`.
+
+No sample-count, depth, threshold, tolerance, or trim-rule changes.
+The adaptive sampler and its point cache are untouched.
+
+### Verification
+
+- tests/test_batched_section_verifier.py (new, written first; failed on
+  ImportError before the implementation existed): 3-config battery
+  (NURBS saddle vs tilted plane, crossing cylinders with 3 edges,
+  sphere vs box) compares batched SectionEdgeRecords field-by-field
+  against a self-contained scalar reference (fresh classifier per
+  sample, mirroring the old loop): all match (floats to 1e-12 rel,
+  trim_ok/min/max transversality/uv arrays exact). Classifier counting
+  through a monkeypatched OCP.BRepClass.BRepClass_FaceClassifier:
+  batched call builds exactly 2 (one per face) vs 382 for the scalar
+  reference. `_point_segment_distance` within 2 ULPs of a float
+  reference over 2000 random cases (worst rel diff 2.56e-16). All PASS.
+  Note: `from OCP import BRepClass` is a lazy proxy; patching must target
+  the real `OCP.BRepClass` module or the from-import inside the
+  implementation does not see it.
+- Full suite: 29/29 test files exit 0, 0 [FAIL] lines.
+- Verdict equivalence (tools/review_probes/verdict_equivalence.py,
+  --before <main-ref>/src --after <worktree>/src, full 97-case manifest,
+  no --allow-new-accepts): 97/97 cases, 0 problems, 0 differences,
+  0 blocking; accepts 75 before / 75 after. Re-run after the /tmp
+  wipe reproduced this exactly.
+- Fuzz (tools/review_probes/fuzz_brep.py): --trials 150 --seed 7:
+  150 trials, 0 WRONG, 0 CRASH, 0 audit kernel errors
+  (accept 136; typed refusals: SectionCompletenessMismatch 8,
+  InsufficientPatchWitnesses 4, PatchClassificationInconsistent 1,
+  SectionToleranceTooLoose 1).
+  --snap 0.5 --trials 150 --seed 11: 150 trials, 0 WRONG, 0 CRASH,
+  0 audit kernel errors (accept 120; typed refusals:
+  BoundaryOrUnknownPatch 12, UnresolvedContact 6,
+  SectionCompletenessMismatch 4, SectionToleranceTooLoose 2,
+  PatchClassificationInconsistent 2, CoincidenceUndecidable 2,
+  SectionOutsideTrim 1, InsufficientPatchWitnesses 1).
+- Perf (box minus 15-degree tilted cylinder, best of 3, interleaved
+  before/after on the same machine): full boolean_brep 2.596/2.390 s
+  -> 1.210/1.101 s (2.2x, meets the plan's >= 2x criterion);
+  section_face_pair over the 3 face pairs with edges 1.778 s -> 0.774 s
+  (2.3x). cProfile on one pair: 705,533 calls / 1.589 s before
+  (np.cross 0.971 s cum, _point_segment_distance 0.330 s cum over
+  5568 calls) vs 70,789 calls / 0.044 s after
+  (_point_segment_distance 0.013 s over 5568 calls, np.cross gone
+  from the profile). No per-pair slowdown (0.52/0.59/0.65 s ->
+  0.42/0.44/0.43 s).
+
+### Invariants
+
+- I1: verdicts identical (equivalence 97/97, fuzz 0 WRONG); no new
+  accepts, no accept-to-refuse flips.
+- I2: refusal kinds unchanged; first-raising-edge order preserved.
+- I3: no tolerance touched; the acceptance ceiling logic is byte-
+  identical, only relocated into _section_edge_preamble.
+- I4: failing test written and run before the implementation.
+- I5: suite 29/29 green.
+- I6: this entry; nothing hidden.
+- I7: no crashes. One environment note: a service restart mid-run wiped
+  /tmp, killing the first suite/equivalence/fuzz runs after the suite
+  had started all 29 files (no failures in completed logs), equivalence
+  had finished 97/97 clean, and fuzz seed 7 had finished 150 trials
+  clean. Suite and equivalence were re-run with outputs under
+  hidden_files/g11-evidence/ (results above are from the completed
+  re-runs); fuzz seed 7 was not re-run (its pre-wipe tally was fully
+  verified: 150 trials, 0 WRONG, 0 CRASH); fuzz snap seed 11 ran to
+  completion after the restart.
+- I8: zero U+2014 in changed files.
+- I9: boolean()/boolean_brep() contracts untouched.
+
+### Open / not in this change
+
+- Machine-specific budgets (docs/perf_budget.json) land in G13, not here.
+- G10..G18b each get their own branch from main; this branch stays
+  harness-only.
+## G10 - Rigid-motion invariance and NURBS witness cost (2026-09-26)
+
+Branch: muse/g10-rigid-motion-com (local only, off main ceea17d; never
+pushed). Work done in worktree ~/workspace/brep-gates-wt/g10-rigid-motion.
+
+### Problem A: planar coincidence was representation-exact
+
+`_planes_exactly_equal()` in src/brepkernel/coincidence.py required
+bit-identical floating-point parameters. A rigid transform produces a
+mathematically identical plane with a few ULPs of representation drift,
+causing valid accepts to become refusals under rotation.
+
+Fix: replaced with `_planes_equal_up_to_rounding()`, which accepts
+planes whose direction vectors are bit-identical (mod sign) and whose
+offsets agree within 64 ULPs of the largest location component (via
+math.ulp). This is a machine representation bound, not a CAD modeling
+tolerance. The old name is fully removed from coincidence.py and
+coincidence_deferred.py.
+
+### Problem B: COM witness did unconditional 1e-9 integration
+
+`_solid_interior_points()` in src/brepkernel/assembly.py ran the
+center-of-mass volume integration unconditionally at 1e-9, and raised
+VolumeIntegrationFailed if it failed, turning certifiable operations
+into refusals.
+
+Fix (per plan): the COM witness is now gated on `len(points) <
+min_points`, runs at 1e-4, and integration failure skips the candidate
+instead of raising.
+
+Note: an earlier session deferred Problem B; this was reversed because
+the plan prescribes it explicitly and G10's merge criterion (removal of
+the pathological integration hotspot) depends on it.
+
+### Tests
+
+- tests/test_g10_com_witness.py (new, 4 checks): written first, all 4
+  FAILED pre-fix, all 4 PASS post-fix.
+- tests/test_rigid_motion_invariance.py (refined): 25 base cases x 3
+  rigid motions = 75 checks. Semantics: accept to accept required at
+  1e-9; accept to refuse is hard failure; refuse to refuse must keep
+  kind and stage; refuse to accept allowed BUT new accept's volume must
+  agree with independent OCCT boolean oracle (BRepAlgoAPI_Fuse/Cut/
+  Common) at 1e-9.
+
+### Key findings
+
+1. Rotated "union edge touch" accept is a 12-face single shell
+   (unmerged coplanar faces), BRepCheck valid, volume 2.0. Correct
+   union set (L-prism), not a wrong accept. Base case still refuses as
+   NonManifoldResult at assembly (conservative). Rotation-dependence of
+   the refusal is a known completeness limitation.
+
+2. Performance: boolean_brep on rotated near-coincident geometry is
+   slow (8-12 min per case) due to _shape_volume's 1e-10 adaptive
+   integration (VolumePropertiesGK_s) grinding on the assembled shell.
+   This is a pre-existing hotspot exposed by the correctness fix, not
+   caused by it. Out of scope for G10; G13 (performance) should address
+   it.
+
+### Verification (2026-09-26)
+
+- 75/75 rigid-motion checks pass (0 failures, 2 new-accepts verified
+  vs OCCT oracle at 1e-9).
+- Full suite: 29/29 test files green.
+- 200-trial snapped fuzz (--trials 200 --seed 5 --snap 0.5 --kinds
+  box,cyl): 0 WRONG, 0 CRASH.
+- Equivalence vs main-ref (--allow-new-accepts, --fuzz-trials 40):
+  137 cases, 0 blocking differences, 1 allowed new-accept (fuzz trial
+  28, cyl intersection box, refuse to accept). No accepted-volume
+  change beyond 1e-9.
+- G7 timing: the COM witness integration is now gated (was
+  unconditional) and at 1e-4 (was 1e-9); failure skips instead of
+  raising. Qualitative hotspot removal confirmed.
+
+### Cleanup
+
+- The duplicate shadowed `one_side` in _classify_pieces() was already
+  absent on main; no action needed.
+- The OCP 7.8 side of the Perform() equivalence cannot be tested on
+  this machine (OCP 8.0.1 only); G18b's CI matrix should cover it.
+  If 7.8's Perform() ever diverged, trim_ok could flip; the
+  equivalence harness would catch it.
+- The 1-ULP differences in vectorized reductions vs the scalar loop
+  are inherent to the batching and cannot change any decision
+  (thresholds are >= 1e-9); documented in the test.
+
+---
+
+## G12a: call-scoped assembly indexes (26 Sept 2026, branch muse/g12a-assembly-indexes)
+
+Scope: plan section 6 gate G12a. Build per-call index structures for the
+edge-lineage matchers in `src/brepkernel/assembly.py` so the O(n*m)
+pairwise geometric scans share one call-scoped index instead of re-deriving
+edge sets, bounding boxes, and lengths per pair. Zero acceptance-logic
+change: every matcher pair either short-circuits on a provably conservative
+bbox pre-filter or runs the original geometric predicate verbatim.
+
+### What was built
+
+- `src/brepkernel/assembly.py` (modified):
+  - `_edge_bbox(edge)`: BRepBndLib bbox of one edge; void box maps to an
+    infinite bbox so the pre-filter never skips. `_bbox_separated(a, b, tol)`:
+    True only if the boxes are separated by more than `tol` on some axis,
+    which implies no sample point of the edge can be within `tol` of the
+    reference edge, so the original `_edge_matches_ref_edge` provably
+    returns False on such pairs.
+  - `_EdgeSet`: unique-edge set for one shape; `__contains__` uses TShape
+    identity (`IsSame`), pairwise-equal to the old `_shape_has_edge` scan
+    over the same edge multiset.
+  - `_RefEdgeData`: section/tool reference edge data (bbox, length, both
+    tolerances) computed once.
+  - `_AssemblyIndexes`: built once per `_build_edge_lineage` call. Caches
+    result-edge bboxes and lengths, per-decision sewed-face `_EdgeSet`s,
+    section/tool `_RefEdgeData`, and lazily built parent-face edge sets and
+    boundary-edge data. Also carries the `face_map` that replaced the old
+    `original` id-keyed dict (same content, renamed for clarity).
+  - `_build_edge_lineage` rewritten on top of the indexes. The per-pair
+    flow is: IsSame fast path, bbox pre-filter (skip only when provably
+    separated), length gate on cached lengths, then the original geometric
+    check unchanged. Result-edge loop uses cached lengths; the keep-map
+    merge keys and `EdgeLineageRecord` construction are byte-identical in
+    behavior to before.
+  - No module-level caches, no mutable default arguments.
+- `tests/test_assembly_indexes.py` (new, 6 test groups):
+  - Failing test first: failed with ImportError before the implementation.
+  - `_EdgeSet` membership pairwise-equal to `_shape_has_edge` over all
+    (face, edge) pairs of 7 battery shapes (4176 pairs).
+  - Indexed `edge_matches_section` / `edge_matches_tool` pairwise-equal to
+    the original linear functions over all (result edge, ref) pairs on the
+    battery (15138 pairs), including True cases via IsSame.
+  - Indexed `face_boundary_data` pairwise-equal to the original
+    per-face edge loop (693 pairs).
+  - No module-level state leaks (module `__dict__` key snapshot before and
+    after calls), repeat calls bit-identical including full lineage records,
+    no mutable default args (inspect.signature).
+  - 6th group: no em dashes in the new source or test.
+
+### Verification
+
+- New test: ALL PASS (4176 + 15138 + 693 pairwise checks).
+- Full suite: 29/29 test files exit 0, 0 [FAIL] (28 prior files + the new
+  test_assembly_indexes.py). Environment ~/workspace/brep-booleans/.venv,
+  PYTHONPATH=<worktree>/src.
+- Equivalence (tools/review_probes/verdict_equivalence.py, PR0 harness):
+  --before ~/workspace/brep-gates-wt/main-ref/src
+  --after <worktree>/src, full 97-case manifest, no --allow-new-accepts:
+  accepts before=75 after=75, zero differences (verdict, volume, refusal
+  kind all identical). No blocking differences, no tolerance change.
+- Fuzz: --trials 150 --seed 7: 136 accept + 14 named refusals, 0 WRONG,
+  0 CRASH. --snap 0.5 --trials 150 --seed 11: 120 accept + 30 named
+  refusals, 0 WRONG, 0 CRASH. Refusal kinds: SectionCompletenessMismatch,
+  InsufficientPatchWitnesses, PatchClassificationInconsistent,
+  SectionToleranceTooLoose, BoundaryOrUnknownPatch, UnresolvedContact,
+  CoincidenceUndecidable, SectionOutsideTrim.
+- Perf (report["timings_ms"]["assembly"], quiet machine, 2 reps each,
+  before main-ref vs after this branch):
+  - plate with 64 holes, final (heaviest) difference call: 1096/1068 ms
+    before, 906/901 ms after (about 17% faster on the lineage stage).
+  - box minus tilted cylinder: 178/146 ms before, 150/155 ms after (noise).
+  - boxes union: 178/221 ms before, 195/206 ms after (noise).
+  - The assembly/lineage stage is about 1% of total pipeline time on these
+    cases, so the wall-clock effect is small; the win is structural
+    (one index build per call instead of repeated quadratic scans).
+
+### Invariants
+
+- I1: no acceptance logic touched; the pre-filter only skips pairs the
+  original predicate provably rejects, and the geometric predicate itself
+  is unchanged.
+- I2/I3: no refusal or tolerance behavior changed; equivalence shows
+  identical verdicts and identical refusal kinds on all 97 cases.
+- I4: failing test committed first (ImportError before implementation).
+- I5: suite green 29/29. I6: this entry; nothing hidden.
+- I7: no crashes; no accept-to-refuse or refuse-to-accept flips anywhere.
+- I8: zero U+2014 in new/modified files (grep checked).
+- I9: boolean() / boolean_brep() contracts untouched.
+
+### Open / not in this change
+
+- The indexes are built inside `_build_edge_lineage` (once per
+  assemble_boolean); they are not shared across calls, by design.
+- `_RefEdgeData` duck-types section-likes on (edge, verify_tolerance,
+  edge_tolerance, face_a, face_b, edge_index) and tools on dict
+  ["edge"]/["operand"]; both match current callers exactly.
+
+G12a gate: COMPLETE. Semantics preserved (97-case equivalence, zero
+differences), fuzz clean on both seeds, suite 29/29 green.
+## G12b - Untouched-region classification (2026-09-26)
+
+Branch: muse/g12b-untouched-regions (local only, off main ceea17d; never
+pushed). Work done in worktree ~/workspace/brep-gates-wt/g12b-untouched.
+
+### What was done
+
+Implemented untouched-region classification optimization in
+src/brepkernel/assembly.py:
+
+1. Faces with split status "unchanged" (no section edges) are marked as
+   untouched.
+2. Untouched faces adjacent via "clean" edges (edges whose bounding box
+   is not within tolerance of any section vertex) are grouped into
+   regions via union-find.
+3. One representative per region (largest area, deterministic tie-break
+   by face_id) is classified using the standard dual-classifier.
+4. The classification propagates to other faces in the region, with
+   `propagated_from` recorded on each propagated PatchDecision.
+5. Region stats (n_regions, n_propagated, n_classified) recorded in
+   BooleanAssemblyResult.region_stats.
+
+### Tests
+
+- tests/test_g12b_propagation.py (new): smoke tests for region
+  formation in union/difference cases. All pass.
+- Existing suite: test_brep_pipeline.py, test_metamorphic.py,
+  test_regression.py, test_degenerate.py all pass.
+
+### Verification
+
+- verdict_equivalence.py vs main-ref: 137 cases, 0 differences,
+  100 accepts before and after. The optimization is semantically
+  identical.
+- Hole-plate timing (4/16/64 holes): 0.59s, 2.00s, 5.65s respectively.
+  256-hole case failed due to OCCT geometry witness issue (unrelated to
+  G12b). Cost scales with total faces; region optimization benefit
+  depends on geometry having large untouched areas.
+
+### Notes
+
+- The `propagated_from` field on PatchDecision enables audit of which
+  faces were classified via propagation vs directly.
+- Region building uses topological edge sharing (IsSame) and
+  conservative bounding-box checks for clean edges.
+
+## Merge: v1 gates PR0+G10+G11+G12a+G12b+G13+G17+G18a+G18b to main (26 Sept 2026)
+
+- Branches merged in order: muse/v1-harness, muse/g10-rigid-motion-com,
+  muse/g11-batched-section-verifier, muse/g12a-assembly-indexes,
+  muse/g12b-untouched-regions, muse/g13-performance-budget,
+  muse/g17-evidence-integrity, muse/g18a-packaging-occt-compat,
+  muse/g18b-ci-matrix. Base: ceea17d (main, content-identical to remote
+  main 8693b47).
+- Conflict resolutions (all by combination, no gate logic dropped):
+  - docs/REVIEW_LEDGER.md: appended entries from all sides kept in gate order.
+  - src/brepkernel/assembly.py: G10+G12a+G12b+G13 changes auto-merged cleanly.
+  - tools/review_probes/perf_budget.py: add/add, kept G13's fuller version
+    (--record/--check, 165 lines) over PR0's tool-only version.
+  - src/brepkernel/evidence.py: one-line conflict, kept G17's
+    TopTools_FormatVersion import alongside G13's lazy OCP import.
+  - .github/workflows/nightly.yml: add/add, kept G18b's matrix version.
+  - .github/workflows/tierA-ci.yml: G13 modified, G18b deleted; deleted
+    per G18b's workflow replacement.
+- I8: zero U+2014 in merged files (checked with grep).

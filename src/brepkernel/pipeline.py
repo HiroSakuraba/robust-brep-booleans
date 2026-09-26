@@ -340,6 +340,16 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
         try:
             a_bytes = _evidence.canonical_brep_bytes(_as_shape(shapeA))
             b_bytes = _evidence.canonical_brep_bytes(_as_shape(shapeB))
+            ix = report.get("stages", {}).get("intersection", {}) \
+                if isinstance(report, dict) else {}
+            probed = bool(ix.get("completeness_probes"))
+            certification = {
+                "mode": "strict",
+                "completeness_probe": probed,
+                "allow_nonmanifold": bool(allow_nonmanifold),
+            }
+            if not probed:
+                certification["unprobed"] = True
             record = _evidence.build_record(
                 op=op,
                 input_a={"sha256": _hashlib.sha256(a_bytes).hexdigest(),
@@ -353,6 +363,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                 finished_utc=_datetime.now(_timezone.utc).isoformat(),
                 duration_ms=(_time.perf_counter() - _t0) * 1000.0,
                 operation_id=_operation_id,
+                certification=certification,
             )
             if evidence_dir is not None:
                 try:
@@ -438,8 +449,11 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
                               model_max_tolerance)
     from .intersection import intersect_models
     from .split import split_models
-    from .assembly import assemble_boolean, _shape_volume
+    from .assembly import assemble_boolean, _shape_volume, clear_volume_cache
     from .same_domain import same_domain_models
+
+    # G13: one Boolean call, one volume-cache lifetime.
+    clear_volume_cache()
 
     if op not in ("union", "intersection", "difference"):
         raise ValueError(f"unknown op {op!r}")
@@ -992,8 +1006,10 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
 
     # Cheap operation-level volume invariants catch catastrophic selection or
     # shell-orientation errors without using a second Boolean engine.
-    va = abs(float(_shape_volume(a.shape)))
-    vb = abs(float(_shape_volume(b.shape)))
+    # G13: coarse bounds only; the documented error budget applies.
+    from .assembly import _COARSE_VOLUME_TOL
+    va = abs(float(_shape_volume(a.shape, tol=_COARSE_VOLUME_TOL)))
+    vb = abs(float(_shape_volume(b.shape, tol=_COARSE_VOLUME_TOL)))
     vr = abs(float(assembled.volume))
     all_faces = a.faces + b.faces
     if all_faces:
