@@ -1,5 +1,12 @@
 # brepkernel prototype v0.2: what was built
 
+NOTE (2026-09-25): this document describes the v0.2 Tier A slice, which is
+now the legacy route 1 (`boolean()` in `src/brepkernel/pipeline.py`). The
+current pipeline, route 2 (`boolean_brep()`: exact trimmed B-rep, Tier B/C,
+gates G0 through G7 merged 2026-09-25), is documented in `../README.md` and
+`REVIEW_LEDGER.md`. The text below is kept as the historical record of the
+mesh-era prototype.
+
 A working slice of the "B-reps that don't break" design, covering analytic
 solids (box, sphere, cylinder, cone: the design's Tier A).
 

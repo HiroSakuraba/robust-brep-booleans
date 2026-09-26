@@ -675,6 +675,16 @@ test_g3_f2_regression.py: ALL PASS (5/5 checks).
 | No tolerance loosened (I3); tol_i formula unchanged | PASS |
 | Full suite green (I5) | PARTIAL (4/18 pass; see G4 REWORK entry) |
 
+### Merged-main addendum (2026-09-25)
+
+The merged main (`10ea7d8`, includes the G3G4 rework) ran the full suite
+26/26 exit 0 with 0 [FAIL] lines (see the merge entry), including
+`tests/test_g3_probe_rework.py` and `tests/test_g3_f2_regression.py`. The
+I5 gap recorded on this branch (4/18, under CPU contention) is resolved.
+Every other criterion in this gate's table was already PASS, so:
+
+G3 rework: CLOSED.
+
 ## G4 - Completeness probe coverage for analytic pairs
 
 - Date: 2026-09-25
@@ -921,6 +931,18 @@ when the fuzz runs.
 | Median time increase recorded | OPEN (not measured; system load) |
 | Full suite green (I5) | PARTIAL (4/18 pass; 14 not run due to load) |
 | I1-I9 invariants held | PASS (no crash; refusals typed; no G3 constant touched; local branch only) |
+
+### Merged-main addendum (2026-09-25)
+
+The merged main (`10ea7d8`, includes the G3G4 rework) ran the full suite
+26/26 exit 0 with 0 [FAIL] lines (see the merge entry), including
+`tests/test_g4_probe_coverage.py` (12/12). The I5 partial recorded on
+this branch is resolved. The two fuzz criteria below stay OPEN: the
+150-trial ON/OFF comparison was not re-run on the merged code, and the
+median-time comparison was not measured. Not claimed, not closed.
+
+G4 rework: OPEN on the fuzz criteria only (analytic fuzz 150-trial
+ON/OFF comparison with 0 WRONG, and the median-time recording).
 ## G6 - Tolerance-aware broad phase
 
 - Date: 2026-09-25
@@ -2154,6 +2176,96 @@ G8 sweep on this branch: 26/26 files exit 0, 0 FAIL lines); I6 (this
 entry, bugs owned); I7 (0 crashes; 9 timeouts recorded per case);
 I8 (no em dashes; grepped); I9 (boolean_brep only; boolean() untouched).
 Local branch only, no push.
+
+Note (2026-09-25): the G9 docs work below landed on branch gate/G9-docs
+(local only, never pushed). The merged-main addenda above close the G3
+rework I5 gap and record the G4 rework's remaining fuzz criteria as OPEN.
+
+---
+
+## G9 - Documentation and release (2026-09-25)
+
+- Branch: gate/G9-docs (local only; never pushed, never merged, no tag)
+- Base: `10ea7d8` "docs: merge ledger entry for the 7 gate branches plus
+  the shared-seam fix" (local main)
+- Scope: docs only. No `src/` or `tests/` behavior changed in this work.
+
+### What was written
+
+1. `README.md` rewritten for the merged state. The old text described
+   only the v0.2 mesh/Tier A prototype; it now documents both routes per
+   invariant I9 (route 1 `boolean()`: legacy mesh/Tier A, frozen;
+   route 2 `boolean_brep()`: current exact trimmed B-rep Tier B/C), the
+   full route-2 stage table, one subsection per merged gate stage naming
+   what it does, what it refuses, and where the code lives:
+   - G1 rework independent Boolean arbiter
+     (`tools/review_probes/arbiter.py`; testing only, scale-aware domain
+     and band, no input mutation),
+   - G2 planar three-case coincidence (`src/brepkernel/coincidence.py`;
+     EXACT / TOLERANCE-CERTIFIED / UNDECIDABLE; curved and NURBS deferred
+     in `coincidence_deferred.py` under `ENABLE_DEFERRED_COINCIDENCE`),
+   - G3/G4 completeness-probe reworks
+     (`src/brepkernel/intersection.py`; per-curve `tol_i`, per-interval
+     adaptive matching to depth 5, boundary-tail provision, raw-tolerance
+     ceiling, unconditional probe with the `BREPKERNEL_COMPLETENESS_PROBE`
+     kill switch),
+   - G5 multi-ray parity second classifier
+     (`src/brepkernel/assembly.py`; `IntCurvesFace_ShapeIntersector`-based,
+     bidirectional even-sum seating, dual agreement with typed
+     `ClassifierDisagreement`, 10x-tol witness band),
+   - G6 rework per-face broad-phase pads (`src/brepkernel/step_ingest.py`,
+     `intersection.py`, `pipeline.py`; `pad_i = contact_tol + tol_face_i`,
+     report fields `broadphase_pad`, `broadphase_pad_mode`,
+     `broadphase_contact_tol`, `broadphase_max_tolerance`,
+     `broadphase_pad_summary`),
+   - probe hardening (`tools/review_probes/common_cad_probes.py`:
+     `unexpected_accepts` forces nonzero exit; `repro_findings.py`: F2
+     volume/arbiter assertions, F4 winding/distance assertions),
+   - G7 seam stress round (`tests/test_g7_seam_stress.py`; 38 checks,
+     torus-heavy fuzz 0 WRONG, 0 seam-related refusals).
+   Plus: what route 2 accepts and refuses (headline refusal kinds),
+   quickstart, full-suite and probe commands, measured numbers with dates
+   (26/26 test files, probes, G7 fuzz, G0 baseline pointer), honest limits.
+2. `docs/PROTOTYPE.md`: header note added that it now describes the
+   legacy route-1 v0.2 design (historical record kept); the current
+   pipeline is documented in `README.md` and this ledger.
+3. `docs/RELEASE_CHECKLIST.md` (new): proposes tag **v0.9.0** (remote
+   tags v0.1-v0.4 cover the old prototype lineage; v0.8/v0.9 exist only
+   as merge-commit names; the work plan's G9 names the release v0.9.0),
+   the `brepkernel-v0.9.0.zip` asset list, the ordered pre-release
+   verification steps (clean tree, I8 em-dash scan, 26/26 suite, both
+   probes, ledger finalized, zip spot-check), and a clearly-marked
+   "Blocked on Ben" section (merge approval, push to origin/main, tag,
+   GitHub release with asset, I9 dispatcher decision, release-notes
+   wording for G8 and the deferred curved-coincidence gate).
+4. Ledger addenda on this branch: merged-main addenda on the G3 REWORK
+   and G4 REWORK entries (the I5 gaps recorded under CPU contention are
+   resolved by the merged-main 26/26 run; the G4 rework's 150-trial
+   ON/OFF fuzz comparison and median-time recording stay OPEN, honestly
+   not claimed).
+
+### Verification on this branch
+
+- `git grep -P '\x{2014}' -- src tests tools docs README.md`: 0 matches
+  (invariant I8; no em dashes in prose, comments, or the new files).
+- Full suite on `gate/G9-docs` (venv `~/workspace/brep-booleans/.venv`,
+  `PYTHONPATH=~/workspace/brep-gates/src`): 26/26 test files exit 0,
+  0 `[FAIL]` lines. Docs-only change, so this confirms the branch did not
+  disturb the code.
+- No G8 section written or touched (a separate worker owns G8; no G8
+  section exists in this ledger).
+
+### Not done (kept open honestly)
+
+The work plan's G9 also asks for: `CHANGELOG.md` (not written),
+`docs/NURBS_ACCEL.md` "What remains" update (not done), the I9
+dispatcher decision (left to Ben), the actual tag and GitHub release
+(Ben only), and G8 measured numbers for the release notes (separate
+worker, in progress). Those are recorded in
+`docs/RELEASE_CHECKLIST.md`, not claimed here.
+
+G9 gate: OPEN. The docs slice is complete and verified on
+gate/G9-docs; the release actions are blocked on Ben per the checklist.
 
 ---
 
