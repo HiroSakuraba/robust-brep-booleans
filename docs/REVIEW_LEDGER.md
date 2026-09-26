@@ -2442,3 +2442,120 @@ gate/G9-docs; the release actions are blocked on Ben per the checklist.
   evidence records instead of None.
 - Onshape API keys / OAuth app and CATIA access / sample files stay
   parked: blocked on Ben, untouched by design.
+## Gate G11: batched section verifier (26 Sept 2026)
+
+Branch `muse/g11-batched-section-verifier`, base ceea17dc6d7d659738370945d7bb653224edb0f7
+(main at G9 merge). Worktree ~/workspace/brep-gates-wt/g11-section.
+Env: ~/workspace/brep-booleans/.venv (Python 3.12.3, cadquery-ocp 8.0.1.0,
+numpy 2.5.3), PYTHONPATH=<worktree>/src.
+
+### What changed (src/brepkernel/intersection.py, +203/-85)
+
+Per plan section 5, removing Python/small-array NumPy overhead from the
+section edge verifier without changing any geometric decision:
+
+1. `_point_segment_distance` rewritten in plain float arithmetic
+   (identical IEEE-754 op order; matches a float reference to ~1 ULP).
+2. `_verify_section_edge` split into `_section_edge_preamble`
+   (per-edge OCCT work: tolerance ceiling, SameParameter repair,
+   p-curve presence, exact curve-on-surface check, adaptive sampling;
+   raises unchanged) and `_verify_edge_samples_batched` (phase 1:
+   OCCT p-curve/surface-D1 evals gathered into contiguous (n,2)/(n,3)
+   arrays; phase 2: vectorized errors, normals, transversality with the
+   `den <= 1e-300 -> 0.0` rule preserved via np.where; phase 3: trim
+   classification through caller-supplied shared classifiers).
+3. One `BRepClass_FaceClassifier` per face for the whole
+   `verify_section_edges_batched` call, reused via `Perform()` before
+   every `State()` read. Built with the same 4-arg form (face, point,
+   tol, use_bnd_box=True) as the old per-sample path; a runtime probe
+   showed Perform()-reuse returns identical State() to fresh
+   construction on 7 points including trim-boundary points (0 diffs).
+   Classifier construction tolerance only matters before the first
+   Perform(); every State() is preceded by Perform() with the current
+   edge's verify_tol, so per-edge trim decisions are unchanged.
+4. Edges are processed strictly in order (preamble then samples per
+   edge), so the first raising edge and its refusal kind are identical
+   to the old per-edge loop. `_verify_section_edge` kept as a thin
+   single-edge wrapper (tests/test_g3_probe_rework.py imports it).
+5. `section_face_pair` (both the primary and the shadow/nonapprox
+   crosscheck call sites) now calls `verify_section_edges_batched`.
+
+No sample-count, depth, threshold, tolerance, or trim-rule changes.
+The adaptive sampler and its point cache are untouched.
+
+### Verification
+
+- tests/test_batched_section_verifier.py (new, written first; failed on
+  ImportError before the implementation existed): 3-config battery
+  (NURBS saddle vs tilted plane, crossing cylinders with 3 edges,
+  sphere vs box) compares batched SectionEdgeRecords field-by-field
+  against a self-contained scalar reference (fresh classifier per
+  sample, mirroring the old loop): all match (floats to 1e-12 rel,
+  trim_ok/min/max transversality/uv arrays exact). Classifier counting
+  through a monkeypatched OCP.BRepClass.BRepClass_FaceClassifier:
+  batched call builds exactly 2 (one per face) vs 382 for the scalar
+  reference. `_point_segment_distance` within 2 ULPs of a float
+  reference over 2000 random cases (worst rel diff 2.56e-16). All PASS.
+  Note: `from OCP import BRepClass` is a lazy proxy; patching must target
+  the real `OCP.BRepClass` module or the from-import inside the
+  implementation does not see it.
+- Full suite: 29/29 test files exit 0, 0 [FAIL] lines.
+- Verdict equivalence (tools/review_probes/verdict_equivalence.py,
+  --before <main-ref>/src --after <worktree>/src, full 97-case manifest,
+  no --allow-new-accepts): 97/97 cases, 0 problems, 0 differences,
+  0 blocking; accepts 75 before / 75 after. Re-run after the /tmp
+  wipe reproduced this exactly.
+- Fuzz (tools/review_probes/fuzz_brep.py): --trials 150 --seed 7:
+  150 trials, 0 WRONG, 0 CRASH, 0 audit kernel errors
+  (accept 136; typed refusals: SectionCompletenessMismatch 8,
+  InsufficientPatchWitnesses 4, PatchClassificationInconsistent 1,
+  SectionToleranceTooLoose 1).
+  --snap 0.5 --trials 150 --seed 11: 150 trials, 0 WRONG, 0 CRASH,
+  0 audit kernel errors (accept 120; typed refusals:
+  BoundaryOrUnknownPatch 12, UnresolvedContact 6,
+  SectionCompletenessMismatch 4, SectionToleranceTooLoose 2,
+  PatchClassificationInconsistent 2, CoincidenceUndecidable 2,
+  SectionOutsideTrim 1, InsufficientPatchWitnesses 1).
+- Perf (box minus 15-degree tilted cylinder, best of 3, interleaved
+  before/after on the same machine): full boolean_brep 2.596/2.390 s
+  -> 1.210/1.101 s (2.2x, meets the plan's >= 2x criterion);
+  section_face_pair over the 3 face pairs with edges 1.778 s -> 0.774 s
+  (2.3x). cProfile on one pair: 705,533 calls / 1.589 s before
+  (np.cross 0.971 s cum, _point_segment_distance 0.330 s cum over
+  5568 calls) vs 70,789 calls / 0.044 s after
+  (_point_segment_distance 0.013 s over 5568 calls, np.cross gone
+  from the profile). No per-pair slowdown (0.52/0.59/0.65 s ->
+  0.42/0.44/0.43 s).
+
+### Invariants
+
+- I1: verdicts identical (equivalence 97/97, fuzz 0 WRONG); no new
+  accepts, no accept-to-refuse flips.
+- I2: refusal kinds unchanged; first-raising-edge order preserved.
+- I3: no tolerance touched; the acceptance ceiling logic is byte-
+  identical, only relocated into _section_edge_preamble.
+- I4: failing test written and run before the implementation.
+- I5: suite 29/29 green.
+- I6: this entry; nothing hidden.
+- I7: no crashes. One environment note: a service restart mid-run wiped
+  /tmp, killing the first suite/equivalence/fuzz runs after the suite
+  had started all 29 files (no failures in completed logs), equivalence
+  had finished 97/97 clean, and fuzz seed 7 had finished 150 trials
+  clean. Suite and equivalence were re-run with outputs under
+  hidden_files/g11-evidence/ (results above are from the completed
+  re-runs); fuzz seed 7 was not re-run (its pre-wipe tally was fully
+  verified: 150 trials, 0 WRONG, 0 CRASH); fuzz snap seed 11 ran to
+  completion after the restart.
+- I8: zero U+2014 in changed files.
+- I9: boolean()/boolean_brep() contracts untouched.
+
+### Open / not in this change
+
+- The OCP 7.8 side of the Perform() equivalence cannot be tested on
+  this machine (OCP 8.0.1 only); G18b's CI matrix should cover it.
+  If 7.8's Perform() ever diverged, trim_ok could flip; the
+  equivalence harness would catch it.
+- The 1-ULP differences in vectorized reductions vs the scalar loop
+  are inherent to the batching and cannot change any decision
+  (thresholds are >= 1e-9); documented in the test.
+

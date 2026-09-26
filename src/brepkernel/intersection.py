@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
+import math
 import numpy as np
 
 from .freeform import FreeformError
@@ -39,14 +40,29 @@ def _p2(p) -> np.ndarray:
     return np.array([p.X(), p.Y()], dtype=np.float64)
 
 
-def _point_segment_distance(p: np.ndarray, a: np.ndarray,
-                            b: np.ndarray) -> float:
-    ab = b - a
-    d = float(ab @ ab)
+def _point_segment_distance(p, a, b) -> float:
+    """Point-to-segment distance in plain float arithmetic (G11).
+
+    The same IEEE-754 double operations, in the same order, as the
+    previous NumPy version; the per-call small-array overhead dominated
+    in the adaptive sampler's hot loop. Accepts any 3-sequences.
+    """
+    ax, ay, az = float(a[0]), float(a[1]), float(a[2])
+    bx, by, bz = float(b[0]), float(b[1]), float(b[2])
+    px, py, pz = float(p[0]), float(p[1]), float(p[2])
+    abx, aby, abz = bx - ax, by - ay, bz - az
+    d = abx * abx + aby * aby + abz * abz
     if d <= 1e-300:
-        return float(np.linalg.norm(p - a))
-    t = float(np.clip(((p - a) @ ab) / d, 0.0, 1.0))
-    return float(np.linalg.norm(p - (a + t * ab)))
+        dx, dy, dz = px - ax, py - ay, pz - az
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
+    t = ((px - ax) * abx + (py - ay) * aby + (pz - az) * abz) / d
+    if t < 0.0:
+        t = 0.0
+    elif t > 1.0:
+        t = 1.0
+    cx, cy, cz = ax + t * abx, ay + t * aby, az + t * abz
+    dx, dy, dz = px - cx, py - cy, pz - cz
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
 
 
 def _adaptive_edge_samples(edge, chord_tol: float, *,
@@ -336,18 +352,19 @@ def _raw_curve_tolerance(ic) -> float:
     return float(ic.Tolerance())
 
 
-def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
-                         edge_index: int, *,
-                         base_tol: float,
-                         chord_tol: Optional[float],
-                         tangent_sin_tol: float,
-                         max_section_tol: Optional[float]
-                         ) -> SectionEdgeRecord:
+def _section_edge_preamble(edge, fa: FaceRecord, fb: FaceRecord,
+                           edge_index: int, *,
+                           base_tol: float,
+                           chord_tol: Optional[float],
+                           max_section_tol: Optional[float]) -> dict:
+    """Per-edge OCCT work for section verification (G11).
+
+    Unchanged geometric decisions: tolerance ceiling, SameParameter
+    repair, p-curve presence, exact curve-on-surface check, adaptive
+    sampling. Returns everything the sample pass needs.
+    """
     from OCP.BRep import BRep_Tool
     from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
-    from OCP.BRepClass import BRepClass_FaceClassifier
-    from OCP.TopAbs import TopAbs_IN, TopAbs_ON
-    from OCP.gp import gp_Pnt2d
 
     et = float(BRep_Tool.Tolerance_s(edge))
     ft = max(float(BRep_Tool.Tolerance_s(fa.face)),
@@ -416,82 +433,128 @@ def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
 
     sa = BRepAdaptor_Surface(fa.face)
     sb = BRepAdaptor_Surface(fb.face)
-    uva: list[np.ndarray] = []
-    uvb: list[np.ndarray] = []
-    err_a: list[float] = []
-    err_b: list[float] = []
-    err_cross: list[float] = []
-    trans: list[float] = []
-    trim_ok = True
+    return {
+        "edge": edge, "edge_index": edge_index,
+        "edge_tolerance": et, "verify_tol": verify_tol,
+        "repaired": repaired, "pc_a": pc_a, "pc_b": pc_b,
+        "first": first, "last": last, "ts": ts, "xyz": xyz,
+        "sa": sa, "sb": sb,
+        "exact_a": exact_a, "exact_b": exact_b,
+    }
 
-    for t, p in zip(ts, xyz):
-        qa = pc_a.Value(float(t))
-        qb = pc_b.Value(float(t))
-        ua, ub = _p2(qa), _p2(qb)
-        pa, sua, sva = _surface_d1(sa, *ua)
-        pb, sub, svb = _surface_d1(sb, *ub)
 
-        err_a.append(float(np.linalg.norm(p - pa)))
-        err_b.append(float(np.linalg.norm(p - pb)))
-        err_cross.append(float(np.linalg.norm(pa - pb)))
+def _verify_edge_samples_batched(pre: dict, fa: FaceRecord, fb: FaceRecord,
+                                 *, tangent_sin_tol: float,
+                                 classifier_a, classifier_b
+                                 ) -> SectionEdgeRecord:
+    """Batched sample verification for one preambled section edge (G11).
 
-        na = np.cross(sua, sva)
-        nb = np.cross(sub, svb)
-        den = float(np.linalg.norm(na) * np.linalg.norm(nb))
-        sinang = (0.0 if den <= 1e-300 else
-                  float(np.linalg.norm(np.cross(na, nb)) / den))
-        trans.append(sinang)
+    Phase 1 gathers the OCCT curve and surface evaluations once into
+    contiguous arrays; phase 2 computes point/surface errors, support
+    mismatch, normals and transversality with vectorized NumPy; phase 3
+    runs trim classification through the caller-supplied shared
+    classifiers (one per face, reused via Perform()). The trim inclusion
+    rule is unchanged: every sample must classify IN or ON on both
+    faces.
+    """
+    from OCP.BRep import BRep_Tool
+    from OCP.TopAbs import TopAbs_IN, TopAbs_ON
+    from OCP.gp import gp_Pnt2d
 
-        ca = BRepClass_FaceClassifier(
-            fa.face, gp_Pnt2d(float(ua[0]), float(ua[1])),
-            verify_tol, True)
-        cb = BRepClass_FaceClassifier(
-            fb.face, gp_Pnt2d(float(ub[0]), float(ub[1])),
-            verify_tol, True)
-        trim_ok = trim_ok and (
-            ca.State() in (TopAbs_IN, TopAbs_ON)
-            and cb.State() in (TopAbs_IN, TopAbs_ON))
-        uva.append(ua)
-        uvb.append(ub)
+    ts, xyz = pre["ts"], pre["xyz"]
+    n = int(ts.shape[0])
+    pc_a, pc_b = pre["pc_a"], pre["pc_b"]
+    sa, sb = pre["sa"], pre["sb"]
+    verify_tol = pre["verify_tol"]
 
-    max_a = max(err_a, default=0.0)
-    max_b = max(err_b, default=0.0)
-    max_cross = max(err_cross, default=0.0)
+    UA = np.empty((n, 2), dtype=np.float64)
+    UB = np.empty((n, 2), dtype=np.float64)
+    PA = np.empty((n, 3), dtype=np.float64)
+    SUA = np.empty((n, 3), dtype=np.float64)
+    SVA = np.empty((n, 3), dtype=np.float64)
+    PB = np.empty((n, 3), dtype=np.float64)
+    SUB = np.empty((n, 3), dtype=np.float64)
+    SVB = np.empty((n, 3), dtype=np.float64)
+    for i in range(n):
+        t = float(ts[i])
+        qa = pc_a.Value(t)
+        qb = pc_b.Value(t)
+        uu, uv = float(qa.X()), float(qa.Y())
+        wu, wv = float(qb.X()), float(qb.Y())
+        UA[i, 0] = uu
+        UA[i, 1] = uv
+        UB[i, 0] = wu
+        UB[i, 1] = wv
+        pa, sua, sva = _surface_d1(sa, uu, uv)
+        pb, sub, svb = _surface_d1(sb, wu, wv)
+        PA[i] = pa
+        SUA[i] = sua
+        SVA[i] = sva
+        PB[i] = pb
+        SUB[i] = sub
+        SVB[i] = svb
+
+    err_a = np.linalg.norm(xyz - PA, axis=1)
+    err_b = np.linalg.norm(xyz - PB, axis=1)
+    err_cross = np.linalg.norm(PA - PB, axis=1)
+    na = np.cross(SUA, SVA)
+    nb = np.cross(SUB, SVB)
+    den = np.linalg.norm(na, axis=1) * np.linalg.norm(nb, axis=1)
+    cross_n = np.linalg.norm(np.cross(na, nb), axis=1)
+    sinang = np.where(den <= 1e-300, 0.0,
+                      cross_n / np.where(den <= 1e-300, 1.0, den))
+
+    max_a = float(np.max(err_a)) if n else 0.0
+    max_b = float(np.max(err_b)) if n else 0.0
+    max_cross = float(np.max(err_cross)) if n else 0.0
     worst = max(max_a, max_b, max_cross)
     if worst > verify_tol:
         raise IntersectionError(
-            f"section edge {edge_index}: 3D/p-curve surface mismatch "
-            f"{worst:.6g} exceeds verification tolerance "
+            f"section edge {pre['edge_index']}: 3D/p-curve surface "
+            f"mismatch {worst:.6g} exceeds verification tolerance "
             f"{verify_tol:.6g}",
             kind="SectionGeometryMismatch")
+
+    trim_ok = True
+    for i in range(n):
+        classifier_a.Perform(fa.face, gp_Pnt2d(UA[i, 0], UA[i, 1]),
+                             verify_tol)
+        classifier_b.Perform(fb.face, gp_Pnt2d(UB[i, 0], UB[i, 1]),
+                             verify_tol)
+        if (classifier_a.State() not in (TopAbs_IN, TopAbs_ON)
+                or classifier_b.State() not in (TopAbs_IN, TopAbs_ON)):
+            trim_ok = False
     if not trim_ok:
         raise IntersectionError(
-            f"section edge {edge_index}: p-curve left a trimmed input face",
+            f"section edge {pre['edge_index']}: p-curve left a trimmed "
+            f"input face",
             kind="SectionOutsideTrim")
 
+    min_tr = float(np.min(sinang)) if n else 1.0
+    max_tr = float(np.max(sinang)) if n else 1.0
+
     risk: list[str] = []
-    min_tr = min(trans, default=1.0)
-    max_tr = max(trans, default=1.0)
     if min_tr < tangent_sin_tol:
         risk.append("near_tangent")
+    edge = pre["edge"]
     if BRep_Tool.IsClosed_s(edge, fa.face):
         risk.append("seam_on_a")
     if BRep_Tool.IsClosed_s(edge, fb.face):
         risk.append("seam_on_b")
 
     return SectionEdgeRecord(
-        edge_index=edge_index,
+        edge_index=pre["edge_index"],
         face_a=fa.face_id,
         face_b=fb.face_id,
         edge=edge,
-        first=first,
-        last=last,
-        edge_tolerance=et,
+        first=pre["first"],
+        last=pre["last"],
+        edge_tolerance=pre["edge_tolerance"],
         verify_tolerance=verify_tol,
         parameters=ts,
         xyz=xyz,
-        uv_a=np.vstack(uva) if uva else np.zeros((0, 2)),
-        uv_b=np.vstack(uvb) if uvb else np.zeros((0, 2)),
+        uv_a=UA,
+        uv_b=UB,
         max_surface_error_a=max_a,
         max_surface_error_b=max_b,
         max_cross_surface_error=max_cross,
@@ -499,11 +562,68 @@ def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
         min_transversality=min_tr,
         max_transversality=max_tr,
         risk_flags=tuple(risk),
-        repaired_same_parameter=repaired,
+        repaired_same_parameter=pre["repaired"],
         exact_curve_on_surface_checked=True,
-        exact_surface_error_a=exact_a,
-        exact_surface_error_b=exact_b,
+        exact_surface_error_a=pre["exact_a"],
+        exact_surface_error_b=pre["exact_b"],
     )
+
+
+def verify_section_edges_batched(edge_items, fa: FaceRecord, fb: FaceRecord,
+                                 *, base_tol: float,
+                                 chord_tol: Optional[float],
+                                 tangent_sin_tol: float,
+                                 max_section_tol: Optional[float]
+                                 ) -> list[SectionEdgeRecord]:
+    """Verify all section edges of one face pair in a single batched pass.
+
+    One BRepClass_FaceClassifier per face is constructed for the whole
+    call and reused via Perform() for every sample of every edge. The
+    classifier is built with the same 4-argument form as the old
+    per-sample path so the element-classification flag matches, and
+    every State() read is preceded by Perform(), so the constructor's
+    point and tolerance never decide a classification. Edges are still
+    processed strictly in order, so the first raising edge aborts the
+    batch exactly as the old per-edge loop did. Verdicts are identical;
+    only Python/NumPy overhead changes.
+    """
+    from OCP.BRepClass import BRepClass_FaceClassifier
+    from OCP.gp import gp_Pnt2d
+
+    items = list(edge_items)
+    classifier_a = None
+    classifier_b = None
+    records = []
+    for edge, idx in items:
+        pre = _section_edge_preamble(
+            edge, fa, fb, idx, base_tol=base_tol,
+            chord_tol=chord_tol, max_section_tol=max_section_tol)
+        if classifier_a is None:
+            classifier_a = BRepClass_FaceClassifier(
+                fa.face, gp_Pnt2d(0.0, 0.0), pre["verify_tol"], True)
+            classifier_b = BRepClass_FaceClassifier(
+                fb.face, gp_Pnt2d(0.0, 0.0), pre["verify_tol"], True)
+        records.append(_verify_edge_samples_batched(
+            pre, fa, fb, tangent_sin_tol=tangent_sin_tol,
+            classifier_a=classifier_a, classifier_b=classifier_b))
+    return records
+
+
+def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
+                         edge_index: int, *,
+                         base_tol: float,
+                         chord_tol: Optional[float],
+                         tangent_sin_tol: float,
+                         max_section_tol: Optional[float]
+                         ) -> SectionEdgeRecord:
+    """Single-edge section verification (kept for compatibility).
+
+    Implemented via the G11 batched pass; verdicts are identical.
+    """
+    return verify_section_edges_batched(
+        [(edge, edge_index)], fa, fb, base_tol=base_tol,
+        chord_tol=chord_tol, tangent_sin_tol=tangent_sin_tol,
+        max_section_tol=max_section_tol)[0]
 
 
 def _shape_distance(a, b) -> Optional[float]:
@@ -1239,25 +1359,23 @@ def section_face_pair(fa: FaceRecord, fb: FaceRecord, *,
         fa, fb, approximation=True, fuzzy=float(fuzzy),
         parallel=bool(parallel), use_obb=bool(use_obb))
 
-    verified = [
-        _verify_section_edge(
-            edge, fa, fb, i, base_tol=base_tol,
-            chord_tol=chord_tol, tangent_sin_tol=tangent_sin_tol,
-            max_section_tol=max_section_tol)
-        for i, edge in enumerate(edges)
-    ]
+    # G11: one batched verification pass covers all section edges of the
+    # pair (one trim classifier per face, reused via Perform()).
+    verified = verify_section_edges_batched(
+        [(edge, i) for i, edge in enumerate(edges)],
+        fa, fb, base_tol=base_tol,
+        chord_tol=chord_tol, tangent_sin_tol=tangent_sin_tol,
+        max_section_tol=max_section_tol)
 
     if verified and crosscheck_nonapprox:
         shadow_edges, _ = _run_section_engine(
             fa, fb, approximation=False, fuzzy=float(fuzzy),
             parallel=bool(parallel), use_obb=bool(use_obb))
-        shadow_verified = [
-            _verify_section_edge(
-                edge, fa, fb, i, base_tol=base_tol,
-                chord_tol=chord_tol, tangent_sin_tol=tangent_sin_tol,
-                max_section_tol=max_section_tol)
-            for i, edge in enumerate(shadow_edges)
-        ]
+        shadow_verified = verify_section_edges_batched(
+            [(edge, i) for i, edge in enumerate(shadow_edges)],
+            fa, fb, base_tol=base_tol,
+            chord_tol=chord_tol, tangent_sin_tol=tangent_sin_tol,
+            max_section_tol=max_section_tol)
         max_shadow_distance, shadow_length_rel = _crosscheck_section_modes(
             verified, shadow_verified, base_tol=base_tol)
         for e in verified:
