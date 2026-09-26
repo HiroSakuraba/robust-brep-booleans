@@ -1,0 +1,30 @@
+{
+ "case_id": "nist-p03-intersection",
+ "corpus": "nist",
+ "model_a": "nist_ctc_01_asme1_ap242-e1",
+ "model_b": "nist_ctc_02_asme1_ap242-e2",
+ "op": "intersection",
+ "outcome": "refused",
+ "load_s": 10.652806827999996,
+ "shift_applied": [
+  232.51344054699302,
+  -390.00000000000006,
+  134.92018021812893
+ ],
+ "diag_a": 930.053762187972,
+ "boolean_s": 28.723768612000015,
+ "refusal_stage": "intersection",
+ "refusal_kind": "SectionOutsideTrim",
+ "refusal_type": "IntersectionError",
+ "refusal_message": "section edge 1: p-curve left a trimmed input face",
+ "refusal_evidence": null,
+ "broadphase_max_tolerance": 0.009621834295462154,
+ "stage_keys": [
+  "ingest",
+  "same_domain"
+ ],
+ "exception_type": "BRepAmbiguousResult",
+ "exception_message": "B-rep result refused in intersection: section edge 1: p-curve left a trimmed input face",
+ "traceback": "Traceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 646, in boolean_brep\n    ix = intersect_models(\n         ^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1428, in intersect_models\n    r = section_face_pair(\n        ^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 1243, in section_face_pair\n    _verify_section_edge(\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/intersection.py\", line 468, in _verify_section_edge\n    raise IntersectionError(\nbrepkernel.intersection.IntersectionError: section edge 1: p-curve left a trimmed input face\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/hatch/workspace/brep-gates-g8/probes-abc-deepcad/g8_worker.py\", line 131, in main\n    result, report = boolean_brep(shape_a, shape_b, case[\"op\"])\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 662, in boolean_brep\n    refuse(\"intersection\", exc)\n  File \"/home/hatch/workspace/brep-gates-g8/src/brepkernel/pipeline.py\", line 363, in refuse\n    raise BRepAmbiguousResult(\nbrepkernel.pipeline.BRepAmbiguousResult: B-rep result refused in intersection: section edge 1: p-curve left a trimmed input face\n",
+ "wall_s": 40.12972650099999
+}

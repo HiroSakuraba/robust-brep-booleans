@@ -1,0 +1,43 @@
+{
+ "case_id": "deepcad-p04-union",
+ "corpus": "deepcad",
+ "model_a": "m006",
+ "model_b": "m007",
+ "op": "union",
+ "outcome": "accepted",
+ "load_s": 4.268521669999984,
+ "shift_applied": [
+  0.36836203592160377,
+  -0.41420885712494016,
+  -0.027382268036266276
+ ],
+ "diag_a": 1.2597280758164138,
+ "boolean_s": 6.2718213640000045,
+ "result_solids": 1,
+ "result_volume": 0.11204538120395184,
+ "volume_a": 0.1110900878906456,
+ "volume_b": 0.0029137799126538752,
+ "stage_keys": [
+  "assembly",
+  "ingest",
+  "intersection",
+  "same_domain",
+  "split",
+  "verification"
+ ],
+ "broadphase_max_tolerance": 1e-07,
+ "timings_ms": {
+  "ingest": 29.314051000028485,
+  "same_domain": 59.395451999989746,
+  "intersection": 1963.0488479999713,
+  "split": 211.72070900001927,
+  "assembly": 3900.3262589999963,
+  "verification": 23.9852679999899,
+  "total": 6192.319080999994
+ },
+ "intersection_summary": {},
+ "assembly_summary": {
+  "volume": 0.11204538120395184
+ },
+ "wall_s": 11.033541157000002
+}

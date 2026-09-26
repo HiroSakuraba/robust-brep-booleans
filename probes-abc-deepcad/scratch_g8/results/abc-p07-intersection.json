@@ -1,0 +1,12 @@
+{
+ "case_id": "abc-p07-intersection",
+ "corpus": "abc",
+ "pair": "p07",
+ "model_a": "00278938_a93ea5222a2983d78928d266_step_000",
+ "model_b": "00278942_57faa02e03533510d98e5216_step_000",
+ "op": "intersection",
+ "outcome": "timeout",
+ "worker_rc": -9,
+ "wall_s": 120.2,
+ "note": "no result file after 120 s; worker killed (record reconstructed from sweep log after driver crash; harness bug since fixed)"
+}

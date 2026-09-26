@@ -2021,3 +2021,137 @@ test_step_nurbs_multiface, test_stress.
 G0, G1 (+rework), G2-planar, G3 (+rework), G4 (+rework), G5, G6 (+rework),
 probe-hardening, new G7: merged. Still open: curved coincident-face
 recognition (deferred), G8 real-data refusal rate, G9 docs/release, Part B.
+
+---
+
+## G8 real-data refusal rate (25 Sept 2026, branch gate/G8-real-data)
+
+Scope: measure the typed refusal rate of the merged Tier B/C pipeline
+(boolean_brep, defaults, no tuning) on real CAD data. No src/ changes;
+harness only. Gate criterion: a MEASURED, DOCUMENTED refusal rate with
+the dominant refusal reasons identified; no target number.
+
+### Method
+
+- Corpora (30 models, 15 distinct-model pairs, 3 ops each = 45 cases):
+  - NIST MBE PMI: 3 pairs (ftc_06/ftc_07, ftc_08e2/ftc_09_e1,
+    ctc_01/ctc_02, AP242 files from NIST-PMI-STEP-Files_8_cy64.zip)
+  - DeepCAD: 5 pairs (m000/m001 ... m008/m009 from the prior
+    probes-abc-deepcad scratch extract)
+  - ABC chunk 27: 7 pairs at sorted offsets 0, 660, 1320, 1980, 2640,
+    3300, 3960 (consecutive files, geographic spread across the chunk)
+- Pairing: B is rigid-motion translated so its bbox center lands near
+  A's center (0.25*diagA x offset): guaranteed overlap, same geometry,
+  no tangency by construction.
+- Each case runs boolean_brep(A, B, op) with pipeline defaults
+  (base_tol=1e-7, contact_tol=4e-7) in an isolated worker process,
+  120 s timeout, max 4 workers. Outcomes: accepted / refused (typed,
+  with stage + kind + message) / timeout / exception / crash.
+- Accepted triples per pair get an inclusion-exclusion check on OCCT
+  volumes: |volU + volI - volA - volB| and |volD - (volA - volI)|
+  (flag threshold 2% relative). Independent of the kernel.
+- Harness: probes-abc-deepcad/g8_worker.py (single case),
+  probes-abc-deepcad/probe_brep_g8.py (driver),
+  probes-abc-deepcad/aggregate_g8.py (aggregation),
+  results in probes-abc-deepcad/results_g8.json (per-case records:
+  model ids, op, outcome, refusal stage/kind, wall time, volumes,
+  authoring tolerances) plus scratch_g8/ case/result files.
+
+### Measured results (45 cases)
+
+Outcome totals: accepted 21 (46.7%), typed refusal 15 (33.3%),
+timeout 9 (20.0%), exception 0, crash 0.
+
+Refusal histogram (stage/kind):
+- 9  intersection/SectionOutsideTrim
+- 6  assembly/InsufficientPatchWitnesses
+
+By corpus:
+- NIST: 0 accepted, 6 refused, 3 timeout (9 cases)
+- DeepCAD: 15 accepted, 0 refused, 0 timeout (15 cases)
+- ABC: 6 accepted, 9 refused, 6 timeout (21 cases)
+
+By op (union / difference / intersection): 7 / 7 / 7 accepted,
+5 / 5 / 5 refused, 3 / 3 / 3 timeout. No op-specific bias.
+
+Accepted wall times (21): min 6.2 s, median 13.6 s, p95 87.6 s,
+max 90.4 s. DeepCAD accepts run 6-25 s; ABC accepts 55-90 s.
+
+Inclusion-exclusion on the 7 fully-accepted pairs: 7/7 pass, 0 flags
+(relative errors 0.0 to 1.3e-8). No wrong-accept signal anywhere in
+the accepted set.
+
+### Dominant refusal reasons
+
+1. SectionOutsideTrim (9/15 refusals): the OCCT section edge's p-curve
+   leaves the trimmed input face beyond the verification tolerance, so
+   the intersection verifier refuses to certify the section curve
+   (intersection.py _verify_section_edge). Concentrated on the NIST
+   pairs, whose authoring tolerances are loose
+   (broadphase_max_tolerance 0.104 and 0.0096), plus one ABC pair
+   (0.0022). The curve the engine produced is not demonstrably ON both
+   trimmed faces; refusing is the contract.
+2. InsufficientPatchWitnesses (6/15): assembly found only 1 stable
+   interior witness point where 3 are required on a complex-trim face,
+   so patch classification cannot be certified (assembly.py witness
+   sampler: center-biased low-discrepancy sequence plus Cartesian
+   fallback grid). Both ABC pairs refused this way (tolerances
+   ~2.3e-4); the trims are intricate enough that the fixed sample
+   pattern finds no interior points.
+3. Timeouts (9/45, not refusals): nist-p02 (ftc_08/ftc_09),
+   abc-p02, abc-p07 hit the 120 s harness limit in all three ops.
+   Recorded per case as non-results. Accepted ABC cases took 55-90 s,
+   so some timeouts might accept with a larger budget; the timeout is
+   a harness property, not a pipeline verdict.
+
+Tolerance context (honest, not gamed): the section acceptance ceiling
+is 128*base_tol (~1.3e-5 at defaults). Sampled authoring tolerances
+ran from 1e-7 (DeepCAD, 15/15 accepted) through 1e-5 and 2.7e-4 (ABC
+accepts) to 2.2e-3..0.104 (refusals). But tolerance alone does not
+predict the outcome: one ABC pair accepted at 2.7e-4 while another
+refused at 2.3e-4 via a different mechanism. The binding constraints
+are section-curve quality against the trim and trim complexity, not
+the raw tolerance number. Nothing was loosened to improve the rate
+(I3); defaults were used throughout.
+
+### Harness bugs found and fixed (I6)
+
+- g8_worker.py omitted "pair" from result records; the driver's
+  aggregation crashed with KeyError, losing 9 in-memory timeout
+  records. Fixed: worker records "pair"; driver persists driver-side
+  records to disk. The 9 timeout records were reconstructed from the
+  sweep log and verified against the case files; the recovery is
+  documented in the results manifest and the aggregation is
+  idempotent (aggregate_g8.py).
+- Two VM/service restarts during the run wiped /tmp scratch (NIST
+  re-extracted) and one in-flight smoke; the sweep itself was
+  unaffected (per-case result files on disk). To isolate from a
+  concurrent worker sharing the main checkout, all G8 work ran in a
+  git worktree at ~/workspace/brep-gates-g8 on branch
+  gate/G8-real-data; the main checkout's uncommitted G9/evidence
+  changes were never touched.
+
+### Gate verdict
+
+G8: COMPLETE. The refusal rate is measured (45 cases, 46.7% accept /
+33.3% typed refusal / 20.0% timeout, 0 wrong, 0 crashes), documented
+(results_g8.json committed with per-case records), and the dominant
+reasons are identified (SectionOutsideTrim, InsufficientPatchWitnesses,
+plus the timeout class). No target number was set; honesty was the
+criterion and it is met.
+
+Proposed next target (for the parent/coordinator, per the workplan):
+acceptance above 80% on clean single-solid models with authoring
+tolerance <= 1e-4. Candidate follow-up gates for the top refusal
+kinds: (a) SectionOutsideTrim reduction (section-curve repair or
+tighter OCCT section control on loose-tolerance models), (b) a
+witness-point fallback for complex trims, (c) performance/timeout
+investigation on the heavy pairs (nist-p02, abc-p02, abc-p07).
+
+I1-I9: I1 held (0 wrong accepts; inclusion-exclusion 7/7 clean); I2
+(all 15 refusals carry typed stage/kind); I3 (defaults only, no
+tolerance loosening); I5 (full test_*.py sweep green, run after the
+G8 sweep on this branch: 26/26 files exit 0, 0 FAIL lines); I6 (this
+entry, bugs owned); I7 (0 crashes; 9 timeouts recorded per case);
+I8 (no em dashes; grepped); I9 (boolean_brep only; boolean() untouched).
+Local branch only, no push.

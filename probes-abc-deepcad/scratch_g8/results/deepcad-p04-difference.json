@@ -1,0 +1,43 @@
+{
+ "case_id": "deepcad-p04-difference",
+ "corpus": "deepcad",
+ "model_a": "m006",
+ "model_b": "m007",
+ "op": "difference",
+ "outcome": "accepted",
+ "load_s": 5.536265284999956,
+ "shift_applied": [
+  0.36836203592160377,
+  -0.41420885712494016,
+  -0.027382268036266276
+ ],
+ "diag_a": 1.2597280758164138,
+ "boolean_s": 6.66823602300002,
+ "result_solids": 1,
+ "result_volume": 0.10913160129129856,
+ "volume_a": 0.1110900878906456,
+ "volume_b": 0.0029137799126538752,
+ "stage_keys": [
+  "assembly",
+  "ingest",
+  "intersection",
+  "same_domain",
+  "split",
+  "verification"
+ ],
+ "broadphase_max_tolerance": 1e-07,
+ "timings_ms": {
+  "ingest": 21.274932000039826,
+  "same_domain": 102.57598300000836,
+  "intersection": 1363.7446569999838,
+  "split": 259.38842000005025,
+  "assembly": 4698.171280999986,
+  "verification": 54.82922400000234,
+  "total": 6510.992498000007
+ },
+ "intersection_summary": {},
+ "assembly_summary": {
+  "volume": 0.10913160129129856
+ },
+ "wall_s": 12.791137076999973
+}
