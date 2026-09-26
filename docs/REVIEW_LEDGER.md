@@ -2442,3 +2442,47 @@ gate/G9-docs; the release actions are blocked on Ben per the checklist.
   evidence records instead of None.
 - Onshape API keys / OAuth app and CATIA access / sample files stay
   parked: blocked on Ben, untouched by design.
+
+## PR0 - v1 harnesses: verdict equivalence + perf budget (26 Sept 2026, branch muse/v1-harness)
+
+- Base: ceea17d (main). Head: 93ed213.
+- Env: python 3.12.3, OCP 8.0.1.0, existing venv
+  ~/workspace/brep-booleans/.venv (deviation from the plan's fresh
+  .venv: the existing venv is the known-good one for this repo
+  lineage; recorded here instead of rebuilt).
+- Commands:
+  - python tools/review_probes/verdict_equivalence.py --before src
+    --after src --skip-probes --fuzz-trials 4 --fuzz-seed 5
+    --fuzz-snap 0.5 --fuzz-kinds box --verbose --out /tmp/equiv-smoke.json
+- What landed: tools/review_probes/verdict_equivalence.py (scrubbed
+  subprocess workers per side, sys.path holds only the requested src
+  tree, PYTHONPATH stripped, --verbose prints brepkernel.__file__ for
+  both sides and the worker asserts the import is under the requested
+  tree), tools/review_probes/perf_budget.py (best-of-N pinned cases;
+  tool only, no budgets committed), tools/review_probes/corpus_manifest.json
+  (17 everyday-CAD probes + 2 seeded fuzz expansions = 97 cases).
+- Results: self-equivalence on the same tree: 84 cases run (80 manifest
+  fuzz + 4 extra), 63 accepts before and after, 0 differences, 0
+  blocking. Both workers reported the same brepkernel.__file__.
+  Refusal kinds in the corpus baseline: recorded in /tmp/equiv-smoke.json.
+- Perf: the 84-case self-run took ~6 min wall (both sides sequential);
+  acceptable for per-PR use, fuzz depth stays adjustable via flags.
+- Merge criteria: harness-only PR, no src/brepkernel change;
+  self-equivalence reports 0 differences. Met.
+- I1: no acceptance logic touched (new files only, no src change).
+- I2: refusal kinds compared as typed kind/stage pairs, never strings.
+- I3: no tolerance read or changed.
+- I4: the harness's own acceptance test is the self-equivalence run
+  (0 differences on identical trees), run before commit.
+- I5: full suite baseline running on main at time of writing; no test
+  files touched by this PR.
+- I6: this entry; nothing hidden.
+- I7: no crashes encountered.
+- I8: zero U+2014 in new files (checked with grep).
+- I9: boolean()/boolean_brep() contracts untouched.
+
+### Open / not in this change
+
+- Machine-specific budgets (docs/perf_budget.json) land in G13, not here.
+- G10..G18b each get their own branch from main; this branch stays
+  harness-only.
