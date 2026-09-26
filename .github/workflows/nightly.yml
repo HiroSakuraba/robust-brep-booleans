@@ -1,0 +1,45 @@
+name: Nightly slow tests
+
+# G18b: nightly slow suite.  Runs the explicit slow list plus the
+# long fuzz and the performance-budget check.  Manually runnable via
+# workflow_dispatch as well as scheduled.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # 06:00 UTC daily
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        ocp:
+          - cadquery-ocp==8.0.1.0.0
+          - cadquery-ocp==7.8.1.1.post1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-freeform.txt
+      - name: Install dependencies
+        run: >-
+          python -m pip install
+          numpy==2.5.3 manifold3d==3.5.3
+          "${{ matrix.ocp }}" -e .
+      - name: G7 seam stress
+        run: python tests/test_g7_seam_stress.py
+      - name: Stress test
+        run: python tests/test_stress.py
+      - name: 200-trial snapped fuzz (fail on WRONG or CRASH)
+        run: python tools/review_probes/fuzz_brep.py --trials 200 --seed 42 --out /tmp/nightly_fuzz.json
+      - name: Performance budget check (fails if a pinned case exceeds 2x)
+        run: python tools/review_probes/perf_budget.py --check
