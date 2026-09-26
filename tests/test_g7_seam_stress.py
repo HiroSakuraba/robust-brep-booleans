@@ -51,7 +51,10 @@ from OCP.BRepPrimAPI import (
 )
 from OCP.GeomAPI import GeomAPI_PointsToBSpline
 from OCP.GProp import GProp_GProps
-from OCP.collections import Array1_gp_Pnt as TColgp_Array1OfPnt
+try:  # OCP 8.x
+    from OCP.collections import Array1_gp_Pnt as TColgp_Array1OfPnt
+except ImportError:  # OCP 7.8
+    from OCP.TColgp import TColgp_Array1OfPnt
 from OCP.gp import gp_Ax1, gp_Ax2, gp_Dir, gp_Pnt
 
 

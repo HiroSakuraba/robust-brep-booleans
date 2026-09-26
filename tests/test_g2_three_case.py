@@ -25,7 +25,12 @@ from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Surface
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
 from OCP.Geom import Geom_BSplineSurface
-from OCP.collections import Array2_gp_Pnt, Array1_double, Array1_int
+try:  # OCP 8.x
+    from OCP.collections import Array2_gp_Pnt, Array1_double, Array1_int
+except ImportError:  # OCP 7.8
+    from OCP.TColgp import TColgp_Array2OfPnt as Array2_gp_Pnt
+    from OCP.TColStd import TColStd_Array1OfReal as Array1_double
+    from OCP.TColStd import TColStd_Array1OfInteger as Array1_int
 from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
 from OCP.TopoDS import TopoDS
 

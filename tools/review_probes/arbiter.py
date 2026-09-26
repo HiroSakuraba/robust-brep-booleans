@@ -40,6 +40,15 @@ def version_banner() -> str:
         ocp, mfd = "unknown", "unknown"
     return f"versions: numpy={np.__version__} cadquery-ocp={ocp} manifold3d={mfd}"
 
+# OCP 7.8 spells TopoDS casts with a trailing _s; reuse the kernel's shim
+# when it is importable so this testing tool runs on both OCP versions.
+try:
+    import brepkernel._occt_compat  # noqa: F401
+except ImportError:
+    from OCP.TopoDS import TopoDS as _T
+    for _n in ("Vertex", "Edge", "Wire", "Face", "Shell", "Solid", "Compound"):
+        if not hasattr(_T, _n) and hasattr(_T, _n + "_s"):
+            setattr(_T, _n, getattr(_T, _n + "_s"))
 from OCP.Bnd import Bnd_Box
 from OCP.BRep import BRep_Tool
 from OCP.BRepBndLib import BRepBndLib
