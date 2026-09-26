@@ -2021,3 +2021,55 @@ test_step_nurbs_multiface, test_stress.
 G0, G1 (+rework), G2-planar, G3 (+rework), G4 (+rework), G5, G6 (+rework),
 probe-hardening, new G7: merged. Still open: curved coincident-face
 recognition (deferred), G8 real-data refusal rate, G9 docs/release, Part B.
+
+## B9 - Certified intersector research spike (2026-09-25, branch partB/b9-research) [EXPERIMENTAL]
+
+Parallel research track toward the plan's B9 "certified intersection
+core". LOCAL ONLY: branch `partB/b9-research`, worktree
+`~/workspace/brep-gates-b9`, never pushed to GitHub. Everything
+experimental under `src/brepkernel/experimental_b9/` (never imported
+by mainline); full write-up in `docs/B9_RESEARCH.md`.
+
+Direction: interval-arithmetic certified exclusion enclosure for
+analytic surface pairs (plane/sphere/cylinder/cone/torus), with
+per-box transversality flags, a parametric graph-Krawczyk uniqueness
+certificate per box (interval implicit function theorem: K(U)
+strictly inside U proves exactly one regular arc; K(U) disjoint
+from U is a rigorous exclusion killing false positives), a
+slicing-Krawczyk fallback, the OCCT two-intersector agreement
+protocol (all OCCT section samples inside the enclosure; retained
+clusters with no OCCT sample flagged unexplained), and an exact
+`Fraction` point classifier as an F4-independent oracle for OCCT's
+`BRepClass3d_SolidClassifier`.
+
+Measurements (`tests/test_experimental_b9.py`, ALL PASS, ~30 s):
+sphere/plane circle 40/40 boxes Krawczyk-unique, 0 unresolved;
+cylinder/tilted-plane ellipse 108/178 unique, 70 unresolved at
+min_size 0.05, 186/198 unique with 12 corner-clip unresolved at
+0.005 (all within min_size of the true curve, all in
+OCCT-explained clusters); concentric spheres certified empty
+(0 boxes); tangent sphere/plane 8/8 honestly unresolved;
+equal-radius crossing cylinders 552 unresolved at the branch
+crossings (honest refuse); OCCT sample coverage 1.0 on all five
+cases, 0 unexplained regions in transverse cases; interval
+soundness 120/120; exact classifier agrees with OCCT 597/597
+non-skipped probes, 0 disagreements.
+
+Negative results (kept): the slicing-plane Krawczyk through the box
+center failed on most ellipse boxes (Newton converges to a far
+slicing-plane intersection outside static octree boxes); replaced
+first by Gauss-Newton closest-point slicing, then by the parametric
+graph certificate as primary (slicing kept as fallback). Static
+subdivision leaves a boundary layer of corner-clip boxes the
+per-box certificate cannot prove; a production version needs the
+predictor-corrector tracing layer (literature: certified curve
+tracking, arXiv 2602.07718). NURBS out of scope (needs
+Bezier decomposition first). Four spike bugs found and fixed by the
+spike's own checks (Krawczyk centering, torus implicit sign,
+gp_Ax2/gp_Ax3, grid alignment).
+
+Verdict: works as a rigorous superset enclosure + mostly-certified
+per-box topology for analytic pairs; partial on the corner-clip
+boundary layer; honest refuse on singularities. Does not touch
+mainline accept/refuse (I1/I2/I3 hold by construction: no imports
+from the shipped pipeline).
