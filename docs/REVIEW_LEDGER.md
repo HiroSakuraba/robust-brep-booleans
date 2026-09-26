@@ -2844,3 +2844,50 @@ src/brepkernel/assembly.py:
   - .github/workflows/tierA-ci.yml: G13 modified, G18b deleted; deleted
     per G18b's workflow replacement.
 - I8: zero U+2014 in merged files (checked with grep).
+
+## C10: Review corrections ledger hygiene (26 Sept 2026)
+
+Per I15, gates with unmet numeric pass criteria are marked PARTIAL with
+measured values, never COMPLETE.
+
+### G10 re-opened as PARTIAL, closed via C2
+
+G10 was marked COMPLETE but its plane-direction fix was incomplete:
+`_planes_equal_up_to_rounding()` still required bit-identical direction
+vectors. A tool built in its own frame on a rotated part (the normal CAD
+case) refused at 16 of 16 checks (4 angles x 4 features).
+
+C2 fix: directions within 64 ULP of parallel are accepted (cross product
+within 64-ULP bound). New test tests/test_c2_independent_frames.py:
+16/16 accept with exact volumes (was 0/16).
+
+Correction to G10 finding #1: The rotated "union edge touch" accept was
+NOT a correct L-prism. It was a self-touching non-manifold boundary
+(two distinct edges coincident) that the kernel's rules require refusing.
+C3 adds `_self_touching_edge_pairs()` guard: refuses NonManifoldResult
+in all 5 poses (was accepted in 3). The G10 ledger entry calling it an
+"L-prism" is corrected.
+
+### G12 re-opened as PARTIAL, C6/C9 progress
+
+G12 target: 262-face plate (256 holes) minus slot under 8s.
+- Main 9e45a72: 21.0s (target not met, not measured at gate close)
+- Review branch (C6 only): 13.2s
+- This branch (C6+C9): 9.7s on local machine (PARTIAL, target not met)
+
+C6: two distance shortcuts applied (thresholded `_dist_to_edges` and
+`_point_boundary_distances` with conservative boxes).
+C9: single-witness for untouched region representatives; skip section
+matching for edges with all-untouched parents.
+
+The 8s target remains open. Per I15, G12 stays PARTIAL with measured
+9.7s until the target is met on the review-equivalent machine.
+
+### C1: OCCT 7.8 compatibility
+
+All `Bnd_Box.GetXMin()` etc. replaced with `CornerMin()/CornerMax()`.
+Tests and arbiter have 7.8 fallbacks. Three freeform tests record
+SectionToleranceTooLoose as documented 7.8 difference (7.8 section edge
+tolerance 2.18e-5 exceeds 1.28e-5 ceiling) instead of crashing.
+
+7.8 venv created at ~/workspace/brep-ocp78-venv (OCP 7.8.1.1) per I14.
