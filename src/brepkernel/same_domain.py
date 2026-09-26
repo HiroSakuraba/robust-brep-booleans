@@ -118,9 +118,16 @@ def _signed_volume(shape) -> float:
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
 
+    # Review correction C4: same routing as assembly._shape_volume
+    # (analytic faces -> adaptive Gauss; otherwise Gauss-Kronrod on a copy
+    # centred at the origin). The sign is preserved by both routines.
+    from .assembly import _all_faces_analytic, _centered_copy
     g = GProp_GProps()
+    if _all_faces_analytic(shape):
+        BRepGProp.VolumeProperties_s(shape, g, 1e-10, True)
+        return float(g.Mass())
     err = BRepGProp.VolumePropertiesGK_s(
-        shape, g, 1e-10, True, True, False, False, False)
+        _centered_copy(shape), g, 1e-10, True, True, False, False, False)
     if float(err) < 0.0:
         raise SameDomainError("adaptive volume integration failed",
                               kind="SameDomainVolumeFailed")

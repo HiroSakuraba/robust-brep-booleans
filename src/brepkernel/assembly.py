@@ -326,6 +326,35 @@ _TANGENT_COS = 0.05
 _RAY_PMAX = 1e100
 
 
+
+def _conservative_boxes(shapes) -> np.ndarray:
+    """(n, 6) array of conservative AABBs [xmin,ymin,zmin,xmax,ymax,zmax].
+
+    BRepBndLib.Add (not AddOptimal) enlarges by entity tolerances, so the
+    box always contains the shape. Used only to skip exact distance
+    queries that provably cannot fall below a threshold (C6).
+    """
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    out = np.empty((len(shapes), 6), dtype=np.float64)
+    for i, sh in enumerate(shapes):
+        b = Bnd_Box()
+        BRepBndLib.Add_s(sh, b, False)
+        if b.IsVoid():
+            out[i] = (-np.inf, -np.inf, -np.inf, np.inf, np.inf, np.inf)
+            continue
+        lo, hi = b.CornerMin(), b.CornerMax()
+        out[i] = (lo.X(), lo.Y(), lo.Z(), hi.X(), hi.Y(), hi.Z())
+    return out
+
+
+def _near_box_indices(boxes: np.ndarray, p, radius: float) -> np.ndarray:
+    """Indices of boxes within `radius` of point p (conservative)."""
+    q = np.asarray(p, dtype=np.float64)
+    return np.nonzero(np.all((q >= boxes[:, :3] - radius)
+                             & (q <= boxes[:, 3:] + radius), axis=1))[0]
+
+
 class _MultiRayClassifier:
     """Independent point-in-solid classifier via ray parity.
 
@@ -352,6 +381,9 @@ class _MultiRayClassifier:
 
     def __init__(self, solids: list, tol: float):
         from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+        from OCP.TopAbs import TopAbs_EDGE
+        from OCP.TopExp import TopExp_Explorer
+        from OCP.TopoDS import TopoDS
 
         self._tol = float(tol)
         self._solids = list(solids)
@@ -361,6 +393,14 @@ class _MultiRayClassifier:
             inter.Load(solid, self._tol)
             self._intersectors.append(inter)
         self._edges = self._edge_compound(self._solids)
+        # C6: per-edge list and conservative boxes for thresholded distances.
+        self._edge_list = []
+        for _solid in self._solids:
+            _ex = TopExp_Explorer(_solid, TopAbs_EDGE)
+            while _ex.More():
+                self._edge_list.append(TopoDS.Edge(_ex.Current()))
+                _ex.Next()
+        self._edge_boxes = _conservative_boxes(self._edge_list)
 
     @staticmethod
     def _edge_compound(solids):
@@ -402,18 +442,30 @@ class _MultiRayClassifier:
         return n / nn
 
     def _dist_to_edges(self, point: np.ndarray) -> float:
+        """Distance to the nearest edge, exact only where it can matter.
+
+        The only caller compares against self._tol. Edges whose
+        conservative box is farther than 2*tol cannot be within tol and
+        are skipped; with none left the answer is "at least 2*tol" (C6).
+        """
         from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
         from OCP.BRepExtrema import BRepExtrema_DistShapeShape
         from OCP.gp import gp_Pnt
 
+        near = _near_box_indices(self._edge_boxes, point, 2.0 * self._tol)
+        if len(near) == 0:
+            return 2.0 * self._tol
         v = BRepBuilderAPI_MakeVertex(
             gp_Pnt(float(point[0]), float(point[1]), float(point[2]))).Vertex()
-        d = BRepExtrema_DistShapeShape(v, self._edges)
-        if not d.IsDone():
-            d.Perform()
-        if not d.IsDone():
-            return 0.0  # fail safe: treat as degenerate
-        return float(d.Value())
+        best = float("inf")
+        for k in near:
+            d = BRepExtrema_DistShapeShape(v, self._edge_list[int(k)])
+            if not d.IsDone():
+                d.Perform()
+            if not d.IsDone():
+                return 0.0  # fail safe: treat as degenerate
+            best = min(best, float(d.Value()))
+        return best
 
     def _cast_ray(self, point: np.ndarray,
                   direction: np.ndarray) -> Optional[list[int]]:
@@ -565,24 +617,41 @@ def classify_point_two_classifier(point, model, tol: float) -> dict:
 
 
 def _point_boundary_distances(points: np.ndarray,
-                              model: BRepModel) -> list[float]:
-    """Distance from each point to the boundary of the model's solids.
+                              model: BRepModel,
+                              cap: float = float("inf")) -> list[float]:
+    """Distance from each point to the model's faces, capped at `cap` (C6).
 
-    Measured against the model's FACES, not the solids: OCCT reports
-    distance 0 for a vertex strictly inside a solid (containment), while
-    the face distance is the true distance to the boundary.
+    Measured against FACES (OCCT reports 0 for a point inside a solid).
+    Faces whose conservative box is farther than `cap` are skipped; a
+    point with no face in range reports `cap`, meaning "at least cap".
+    With the default cap=inf every face is measured, as before.
     """
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
     from OCP.BRepExtrema import BRepExtrema_DistShapeShape
     from OCP.gp import gp_Pnt
 
+    faces = [fr.face for fr in model.faces]
+    boxes = None
+    if np.isfinite(cap):
+        boxes = getattr(model, "_c6_face_boxes", None)
+        if boxes is None or len(boxes) != len(faces):
+            boxes = _conservative_boxes(faces)
+            try:
+                model._c6_face_boxes = boxes   # one build per model per call
+            except AttributeError:
+                pass
     dists = []
     for p in points:
+        idx = (range(len(faces)) if boxes is None
+               else _near_box_indices(boxes, p, cap))
+        if len(idx) == 0:
+            dists.append(cap)
+            continue
         v = BRepBuilderAPI_MakeVertex(
             gp_Pnt(float(p[0]), float(p[1]), float(p[2]))).Vertex()
-        best = float("inf")
-        for fr in model.faces:
-            d = BRepExtrema_DistShapeShape(v, fr.face)
+        best = cap
+        for k in idx:
+            d = BRepExtrema_DistShapeShape(v, faces[int(k)])
             if not d.IsDone():
                 d.Perform()
             if d.IsDone():
@@ -619,7 +688,7 @@ def _witness_material_verdict(points: np.ndarray, classes: tuple[str, ...],
     under a 10x tol band.  NOT applied in _shell_records nesting either,
     which reuses those same near-boundary witnesses.
     """
-    dists = _point_boundary_distances(points, model)
+    dists = _point_boundary_distances(points, model, cap=20.0 * float(tol))
     band = 10.0 * float(tol)
     far = [c for c, d in zip(classes, dists) if d >= band]
     near = [c for c, d in zip(classes, dists) if d < band]
@@ -934,24 +1003,27 @@ def _build_untouched_regions(groups, section_edges, base_tol):
             else:
                 parent[ra] = rb
 
-    # Check all pairs of untouched faces for shared clean edges
+    # C7: hash edges once (OCP hashes ignore orientation, like IsSame)
+    # instead of comparing every pair of faces and every pair of edges.
+    owners: dict = {}
+    for fid, edges in face_edges.items():
+        for e in edges:
+            owners.setdefault(hash(e), []).append((e, fid))
+    clean_cache: dict = {}
+    for bucket in owners.values():
+        for k in range(len(bucket)):
+            ea, fa = bucket[k]
+            for m in range(k + 1, len(bucket)):
+                eb, fb = bucket[m]
+                if fa == fb or not ea.IsSame(eb):
+                    continue
+                key = id(ea)
+                if key not in clean_cache:
+                    clean_cache[key] = _edge_is_clean(
+                        ea, section_vertices, base_tol)
+                if clean_cache[key]:
+                    union(fa, fb)
     face_ids = list(face_edges.keys())
-    for i in range(len(face_ids)):
-        for j in range(i + 1, len(face_ids)):
-            fid_a, fid_b = face_ids[i], face_ids[j]
-            # Check if they share an edge
-            shared_clean = False
-            for ea in face_edges[fid_a]:
-                for eb in face_edges[fid_b]:
-                    if ea.IsSame(eb):
-                        # Shared edge found, check if clean
-                        if _edge_is_clean(ea, section_vertices, base_tol):
-                            shared_clean = True
-                            break
-                if shared_clean:
-                    break
-            if shared_clean:
-                union(fid_a, fid_b)
 
     # Build regions
     regions = {}
@@ -1003,17 +1075,6 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
 
     out: list[PatchDecision] = []
 
-    def one_side(operand: str, groups, other: BRepModel):
-        # One multi-ray classifier per side, built at the loosest piece
-        # tolerance: a wider edge/near-origin discard band is the
-        # conservative choice, and the per-piece OCCT tolerance still
-        # governs the primary classifier.
-        jobs = []
-        for fr in groups:
-            for piece in fr.pieces:
-                tol = max(
-                    float(base_tol),
-                    2.0 * float(BRep_Tool.Tolerance_s(piece.face)))
     def one_side(operand: str, groups, other: BRepModel):
         # One multi-ray classifier per side, built at the loosest piece
         # tolerance: a wider edge/near-origin discard band is the
@@ -1123,8 +1184,12 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
             # Find the representative's decision (piece_index 0 for untouched)
             rep_key = (rep_id, 0)
             if rep_key not in decisions_by_key:
-                # Fallback: should not happen for untouched faces
-                continue
+                # C7: never drop a face silently; a missing representative
+                # decision is an internal inconsistency, so refuse.
+                raise AssemblyError(
+                    f"{operand} face {face_id}: region representative "
+                    f"{rep_id} has no decision to propagate",
+                    kind="RegionPropagationInconsistent")
             rep_dec = decisions_by_key[rep_key]
             # Create propagated decision with this face's geometry
             # but the representative's classification.
@@ -1203,13 +1268,60 @@ def clear_volume_cache() -> None:
 _COARSE_VOLUME_TOL = 1e-4
 
 
-def _shape_volume(shape, tol: float = 1e-10) -> float:
-    """Adaptive volume measurement, including B-spline span integration.
+_ANALYTIC_SURFACES = frozenset((
+    "GeomAbs_Plane", "GeomAbs_Cylinder", "GeomAbs_Cone",
+    "GeomAbs_Sphere", "GeomAbs_Torus"))
 
-    Results are cached for the duration of one Boolean call.  The default
-    tol=1e-10 is the high-accuracy path used wherever a volume is reported
-    as evidence.  Internal sign/coarse-bound checks may pass
-    tol=_COARSE_VOLUME_TOL (1e-4); the error budget is documented above.
+
+def _all_faces_analytic(shape) -> bool:
+    """True when every face lies on a plane, cylinder, cone, sphere or torus."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    ex = TopExp_Explorer(shape, TopAbs_FACE)
+    while ex.More():
+        kind = str(BRepAdaptor_Surface(TopoDS.Face(ex.Current())).GetType())
+        if kind.split(".")[-1] not in _ANALYTIC_SURFACES:
+            return False
+        ex.Next()
+    return True
+
+
+def _centered_copy(shape):
+    """Geometry copy translated so its bounding-box centre is the origin.
+
+    Volume integrals about a distant origin cancel terms of size |x|^3;
+    integrating near the origin removes that cancellation.
+    """
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    from OCP.gp import gp_Trsf, gp_Vec
+    box = Bnd_Box()
+    BRepBndLib.Add_s(shape, box, False)
+    if box.IsVoid():
+        return shape
+    lo, hi = box.CornerMin(), box.CornerMax()
+    t = gp_Trsf()
+    t.SetTranslation(gp_Vec(-0.5 * (lo.X() + hi.X()), -0.5 * (lo.Y() + hi.Y()),
+                            -0.5 * (lo.Z() + hi.Z())))
+    return BRepBuilderAPI_Transform(shape, t, True).Shape()
+
+
+def _shape_volume(shape, tol: float = 1e-10) -> float:
+    """Volume of a closed shape, cached for the duration of one Boolean call.
+
+    Routing (review correction C4):
+    - every face analytic: OCCT's adaptive Gauss integration
+      (BRepGProp.VolumeProperties with Eps), which is exact to ~1e-14 on
+      analytic surfaces and takes milliseconds. The Gauss-Kronrod routine
+      can fail to converge on rotated planar faces (observed: 120 s per
+      call on an 11-face planar solid) because its error estimate never
+      falls below the requested tolerance.
+    - any B-spline/Bezier/offset/other face: Gauss-Kronrod at `tol` with
+      span integration, as before.
+    Gauss-Kronrod runs on a copy centred at the origin.
     """
     key = (id(shape), float(tol))
     hit = _VOLUME_CACHE.get(key)
@@ -1218,11 +1330,16 @@ def _shape_volume(shape, tol: float = 1e-10) -> float:
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
     g = GProp_GProps()
-    err = BRepGProp.VolumePropertiesGK_s(
-        shape, g, tol, True, True, False, False, False)
-    if float(err) < 0.0:
-        raise AssemblyError("adaptive volume integration failed",
-                            kind="VolumeIntegrationFailed")
+    if _all_faces_analytic(shape):
+        # Accurate to ~1e-14 relative on analytic faces even far from the
+        # origin (review measurement), so no centred copy is needed here.
+        BRepGProp.VolumeProperties_s(shape, g, max(float(tol), 1e-12), True)
+    else:
+        err = BRepGProp.VolumePropertiesGK_s(
+            _centered_copy(shape), g, tol, True, True, False, False, False)
+        if float(err) < 0.0:
+            raise AssemblyError("adaptive volume integration failed",
+                                kind="VolumeIntegrationFailed")
     vol = float(g.Mass())
     _VOLUME_CACHE[key] = (shape, vol)
     return vol
@@ -2096,6 +2213,46 @@ def _solids_touch(solids, tol: float) -> bool:
     return False
 
 
+def _self_touching_edge_pairs(shape, tol: float) -> int:
+    """Count distinct edge pairs that share both end vertices and coincide.
+
+    Such a pair means the boundary touches itself along a curve: a
+    non-manifold point set stored as a manifold-looking shell (review
+    correction C3: a rotated edge-touching union was accepted this way
+    while the axis-aligned case refuses NonManifoldResult).
+    """
+    from OCP.BRepAdaptor import BRepAdaptor_Curve
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    from OCP.TopAbs import TopAbs_EDGE
+    from OCP.TopExp import TopExp, TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    unique: dict = {}
+    by_ends: dict = {}
+    ex = TopExp_Explorer(shape, TopAbs_EDGE)
+    while ex.More():
+        e = TopoDS.Edge(ex.Current())
+        ex.Next()
+        bucket = unique.setdefault(hash(e), [])
+        if any(e.IsSame(x) for x in bucket):
+            continue
+        bucket.append(e)
+        key = frozenset((hash(TopExp.FirstVertex_s(e)), hash(TopExp.LastVertex_s(e))))
+        by_ends.setdefault(key, []).append(e)
+    pairs = 0
+    for edges in by_ends.values():
+        for i in range(len(edges)):
+            c = BRepAdaptor_Curve(edges[i])
+            mid = c.Value(0.5 * (c.FirstParameter() + c.LastParameter()))
+            v = BRepBuilderAPI_MakeVertex(mid).Vertex()
+            for j in range(i + 1, len(edges)):
+                d = BRepExtrema_DistShapeShape(v, edges[j])
+                if d.IsDone() and d.Value() <= tol:
+                    pairs += 1
+    return pairs
+
+
 def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
                      split: ModelSplitResult, operation: str, *,
                      base_tol: float = 1e-7,
@@ -2205,7 +2362,19 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
             f"union of {len(solids)} solids that touch geometrically: "
             f"non-manifold result refused",
             kind="NonManifoldResult")
+    # C3: a single solid whose boundary touches itself is non-manifold too.
+    self_touch = _self_touching_edge_pairs(
+        result_shape, max(float(base_tol), float(sew_tol)) * 4.0)
+    if self_touch and not allow_nonmanifold:
+        raise AssemblyError(
+            f"result boundary touches itself along {self_touch} coincident "
+            f"edge pair(s): non-manifold result refused",
+            kind="NonManifoldResult")
     notes = []
+    if self_touch:
+        notes.append(
+            f"self-touching boundary accepted ({self_touch} coincident edge "
+            f"pair(s), allow_nonmanifold=True)")
     if touching_solids:
         notes.append(
             f"non-manifold contact accepted: {len(solids)} touching "
@@ -2213,7 +2382,10 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     if not BRepCheck_Analyzer(result_shape, True).IsValid():
         raise AssemblyError("final assembled result is B-rep invalid",
                             kind="SolidInvalid")
-    volume = float(sum(s.volume for s in solids))
+    # Review correction C5: the reported result volume is evidence, so it
+    # uses the full-precision path (fast now that volumes are routed), not
+    # the coarse sign-check values stored on the solid records.
+    volume = float(sum(_shape_volume(s.solid) for s in solids))
     edge_lineage = _build_edge_lineage(
         result_shape, selected, split, model_a, model_b, float(base_tol))
     section_payloads = _build_section_payloads(split, edge_lineage)
