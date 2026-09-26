@@ -1108,15 +1108,20 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                     float(base_tol),
                     2.0 * float(BRep_Tool.Tolerance_s(piece.face)))
                 if should_classify(piece.parent_face_id):
-                    jobs.append((piece, tol))
+                    # C9: untouched region representatives get single-witness
+                    # classification (the face cannot straddle the boundary).
+                    fid = piece.parent_face_id
+                    single = (fid in rep_for and rep_for[fid] == fid
+                              and piece.coincidence is None)
+                    jobs.append((piece, tol, single))
                 else:
                     skipped.append((piece.parent_face_id, piece, tol))
-        ray_tol = max([t for _, t in jobs], default=float(base_tol))
+        ray_tol = max([t for _, t, _ in jobs], default=float(base_tol))
         ray = _MultiRayClassifier(
             [sr.solid for sr in other.solids], ray_tol)
         # Store decisions by (face_id, piece_index) for propagation
         decisions_by_key = {}
-        for piece, tol in jobs:
+        for piece, tol, single_witness in jobs:
             # G2.6: coincident pieces get their ON state from the pair
             # relation, not from 3D witnesses. The witness still has
             # to be ON the partner support with a matching normal-dot
@@ -1145,7 +1150,10 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                 out.append(dec)
                 decisions_by_key[(piece.parent_face_id, piece.piece_index)] = dec
                 continue
-            points = _face_points(piece.face, tol)
+            points = _face_points(
+                piece.face, tol,
+                max_points=1, min_points=1) if single_witness else _face_points(
+                piece.face, tol)
             classes = tuple(
                 _agreed_point_verdict(p, other, tol, ray)
                 for p in points)
@@ -1153,7 +1161,8 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                 points, classes, other, tol,
                 operand=operand,
                 parent_face_id=piece.parent_face_id,
-                piece_index=piece.piece_index)
+                piece_index=piece.piece_index,
+                min_points=1 if single_witness else 3)
             # G2.1 canonical states: map the dual-classified
             # inside/outside verdict onto the four-state model before the
             # keep table.
@@ -2054,6 +2063,14 @@ def _build_edge_lineage(result_shape, selected: list[PatchDecision],
         result_shape, selected,
         list(split.section_edges), list(split.coincident_boundary_tools),
         {"A": model_a, "B": model_b}, btol)
+    # C9: untouched faces (status "unchanged") cannot meet the other
+    # operand's boundary, so an edge whose parent faces are all untouched
+    # is a source boundary edge by construction; skip section matching.
+    untouched = set()
+    for operand, faces in (("A", split.faces_a), ("B", split.faces_b)):
+        for fr in faces:
+            if fr.status == "unchanged":
+                untouched.add((operand, fr.parent_face_id))
     out = []
     for i in range(idx.n_result_edges):
         edge = idx.result_edges[i]
@@ -2078,11 +2095,13 @@ def _build_edge_lineage(result_shape, selected: list[PatchDecision],
                         source_boundary.append(pf)
 
         intersections = []
-        for sj in range(idx.n_sections):
-            if idx.edge_matches_section(i, sj, btol):
-                key = idx.section_keys[sj]
-                if key not in intersections:
-                    intersections.append(key)
+        # C9: skip section matching when all parent faces were untouched.
+        if not (parents and all(pf in untouched for pf in parents)):
+            for sj in range(idx.n_sections):
+                if idx.edge_matches_section(i, sj, btol):
+                    key = idx.section_keys[sj]
+                    if key not in intersections:
+                        intersections.append(key)
 
         # G2.6: coincident_boundary. A result edge that matches a
         # partner-face boundary edge used as an overlap-split tool, and
