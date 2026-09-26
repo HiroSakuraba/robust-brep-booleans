@@ -2868,20 +2868,56 @@ C3 adds `_self_touching_edge_pairs()` guard: refuses NonManifoldResult
 in all 5 poses (was accepted in 3). The G10 ledger entry calling it an
 "L-prism" is corrected.
 
-### G12 re-opened as PARTIAL, C6/C9 progress
+### G12 re-opened as PARTIAL, C6/C9 progress, then CLOSED
 
 G12 target: 262-face plate (256 holes) minus slot under 8s.
 - Main 9e45a72: 21.0s (target not met, not measured at gate close)
 - Review branch (C6 only): 13.2s
-- This branch (C6+C9): 9.7s on local machine (PARTIAL, target not met)
+- This branch (C6 + first C9): 9.7s on local machine (PARTIAL)
 
 C6: two distance shortcuts applied (thresholded `_dist_to_edges` and
 `_point_boundary_distances` with conservative boxes).
-C9: single-witness for untouched region representatives; skip section
-matching for edges with all-untouched parents.
 
-The 8s target remains open. Per I15, G12 stays PARTIAL with measured
-9.7s until the target is met on the review-equivalent machine.
+C9 incident (26 Sept 2026): the first C9 implementation granted
+single-witness classification to region representatives
+(`rep_for[fid] == fid`). The pre-merge test run caught a REAL
+regression: `test_freeform_assembly` t6 (straddling patch must refuse
+multi-witness classification) was unexpectedly ACCEPTED, because t6's
+forged "unchanged" straddling face defeats a region-status gate. The
+push to main was held; t6 passes on the pre-C9 commit, confirming C9
+as the cause. This is the second merge-time catch of the v0.9.0
+cycle (the first was t7 at the v1 merge).
+
+C9 rewritten to the plan's sketch (commit on merge/v1-gates):
+- the gate is broad-phase candidate face ids (`{p.face_a for p in
+  ix.pairs}`, all pair statuses), threaded from `pipeline.py`
+  through `assemble_boolean` into `_classify_pieces` - a parent face
+  with no surviving candidate pair cannot meet the other model's
+  boundary (the broad phase only widens the candidate set);
+- the witness is the face-interior point farthest from the other
+  boundary and must clear a 10x tol confusion band
+  (`classify_untouched_single_witness`, returns None whenever the
+  shortcut does not apply, so the full multi-witness rule runs
+  unchanged and the missed-section backstop stays intact);
+- deterministic 1-in-10 guard: every 10th shortcut piece also runs
+  the full rule and verdicts must agree, else loud
+  `SingleWitnessGuardDisagreement` refusal;
+- shortcut decisions recorded with single-witness provenance and
+  counted as `n_single_witness` in region_stats.
+The C9 lineage section-skip is unchanged (t6 does not cover it; not
+implicated). Direct unit-test calls pass no candidate ids, so the
+shortcut is disabled there by construction.
+
+G12 CLOSED 26 Sept 2026: 262-face plate minus slot best-of-3
+7.96s / 8.84s / 7.99s on the local machine (target <8s met;
+was 9.7s with the first C9, 13.2s C6-only, 21.0s on main).
+257/261 side-A pieces took the shortcut; volume 22.2350 stable
+across runs. Per I15 the measured 7.96s closes the gate.
+Benchmark: tools/review_probes/bench_plate256.py (plate cached as
+BREP under goals/robust-b-rep-booleans-prototype/hidden_files/).
+Note: the venv's editable brepkernel install points at the stale
+brep-gates-wt/g18a-packaging worktree; benchmarks must put the
+worktree src first on sys.path (fixed in bench_plate256.py).
 
 ### C1: OCCT 7.8 compatibility
 

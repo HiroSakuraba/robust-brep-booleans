@@ -845,9 +845,16 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
 
     t_stage = perf_counter()
     try:
+        # C9: parent face ids appearing in ANY broad-phase candidate pair
+        # (whatever its status). A face absent from the set cannot meet
+        # the other model's boundary: the soundness proof behind the
+        # single-witness shortcut in _classify_pieces.
+        cand_a = {p.face_a for p in ix.pairs}
+        cand_b = {p.face_b for p in ix.pairs}
         assembled = assemble_boolean(
             a, b, sp, op, base_tol=float(base_tol), sew_tol=sew_tol,
-            allow_nonmanifold=bool(allow_nonmanifold))
+            allow_nonmanifold=bool(allow_nonmanifold),
+            candidate_face_ids_a=cand_a, candidate_face_ids_b=cand_b)
     except FreeformError as exc:
         report["timings_ms"]["assembly"] = (
             perf_counter() - t_stage) * 1000.0

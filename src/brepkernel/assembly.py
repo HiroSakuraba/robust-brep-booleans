@@ -1060,9 +1060,60 @@ def _choose_representative(face_ids, groups):
     return best
 
 
-def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
+def classify_untouched_single_witness(piece, other: "BRepModel", tol: float,
+                                      ray, candidate_ids):
+    """Return (verdict, point) for a piece whose parent had no candidates.
+
+    C9: the broad phase only widens the candidate set (per-face pads from
+    the entities' own tolerances), so a parent face with NO surviving
+    candidate pair against the other model cannot meet that model's
+    boundary. Its interior is entirely IN or entirely OUT. The 3-to-7
+    witness rule exists to catch a patch that straddles the other
+    boundary after a missed split; such a straddle is impossible here.
+
+    The witness is the face-interior point farthest from the other
+    model's boundary, and it must clear the 10x tol confusion band (the
+    classifier confusion zone hugs the boundary). Returns None when the
+    shortcut does not apply, so the caller falls back to the full
+    multi-witness rule: the parent met a candidate pair, the piece is
+    coincident (the keep table owns those), no broad-phase proof was
+    supplied (candidate_ids is None), or no clean witness exists.
+    """
+    if candidate_ids is None:
+        return None  # no broad-phase proof available: full rule
+    if piece.parent_face_id in candidate_ids:
+        return None  # face met a candidate: full rule
+    if piece.coincidence is not None:
+        return None  # coincident pieces use the keep table
+    try:
+        points = _face_points(piece.face, tol, max_points=3, min_points=1)
+    except AssemblyError:
+        return None  # no stable witness at all: full rule refuses
+    dists = _point_boundary_distances(points, other, cap=20.0 * tol)
+    for p, d in sorted(zip(points, dists), key=lambda x: -x[1]):
+        if d < 10.0 * tol:
+            continue  # stay out of the confusion band
+        verdict = _agreed_point_verdict(p, other, tol, ray)
+        if verdict in ("inside", "outside"):
+            return verdict, p
+    return None  # no clean witness: full rule
+
+
+def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                      split: ModelSplitResult, operation: str,
-                     base_tol: float) -> list[PatchDecision]:
+                     base_tol: float, *,
+                     candidate_face_ids_a=None,
+                     candidate_face_ids_b=None) -> list[PatchDecision]:
+    """Classify exact B-rep patches.
+
+    candidate_face_ids_a/_b are the parent face ids appearing in ANY
+    broad-phase candidate pair against the other model, whatever the
+    pair status (from ModelIntersectionResult.pairs). A face absent
+    from the set cannot meet the other model's boundary, which is the
+    soundness proof behind the C9 single-witness shortcut. When None
+    (direct unit-test calls), the shortcut is disabled and every face
+    gets the full multi-witness rule.
+    """
     from OCP.BRep import BRep_Tool
 
     if split.unresolved_contacts:
@@ -1075,7 +1126,7 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
 
     out: list[PatchDecision] = []
 
-    def one_side(operand: str, groups, other: BRepModel):
+    def one_side(operand: str, groups, other: BRepModel, candidate_ids):
         # One multi-ray classifier per side, built at the loosest piece
         # tolerance: a wider edge/near-origin discard band is the
         # conservative choice, and the per-piece OCCT tolerance still
@@ -1108,20 +1159,16 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                     float(base_tol),
                     2.0 * float(BRep_Tool.Tolerance_s(piece.face)))
                 if should_classify(piece.parent_face_id):
-                    # C9: untouched region representatives get single-witness
-                    # classification (the face cannot straddle the boundary).
-                    fid = piece.parent_face_id
-                    single = (fid in rep_for and rep_for[fid] == fid
-                              and piece.coincidence is None)
-                    jobs.append((piece, tol, single))
+                    jobs.append((piece, tol))
                 else:
                     skipped.append((piece.parent_face_id, piece, tol))
-        ray_tol = max([t for _, t, _ in jobs], default=float(base_tol))
+        ray_tol = max([t for _, t in jobs], default=float(base_tol))
         ray = _MultiRayClassifier(
             [sr.solid for sr in other.solids], ray_tol)
         # Store decisions by (face_id, piece_index) for propagation
         decisions_by_key = {}
-        for piece, tol, single_witness in jobs:
+        n_single_witness = 0
+        for piece, tol in jobs:
             # G2.6: coincident pieces get their ON state from the pair
             # relation, not from 3D witnesses. The witness still has
             # to be ON the partner support with a matching normal-dot
@@ -1150,10 +1197,64 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                 out.append(dec)
                 decisions_by_key[(piece.parent_face_id, piece.piece_index)] = dec
                 continue
-            points = _face_points(
-                piece.face, tol,
-                max_points=1, min_points=1) if single_witness else _face_points(
-                piece.face, tol)
+            # C9: single clean witness for faces the broad phase proves
+            # cannot meet the other operand's boundary (the parent face
+            # appears in no candidate pair, whatever its status). The
+            # witness is the face point farthest from the other boundary
+            # and must clear the 10x tol confusion band; when the
+            # shortcut does not apply, the full multi-witness rule runs
+            # unchanged, so the missed-section backstop stays intact.
+            shortcut = classify_untouched_single_witness(
+                piece, other, tol, ray, candidate_ids)
+            if shortcut is not None:
+                cls_word, wpoint = shortcut
+                n_single_witness += 1
+                if n_single_witness % 10 == 0:
+                    # C9 guard: every 10th shortcut piece also runs the
+                    # full rule and the verdicts must agree. A
+                    # disagreement means the broad-phase "no candidate"
+                    # proof was wrong, which would break the shortcut's
+                    # soundness: refuse loudly, never silently.
+                    full_points = _face_points(piece.face, tol)
+                    full_classes = tuple(
+                        _agreed_point_verdict(p, other, tol, ray)
+                        for p in full_points)
+                    full_cls = _witness_material_verdict(
+                        full_points, full_classes, other, tol,
+                        operand=operand,
+                        parent_face_id=piece.parent_face_id,
+                        piece_index=piece.piece_index,
+                        min_points=3)
+                    if full_cls != cls_word:
+                        raise AssemblyError(
+                            f"{operand} face {piece.parent_face_id} piece "
+                            f"{piece.piece_index}: single-witness shortcut "
+                            f"said {cls_word} but the full multi-witness "
+                            f"rule said {full_cls}; broad-phase candidate "
+                            f"proof unsound",
+                            kind="SingleWitnessGuardDisagreement")
+                cls = {"inside": "IN", "outside": "OUT"}[cls_word]
+                keep, rev = _decision_rule(operation, operand, cls)
+                source = piece.face
+                selected = _reverse_face(source) if keep and rev else (
+                    source if keep else None)
+                dec = PatchDecision(
+                    operand=operand,
+                    parent_face_id=piece.parent_face_id,
+                    piece_index=piece.piece_index,
+                    classification=cls,
+                    keep=keep,
+                    reverse_for_difference=rev,
+                    witness_xyz=wpoint,
+                    witness_xyz_all=np.array([wpoint]),
+                    witness_classifications=(cls_word,),
+                    source_face=source,
+                    selected_face=selected,
+                )
+                out.append(dec)
+                decisions_by_key[(piece.parent_face_id, piece.piece_index)] = dec
+                continue
+            points = _face_points(piece.face, tol)
             classes = tuple(
                 _agreed_point_verdict(p, other, tol, ray)
                 for p in points)
@@ -1162,7 +1263,7 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                 operand=operand,
                 parent_face_id=piece.parent_face_id,
                 piece_index=piece.piece_index,
-                min_points=1 if single_witness else 3)
+                min_points=3)
             # G2.1 canonical states: map the dual-classified
             # inside/outside verdict onto the four-state model before the
             # keep table.
@@ -1228,11 +1329,12 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
             "n_regions": len(regions),
             "n_propagated": len(skipped),
             "n_classified": len(jobs),
+            "n_single_witness": n_single_witness,
         }
 
 
-    stats_a = one_side("A", split.faces_a, model_b)
-    stats_b = one_side("B", split.faces_b, model_a)
+    stats_a = one_side("A", split.faces_a, model_b, candidate_face_ids_a)
+    stats_b = one_side("B", split.faces_b, model_a, candidate_face_ids_b)
     # Attach region stats to the output for the report
     # (stored on the function for access by caller)
     _classify_pieces.region_stats = {
@@ -2276,12 +2378,18 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
                      split: ModelSplitResult, operation: str, *,
                      base_tol: float = 1e-7,
                      sew_tol: Optional[float] = None,
-                     allow_nonmanifold: bool = False
+                     allow_nonmanifold: bool = False,
+                     candidate_face_ids_a=None,
+                     candidate_face_ids_b=None,
                      ) -> BooleanAssemblyResult:
     """Classify exact B-rep patches and assemble union/intersection/A-B.
 
     allow_nonmanifold=True returns a compound of touching solids for a
     touching-only union instead of refusing NonManifoldResult.
+
+    candidate_face_ids_a/_b are the broad-phase candidate face ids
+    (see _classify_pieces); when None the C9 single-witness shortcut
+    is disabled.
     """
     # G13: one Boolean call, one volume-cache lifetime.
     clear_volume_cache()
@@ -2296,7 +2404,9 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         raise ValueError("base_tol must be positive")
 
     decisions = _classify_pieces(
-        model_a, model_b, split, operation, float(base_tol))
+        model_a, model_b, split, operation, float(base_tol),
+        candidate_face_ids_a=candidate_face_ids_a,
+        candidate_face_ids_b=candidate_face_ids_b)
     selected = [d for d in decisions if d.keep]
     # G12b: capture region stats from _classify_pieces
     region_stats = getattr(_classify_pieces, "region_stats", {})
