@@ -45,6 +45,10 @@ class PatchDecision:
     source_face: object
     selected_face: Optional[object] = None
     sewed_face: Optional[object] = None
+    # G12b: if set, this decision was propagated from another face's
+    # classification (the representative of an untouched region).
+    # The value is the parent_face_id of the representative.
+    propagated_from: Optional[int] = None
 
 
 @dataclass
@@ -122,6 +126,8 @@ class BooleanAssemblyResult:
     edge_lineage: list[EdgeLineageRecord] = field(default_factory=list)
     section_payloads: list[SectionPayloadRecord] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # G12b: untouched-region classification stats
+    region_stats: dict = field(default_factory=dict)
 
     @property
     def is_empty(self) -> bool:
@@ -812,6 +818,176 @@ def _classify_coincident_piece(piece, operand: str,
     return "ON_SAME" if sense == "same" else "ON_OPP"
 
 
+# G12b: untouched-region classification.
+#
+# If a face has no section edges (status "unchanged"), it did not
+# interact with the other model. Adjacent untouched faces connected
+# through "clean" edges (edges not near any section vertex) share the
+# same IN/OUT classification, so we classify one representative per
+# region and propagate.
+
+
+def _get_section_vertices(section_edges) -> list:
+    """Extract vertex points from section edges."""
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopAbs import TopAbs_VERTEX
+    from OCP.TopoDS import TopoDS
+    from OCP.BRep import BRep_Tool
+
+    verts = []
+    for sec in section_edges:
+        ex = TopExp_Explorer(sec.edge, TopAbs_VERTEX)
+        while ex.More():
+            v = TopoDS.Vertex(ex.Current())
+            p = BRep_Tool.Pnt_s(v)
+            verts.append((p.X(), p.Y(), p.Z()))
+            ex.Next()
+    return verts
+
+
+def _edge_bbox(edge):
+    """Conservative bounding box of an edge as (xmin, ymin, zmin, xmax, ymax, zmax)."""
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+
+    box = Bnd_Box()
+    BRepBndLib.AddOptimal_s(edge, box, False, False)
+    if box.IsVoid():
+        return None
+    return (box.GetXMin(), box.GetYMin(), box.GetZMin(),
+            box.GetXMax(), box.GetYMax(), box.GetZMax())
+
+
+def _bbox_near_point(bbox, pt, tol) -> bool:
+    """Check if bbox is within tol of point."""
+    xmin, ymin, zmin, xmax, ymax, zmax = bbox
+    px, py, pz = pt
+    # Clamp point to bbox, compute distance
+    cx = max(xmin, min(px, xmax))
+    cy = max(ymin, min(py, ymax))
+    cz = max(zmin, min(pz, zmax))
+    dx, dy, dz = px - cx, py - cy, pz - cz
+    return (dx*dx + dy*dy + dz*dz) <= tol*tol
+
+
+def _edge_is_clean(edge, section_vertices, tol) -> bool:
+    """An edge is clean if its bbox is not within tol of any section vertex."""
+    bbox = _edge_bbox(edge)
+    if bbox is None:
+        return False  # Cannot determine, treat as not clean
+    for v in section_vertices:
+        if _bbox_near_point(bbox, v, tol):
+            return False
+    return True
+
+
+def _build_untouched_regions(groups, section_edges, base_tol):
+    """Build regions of untouched faces connected via clean edges.
+
+    Returns (region_map, regions):
+    - region_map: dict face_id -> region_id
+    - regions: dict region_id -> list of face_ids
+    """
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopAbs import TopAbs_EDGE
+    from OCP.TopoDS import TopoDS
+
+    # Untouched faces: status "unchanged" (no section edges)
+    untouched = [fr for fr in groups if fr.status == "unchanged"]
+    if not untouched:
+        return {}, {}
+
+    # Get section vertices
+    section_vertices = _get_section_vertices(section_edges)
+
+    # Get edges for each untouched face
+    face_edges = {}
+    for fr in untouched:
+        # FaceSplitResult has pieces; for "unchanged", there's 1 piece
+        # with the original face. We need the face object.
+        # The piece has .face attribute.
+        if not fr.pieces:
+            continue
+        face = fr.pieces[0].face
+        edges = []
+        ex = TopExp_Explorer(face, TopAbs_EDGE)
+        while ex.More():
+            edges.append(TopoDS.Edge(ex.Current()))
+            ex.Next()
+        face_edges[fr.parent_face_id] = edges
+
+    # Union-find
+    parent = {fr.parent_face_id: fr.parent_face_id for fr in untouched}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            # Deterministic: smaller face_id becomes parent
+            if ra < rb:
+                parent[rb] = ra
+            else:
+                parent[ra] = rb
+
+    # Check all pairs of untouched faces for shared clean edges
+    face_ids = list(face_edges.keys())
+    for i in range(len(face_ids)):
+        for j in range(i + 1, len(face_ids)):
+            fid_a, fid_b = face_ids[i], face_ids[j]
+            # Check if they share an edge
+            shared_clean = False
+            for ea in face_edges[fid_a]:
+                for eb in face_edges[fid_b]:
+                    if ea.IsSame(eb):
+                        # Shared edge found, check if clean
+                        if _edge_is_clean(ea, section_vertices, base_tol):
+                            shared_clean = True
+                            break
+                if shared_clean:
+                    break
+            if shared_clean:
+                union(fid_a, fid_b)
+
+    # Build regions
+    regions = {}
+    region_map = {}
+    for fid in face_ids:
+        r = find(fid)
+        region_map[fid] = r
+        if r not in regions:
+            regions[r] = []
+        regions[r].append(fid)
+
+    return region_map, regions
+
+
+def _choose_representative(face_ids, groups):
+    """Choose representative face for a region: largest area, tie-break by face_id.
+
+    Deterministic: uses face_id for tie-breaking, not process-random ordering.
+    """
+    # Build map from face_id to FaceSplitResult
+    fr_map = {fr.parent_face_id: fr for fr in groups}
+    
+    best = None
+    best_area = -1.0
+    for fid in sorted(face_ids):  # Sorted for determinism
+        fr = fr_map.get(fid)
+        if fr is None:
+            continue
+        # Use area_before as the area metric
+        area = float(fr.area_before)
+        if area > best_area or (area == best_area and (best is None or fid < best)):
+            best = fid
+            best_area = area
+    return best
+
+
 def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                      split: ModelSplitResult, operation: str,
                      base_tol: float) -> list[PatchDecision]:
@@ -843,16 +1019,42 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
         # tolerance: a wider edge/near-origin discard band is the
         # conservative choice, and the per-piece OCCT tolerance still
         # governs the primary classifier.
+        #
+        # G12b: Build untouched-face regions. Only region representatives
+        # (and touched faces) are classified; results propagate to the
+        # rest of the region.
+        region_map, regions = _build_untouched_regions(
+            groups, split.section_edges, base_tol)
+        # Map face_id -> representative face_id (for non-representatives)
+        # Representative maps to itself.
+        rep_for = {}
+        for region_id, face_ids in regions.items():
+            rep = _choose_representative(face_ids, groups)
+            for fid in face_ids:
+                rep_for[fid] = rep
+        # Faces to actually classify: touched faces + representatives
+        # A face is classified if it's not in a region, or if it's the rep.
+        def should_classify(face_id):
+            if face_id not in rep_for:
+                return True  # Touched face, or untouched but not in region
+            return rep_for[face_id] == face_id
+
         jobs = []
+        skipped = []  # (face_id, piece) for propagation
         for fr in groups:
             for piece in fr.pieces:
                 tol = max(
                     float(base_tol),
                     2.0 * float(BRep_Tool.Tolerance_s(piece.face)))
-                jobs.append((piece, tol))
+                if should_classify(piece.parent_face_id):
+                    jobs.append((piece, tol))
+                else:
+                    skipped.append((piece.parent_face_id, piece, tol))
         ray_tol = max([t for _, t in jobs], default=float(base_tol))
         ray = _MultiRayClassifier(
             [sr.solid for sr in other.solids], ray_tol)
+        # Store decisions by (face_id, piece_index) for propagation
+        decisions_by_key = {}
         for piece, tol in jobs:
             # G2.6: coincident pieces get their ON state from the pair
             # relation, not from 3D witnesses. The witness still has
@@ -866,7 +1068,7 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                 selected = _reverse_face(source) if keep and rev else (
                     source if keep else None)
                 points = _face_points(source, tol)
-                out.append(PatchDecision(
+                dec = PatchDecision(
                     operand=operand,
                     parent_face_id=piece.parent_face_id,
                     piece_index=piece.piece_index,
@@ -878,7 +1080,9 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                     witness_classifications=tuple([cls] * len(points)),
                     source_face=source,
                     selected_face=selected,
-                ))
+                )
+                out.append(dec)
+                decisions_by_key[(piece.parent_face_id, piece.piece_index)] = dec
                 continue
             points = _face_points(piece.face, tol)
             classes = tuple(
@@ -897,7 +1101,7 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
             source = piece.face
             selected = _reverse_face(source) if keep and rev else (
                 source if keep else None)
-            out.append(PatchDecision(
+            dec = PatchDecision(
                 operand=operand,
                 parent_face_id=piece.parent_face_id,
                 piece_index=piece.piece_index,
@@ -909,11 +1113,58 @@ def _classify_pieces(model_a: BRepModel, model_b: BRepModel,
                 witness_classifications=classes,
                 source_face=source,
                 selected_face=selected,
+            )
+            out.append(dec)
+            decisions_by_key[(piece.parent_face_id, piece.piece_index)] = dec
+
+        # G12b: Propagate representative decisions to skipped faces.
+        for face_id, piece, tol in skipped:
+            rep_id = rep_for[face_id]
+            # Find the representative's decision (piece_index 0 for untouched)
+            rep_key = (rep_id, 0)
+            if rep_key not in decisions_by_key:
+                # Fallback: should not happen for untouched faces
+                continue
+            rep_dec = decisions_by_key[rep_key]
+            # Create propagated decision with this face's geometry
+            # but the representative's classification.
+            points = _face_points(piece.face, tol)
+            keep, rev = _decision_rule(operation, operand, rep_dec.classification)
+            source = piece.face
+            selected = _reverse_face(source) if keep and rev else (
+                source if keep else None)
+            out.append(PatchDecision(
+                operand=operand,
+                parent_face_id=face_id,
+                piece_index=piece.piece_index,
+                classification=rep_dec.classification,
+                keep=keep,
+                reverse_for_difference=rev,
+                witness_xyz=points[0],
+                witness_xyz_all=points,
+                witness_classifications=tuple(
+                    [rep_dec.classification] * len(points)),
+                source_face=source,
+                selected_face=selected,
+                propagated_from=rep_id,
             ))
 
+        # Return region stats for the report
+        return {
+            "n_regions": len(regions),
+            "n_propagated": len(skipped),
+            "n_classified": len(jobs),
+        }
 
-    one_side("A", split.faces_a, model_b)
-    one_side("B", split.faces_b, model_a)
+
+    stats_a = one_side("A", split.faces_a, model_b)
+    stats_b = one_side("B", split.faces_b, model_a)
+    # Attach region stats to the output for the report
+    # (stored on the function for access by caller)
+    _classify_pieces.region_stats = {
+        "A": stats_a,
+        "B": stats_b,
+    }
     return out
 
 
@@ -1612,6 +1863,8 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     decisions = _classify_pieces(
         model_a, model_b, split, operation, float(base_tol))
     selected = [d for d in decisions if d.keep]
+    # G12b: capture region stats from _classify_pieces
+    region_stats = getattr(_classify_pieces, "region_stats", {})
 
     if not selected:
         empty = _empty_compound()
@@ -1621,7 +1874,8 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
             volume=0.0, free_edges=0, multiple_edges=0,
             edge_lineage=[],
             section_payloads=[],
-            notes=["empty material result"])
+            notes=["empty material result"],
+            region_stats=region_stats)
 
     if sew_tol is None:
         face_tols = [
@@ -1719,4 +1973,5 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         edge_lineage=edge_lineage,
         section_payloads=section_payloads,
         notes=notes,
+        region_stats=region_stats,
     )

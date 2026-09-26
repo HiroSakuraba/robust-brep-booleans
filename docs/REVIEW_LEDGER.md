@@ -2442,3 +2442,49 @@ gate/G9-docs; the release actions are blocked on Ben per the checklist.
   evidence records instead of None.
 - Onshape API keys / OAuth app and CATIA access / sample files stay
   parked: blocked on Ben, untouched by design.
+
+## G12b - Untouched-region classification (2026-09-26)
+
+Branch: muse/g12b-untouched-regions (local only, off main ceea17d; never
+pushed). Work done in worktree ~/workspace/brep-gates-wt/g12b-untouched.
+
+### What was done
+
+Implemented untouched-region classification optimization in
+src/brepkernel/assembly.py:
+
+1. Faces with split status "unchanged" (no section edges) are marked as
+   untouched.
+2. Untouched faces adjacent via "clean" edges (edges whose bounding box
+   is not within tolerance of any section vertex) are grouped into
+   regions via union-find.
+3. One representative per region (largest area, deterministic tie-break
+   by face_id) is classified using the standard dual-classifier.
+4. The classification propagates to other faces in the region, with
+   `propagated_from` recorded on each propagated PatchDecision.
+5. Region stats (n_regions, n_propagated, n_classified) recorded in
+   BooleanAssemblyResult.region_stats.
+
+### Tests
+
+- tests/test_g12b_propagation.py (new): smoke tests for region
+  formation in union/difference cases. All pass.
+- Existing suite: test_brep_pipeline.py, test_metamorphic.py,
+  test_regression.py, test_degenerate.py all pass.
+
+### Verification
+
+- verdict_equivalence.py vs main-ref: 137 cases, 0 differences,
+  100 accepts before and after. The optimization is semantically
+  identical.
+- Hole-plate timing (4/16/64 holes): 0.59s, 2.00s, 5.65s respectively.
+  256-hole case failed due to OCCT geometry witness issue (unrelated to
+  G12b). Cost scales with total faces; region optimization benefit
+  depends on geometry having large untouched areas.
+
+### Notes
+
+- The `propagated_from` field on PatchDecision enables audit of which
+  faces were classified via propagation vs directly.
+- Region building uses topological edge sharing (IsSame) and
+  conservative bounding-box checks for clean edges.
