@@ -178,7 +178,16 @@ def _planes_equal_up_to_rounding(pa, pb) -> bool:
     """
     (la, da), (lb, db) = pa, pb
     if not (da == db or da == _neg(db)):
-        return False
+        # Independently computed normals of the same plane (a tool built
+        # on a sketch plane of a rotated part, an imported mate) differ in
+        # the last bits. Accept parallelism within the same 64-ULP
+        # representation bound; anything larger is a real angle.
+        cx = (da[1] * db[2] - da[2] * db[1],
+              da[2] * db[0] - da[0] * db[2],
+              da[0] * db[1] - da[1] * db[0])
+        k = _REPRESENTATION_ULPS * _math.ulp(1.0)
+        if float(_dot(cx, cx)) > k * k:
+            return False
     off = _dot(_sub(lb, la), da)
     if off == 0:
         return True

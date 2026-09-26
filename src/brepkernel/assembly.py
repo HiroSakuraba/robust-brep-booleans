@@ -854,8 +854,8 @@ def _edge_bbox_6tuple(edge):
     BRepBndLib.AddOptimal_s(edge, box, False, False)
     if box.IsVoid():
         return None
-    return (box.GetXMin(), box.GetYMin(), box.GetZMin(),
-            box.GetXMax(), box.GetYMax(), box.GetZMax())
+    lo, hi = box.CornerMin(), box.CornerMax()   # OCP 7.8 and 8.x
+    return (lo.X(), lo.Y(), lo.Z(), hi.X(), hi.Y(), hi.Z())
 
 
 def _bbox_near_point(bbox, pt, tol) -> bool:
@@ -1745,10 +1745,9 @@ def _edge_bbox(edge) -> tuple[np.ndarray, np.ndarray]:
     if box.IsVoid():
         inf = float("inf")
         return (np.full(3, -inf), np.full(3, inf))
-    lo = np.array([box.GetXMin(), box.GetYMin(), box.GetZMin()],
-                  dtype=np.float64)
-    hi = np.array([box.GetXMax(), box.GetYMax(), box.GetZMax()],
-                  dtype=np.float64)
+    _lo, _hi = box.CornerMin(), box.CornerMax()   # OCP 7.8 and 8.x
+    lo = np.array([_lo.X(), _lo.Y(), _lo.Z()], dtype=np.float64)
+    hi = np.array([_hi.X(), _hi.Y(), _hi.Z()], dtype=np.float64)
     return (lo, hi)
 
 
