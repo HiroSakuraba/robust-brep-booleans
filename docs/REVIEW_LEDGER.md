@@ -2021,3 +2021,92 @@ test_step_nurbs_multiface, test_stress.
 G0, G1 (+rework), G2-planar, G3 (+rework), G4 (+rework), G5, G6 (+rework),
 probe-hardening, new G7: merged. Still open: curved coincident-face
 recognition (deferred), G8 real-data refusal rate, G9 docs/release, Part B.
+
+---
+
+## Part B: FreeCAD integration groundwork (B5) - 25 Sept 2026, branch partB/freecad
+
+- Branch: partB/freecad (local only, off main 10ea7d8; never pushed). Work
+  done in worktree ~/workspace/brep-gates-freecad; the shared
+  ~/workspace/brep-gates checkout was not touched.
+- FreeCAD is NOT installed on this machine, so per the task brief the
+  result is the integration doc plus a FreeCAD-free adapter design and
+  tests; no FreeCAD install was attempted.
+
+### What was built
+
+- `src/brepkernel/freecad_adapter.py` (new): FreeCAD-free geometry
+  bridge. BREP text in/out (`shape_of_brep_text` / `brep_text_of`,
+  the bridge format from the work plan), STEP in/out (`read_step` via
+  `step_ingest.load_step`, `write_step`), `topology_counts()`,
+  `shape_volume()`, `round_trip_report()` (counts + volume before/after,
+  documents what the bridge preserves and loses), `run_boolean()` (runs
+  boolean_brep across the bridge and returns the outcome as data:
+  "accepted" with result BREP bytes, "refused" with typed
+  category+stage+message and result_brep None, "error" for boundary
+  input failures), `present_refusal()` and `format_status_panel()`
+  (user-facing text for the FreeCAD task panel), and a defensive
+  `to_json_safe()` for report serialization. The result dict carries
+  `result["evidence"] = report.get("evidence")` verbatim when present,
+  so the evidence sidecar rides the same seam; on this branch it is
+  None because the partB/evidence-schema branch is not merged yet.
+- `tests/test_freecad_adapter.py` (new): 8 test groups. BREP text round
+  trip preserves volume 6.0 and 6 faces and is ASCII; garbage BREP
+  raises typed AdapterError; STEP round trip preserves all topology
+  counts and volume to 1e-9; overlapping-box union accepts at volume
+  1.875; corner-touch union refuses as data with category
+  UnresolvedContact at stage assembly, no solid fabricated, panel text
+  shows kind and stage; invalid op raises ValueError; status panels
+  render for accept and refuse.
+- `docs/FREECAD_INTEGRATION.md` (new): integration surface survey
+  (embedded Python, subprocess chosen over in-process because of the
+  two-OCCT-builds trap), OCCT version-compat concerns
+  (cadquery-ocp OCCT 8.0.1 vs FreeCAD 1.1's build, BREP format version,
+  STEP AP242 as the safer bridge), STEP round-trip preserve/lose
+  analysis, typed-refusal UX (Status / RefusalKind / Report /
+  EvidenceFile properties, error state, "uncertified" explicit button),
+  evidence as the audit trail, 5 open questions, the first working
+  demo (headless FreeCADCmd script), and the blocked-on-Ben list.
+
+### Verification
+
+- tests/test_freecad_adapter.py: written first, failed on import
+  (ModuleNotFoundError) before the module existed; 16/16 [PASS] after.
+- Full suite: 27/27 test files exit 0, 0 [FAIL] lines (26 prior files +
+  test_freecad_adapter). Environment ~/workspace/brep-booleans/.venv,
+  PYTHONPATH=<worktree>/src.
+- No em dashes in new files (checked with Python chr(0x2014) count;
+  the test uses the "\u2014" escape sequence only).
+
+### Invariants
+
+- I1: no acceptance logic touched; the adapter only calls
+  boolean_brep and reports its outcome. Refusal paths fabricate no
+  solid (result_brep is None).
+- I2: refusals stay typed end to end (AdapterError / BRepAmbiguousResult
+  kind / "error" outcome kinds).
+- I3: the refusal text never suggests loosening a tolerance; no
+  tolerance is read or changed by adapter code.
+- I4: failing test committed first (test written and run before the
+  module existed).
+- I5: suite green 27/27.
+- I6: this entry; nothing hidden.
+- I7: no crashes encountered. One environment note: the first full-suite
+  loop backgrounded after 120 s; it completed on its own (see results
+  above). The corner-touch-union probe earlier showed face-to-face
+  touching unions are now accepted (G2), so the refusal test uses
+  corner touch (UnresolvedContact, assembly) instead.
+- I8: zero U+2014 in new files.
+- I9: boolean()/boolean_brep() contracts untouched.
+
+### Open / not in this change
+
+- FreeCAD workbench (CertifiedBoolean FeaturePython object), the
+  subprocess runner, and the headless FreeCADCmd CI job (G11) need a
+  FreeCAD install; none exists on this machine.
+- FreeCAD 1.1's actual OCCT build version and the BREP format version
+  both sides parse (doc open question 1).
+- Merging with partB/evidence-schema so run_boolean() carries real
+  evidence records instead of None.
+- Onshape API keys / OAuth app and CATIA access / sample files stay
+  parked: blocked on Ben, untouched by design.
