@@ -2021,3 +2021,87 @@ test_step_nurbs_multiface, test_stress.
 G0, G1 (+rework), G2-planar, G3 (+rework), G4 (+rework), G5, G6 (+rework),
 probe-hardening, new G7: merged. Still open: curved coincident-face
 recognition (deferred), G8 real-data refusal rate, G9 docs/release, Part B.
+## Part B: evidence schema + persistent naming (B11, B4 naming half)
+
+- Date: 2026-09-25
+- Branch: partB/evidence-schema (local only; never pushed)
+- Base: 10ea7d8 "docs: merge ledger entry for the 7 gate branches plus the shared-seam fix"
+- Commits:
+  - 69318ba "test: evidence schema + persistent naming tests (failing first, I4)"
+  - (implementation commit follows; see below)
+- Roadmap position: per the correction recorded 2026-09-25, evidence
+  certificate schema and persistent naming move earlier, right after G8,
+  ahead of B9 (certified intersection core, now a parallel research track)
+  and with FreeCAD integration before B9.
+
+### What was built
+
+- src/brepkernel/evidence.py: `brepkernel.evidence/1.0` schema module.
+  `brep_sha256()` / `canonical_brep_bytes()` hash the canonical BREP text
+  (BRepTools_Write, byte-deterministic for identically constructed
+  shapes). `evidence_name(op, sha_a, sha_b)` implements
+  `brepkernel.naming/1.0`: name = f(op, input hashes, pipeline version),
+  e.g. `ev_e10_union_b0caafc89533_73d09a490069_55810891`; the trailing
+  component is sha256(version|commit)[:8], so evidence from different
+  builds never shares a name silently. `build_record()` assembles the
+  record (operation id, inputs, op + effective tolerances, kernel
+  version/commit, timestamps, outcome, stage summaries, artifacts);
+  `validate_evidence()` is a dependency-free schema checker;
+  `write_evidence_file()` writes `<evidence_dir>/<name>.json` atomically
+  and refuses invalid records.
+- src/brepkernel/pipeline.py: `boolean_brep()` is now a thin wrapper that
+  calls the renamed `_boolean_brep_impl()` and attaches the evidence
+  record at `report["evidence"]` on the accept path and on
+  typed-refusal paths (the BRepAmbiguousResult carries the report, so
+  the record rides along). New keyword-only `evidence_dir=None`: when
+  given, the record is written as `<name>.json`. Emission is strictly
+  additive and fully guarded: any failure inside evidence code degrades
+  to `report["evidence_error"]` and a failing sidecar write is recorded
+  in `artifacts.evidence_write_error`; the accept/refuse outcome is
+  never altered. `boolean()` (Tier A) untouched (I9).
+- docs/EVIDENCE_SCHEMA.md: schema field table, naming rules, emission
+  guarantees, abridged example, and the open remainder (G10 CLI +
+  `brepkernel verify`; per-entity persistent naming service B4 items 1-4).
+- tests/test_evidence.py: 40 checks. I4: committed failing first
+  (ImportError: no evidence module), then implemented. Two test bugs
+  fixed along the way, both in the test, not the implementation:
+  expected union volume was written as 1.75 instead of 1.875, and the
+  refusal stage-report assertion demanded an "assembly" key that the
+  pipeline only writes after successful assembly.
+
+### Verification
+
+- tests/test_evidence.py: 40/40 PASS (accept record validates, refusal
+  record validates with category UnresolvedContact + stage assembly,
+  naming deterministic across fresh rebuilds, name changes with input/op
+  change, input hashes match independent BRepTools_Write hashing,
+  broken evidence_dir still accepts at the right volume and still
+  refuses with the right kind, sidecar written at the persistent name
+  and re-validates from disk, no em dashes in new files).
+- Full suite: 27/27 test files exit 0, 0 [FAIL] lines (26 prior files +
+  test_evidence).
+
+### Invariants
+
+- I1: no acceptance logic touched; evidence code only reads shapes and
+  the report.
+- I2: refusals stay typed; the evidence record adds category + stage +
+  full stage_report but the refusal kind/stage/message are unchanged.
+- I3: evidence code reads tolerances, never writes them.
+- I4: failing test committed first (69318ba).
+- I5: suite green (27/27).
+- I6: this entry; the two test bugs above are recorded, not hidden.
+- I7: no crashes encountered.
+- I8: grepped new/changed files for U+2014; none present (also enforced
+  by a test).
+- I9: boolean() and boolean_brep() contracts separate; only boolean_brep
+  gained the additive evidence_dir parameter.
+
+### Open / not in this change
+
+- G10 CLI and `brepkernel verify` (re-check a certificate without
+  trusting it).
+- Per-entity persistent naming (B4 items 1-4): deterministic face/edge
+  names, report["naming"] ancestor mapping, resolve() with geometric
+  fallback. Raw material (edge lineage) exists in the assembly report.
+- Nothing in this change needed Ben's keys or files; nothing blocked.

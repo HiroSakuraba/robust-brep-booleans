@@ -273,6 +273,127 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                  include_full_evidence=False,
                  shadow_section_crosscheck=False,
                  crosscheck_ops=False,
+                 allow_nonmanifold=False,
+                 evidence_dir=None):
+    """Run the exact trimmed-B-rep Tier B/C pipeline.
+
+    Contract (unchanged): returns (TopoDS_Shape, report) on accept;
+    raises BRepAmbiguousResult, a typed refusal carrying the stage
+    report, when the result cannot be certified. The full pipeline
+    documentation lives on _boolean_brep_impl; the Tier A mesh
+    boolean() API is untouched (I9).
+
+    Evidence (Part B: B11 evidence certificate, B4 persistent naming):
+    every call attaches a machine-readable evidence record at
+    report["evidence"] conforming to brepkernel.evidence/1.0, on the
+    accept path and on typed-refusal paths (the refusal exception
+    carries the report, so the record rides along). The record carries
+    a deterministic content-derived name (brepkernel.naming/1.0): the
+    same op on the same operand B-reps under the same pipeline version
+    always yields the same evidence name. If evidence_dir is given, the
+    record is also written there as <name>.json. Emission is strictly
+    additive: it never changes the accept/refuse outcome, and any
+    failure inside evidence code degrades to report["evidence_error"].
+    """
+    import hashlib as _hashlib
+    import time as _time
+    import uuid as _uuid
+    from datetime import datetime as _datetime, timezone as _timezone
+
+    from . import evidence as _evidence
+    from .step_ingest import BRepModel as _BRepModel
+
+    _started_utc = _datetime.now(_timezone.utc).isoformat()
+    _t0 = _time.perf_counter()
+    _operation_id = _uuid.uuid4().hex
+
+    def _as_shape(x):
+        return x.shape if isinstance(x, _BRepModel) else x
+
+    def _params(report):
+        eff_contact = report.get("broadphase_contact_tol")
+        return {
+            "base_tol": float(base_tol),
+            "contact_tol": (float(eff_contact) if eff_contact is not None
+                            else 4.0 * float(base_tol)),
+            "fuzzy": float(fuzzy),
+            "broadphase_pad_requested": (
+                None if broadphase_pad is None else float(broadphase_pad)),
+            "broadphase_pad": report.get("broadphase_pad"),
+            "broadphase_pad_mode": report.get("broadphase_pad_mode"),
+            "chord_tol": None if chord_tol is None else float(chord_tol),
+            "tangent_sin_tol": float(tangent_sin_tol),
+            "max_section_tol": (None if max_section_tol is None
+                                else float(max_section_tol)),
+            "area_rel_tol": float(area_rel_tol),
+            "sew_tol": None if sew_tol is None else float(sew_tol),
+            "allow_nonmanifold": bool(allow_nonmanifold),
+            "include_full_evidence": bool(include_full_evidence),
+            "shadow_section_crosscheck": bool(shadow_section_crosscheck),
+            "crosscheck_ops": bool(crosscheck_ops),
+            "parallel": bool(parallel),
+            "use_obb": bool(use_obb),
+        }
+
+    def _attach(report, result_shape):
+        # Guarded: evidence emission must never alter the outcome.
+        try:
+            a_bytes = _evidence.canonical_brep_bytes(_as_shape(shapeA))
+            b_bytes = _evidence.canonical_brep_bytes(_as_shape(shapeB))
+            record = _evidence.build_record(
+                op=op,
+                input_a={"sha256": _hashlib.sha256(a_bytes).hexdigest(),
+                         "brep_bytes": len(a_bytes)},
+                input_b={"sha256": _hashlib.sha256(b_bytes).hexdigest(),
+                         "brep_bytes": len(b_bytes)},
+                params=_params(report),
+                report=report,
+                result_shape=result_shape,
+                started_utc=_started_utc,
+                finished_utc=_datetime.now(_timezone.utc).isoformat(),
+                duration_ms=(_time.perf_counter() - _t0) * 1000.0,
+                operation_id=_operation_id,
+            )
+            if evidence_dir is not None:
+                try:
+                    path = _evidence.write_evidence_file(record, evidence_dir)
+                    record["artifacts"]["evidence_file"] = path
+                except Exception as werr:
+                    record["artifacts"]["evidence_write_error"] = (
+                        f"{type(werr).__name__}: {werr}")
+            report["evidence"] = record
+        except Exception as err:
+            try:
+                report["evidence_error"] = f"{type(err).__name__}: {err}"
+            except Exception:
+                pass
+
+    try:
+        out, report = _boolean_brep_impl(
+            shapeA, shapeB, op, base_tol=base_tol,
+            broadphase_pad=broadphase_pad, chord_tol=chord_tol,
+            contact_tol=contact_tol, fuzzy=fuzzy, parallel=parallel,
+            use_obb=use_obb, tangent_sin_tol=tangent_sin_tol,
+            max_section_tol=max_section_tol, area_rel_tol=area_rel_tol,
+            sew_tol=sew_tol, include_full_evidence=include_full_evidence,
+            shadow_section_crosscheck=shadow_section_crosscheck,
+            crosscheck_ops=crosscheck_ops,
+            allow_nonmanifold=allow_nonmanifold)
+    except BRepAmbiguousResult as exc:
+        _attach(exc.report, None)
+        raise
+    _attach(report, out)
+    return out, report
+
+
+def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
+                 broadphase_pad=None, chord_tol=None, contact_tol=None,
+                 fuzzy=0.0, parallel=True, use_obb=True,
+                 tangent_sin_tol=1e-4, max_section_tol=None,
+                 area_rel_tol=2e-6, sew_tol=None,
+                 include_full_evidence=False,
+                 shadow_section_crosscheck=False,
+                 crosscheck_ops=False,
                  allow_nonmanifold=False):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
 
