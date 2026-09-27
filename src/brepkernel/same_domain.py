@@ -18,6 +18,7 @@ from typing import Optional
 import numpy as np
 
 from .freeform import FreeformError
+from .perf import count as _perf_count, SAMEDOMAIN_BBOX_SHORTCIRCUIT
 from .step_ingest import BRepModel
 
 
@@ -507,6 +508,30 @@ def same_domain_models(a: BRepModel, b: BRepModel, *,
     # terminal: canonicalization exists specifically to remove redundant
     # same-domain decomposition before retrying the strict matcher.
     if not a.solids or not b.solids:
+        return strict
+
+    # S5: cheap bbox pre-check before canonicalization. UnifySameDomain
+    # only merges same-domain faces/edges; it preserves the bounding box
+    # (the canonicalizer itself verifies bbox preservation afterwards).
+    # If the input bboxes already differ beyond tolerance, no amount of
+    # face merging can make the models equivalent, so the expensive deep
+    # copy + UnifySameDomain + signed-volume checks are guaranteed wasted
+    # work. This is a conservative rejection: we skip the canonicalization
+    # only when the bbox proves it cannot succeed. The bbox query is
+    # O(faces) and measured at ~0ms on the 262-face plate.
+    loa, hia = _bbox(a.shape)
+    lob, hib = _bbox(b.shape)
+    _bbox_error = max(float(np.max(np.abs(loa - lob))),
+                      float(np.max(np.abs(hia - hib))))
+    _scale = max(_shape_scale(a.shape), _shape_scale(b.shape), 1.0)
+    _bbox_tol = max(8.0 * float(base_tol), 2e-10 * _scale)
+    if _bbox_error > _bbox_tol:
+        _perf_count(SAMEDOMAIN_BBOX_SHORTCIRCUIT)
+        strict.reason = (
+            f"{strict.reason}; bounding boxes differ "
+            f"(bbox_error={_bbox_error:.3g}); canonicalization preserves "
+            f"bbox and cannot make the models equivalent")
+        strict.bbox_error = _bbox_error
         return strict
 
     from .step_ingest import index_shape
