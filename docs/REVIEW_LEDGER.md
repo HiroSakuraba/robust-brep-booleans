@@ -5,6 +5,101 @@ anything else stays open and is recorded honestly here (invariant I6).
 
 ---
 
+## S3 - Whole-operation fast paths (26 Sept 2026, branch speed/s3-fast-paths)
+
+What changed:
+- New module src/brepkernel/fastpaths.py: try_fast_path(pa, pb, op,
+  ...) returns (shape, info, candidates); shape None means "run the
+  full pipeline". Two paths. Path A (disjoint): per-solid boxes as
+  min/max over the solid's own prepared face boxes (containment by
+  construction), expanded by the max per-face broad-phase pad; strict
+  separation of every A-solid/B-solid pair implies every face pair is a
+  broad-phase non-candidate, so section/split/assembly cannot change
+  the verdict. Path B (containment): zero broad-phase candidates (the
+  same candidate_face_pairs call the pipeline makes) plus one clean
+  interior witness per solid - UV samples per face, plus/minus normal
+  offsets at 11x contact tol against a 10x confusion band, each witness
+  dual-classified inside by the G5 agreed classifier; only uniform
+  relations (A_in_B, B_in_A, disjoint) resolve, difference with B_in_A
+  (a cavity) always falls back. Any unknown / near-boundary /
+  disagreement / non-uniform outcome falls back. Never raises on
+  uncertainty: a catch-all records s3_internal_error and falls back.
+- pipeline.py: boolean_brep gains fast_paths=True,
+  fast_path_shadow=True; the hook sits after the same_domain block and
+  before intersect_models. _s3_finish verifies the fast result (B-rep
+  validity + the shared _operation_volume_bounds check, extracted from
+  the old inline code so both paths enforce identical bounds), then
+  shadow-runs the old pipeline (fast paths off, fresh perf counters)
+  and requires status, topology counts, and volume to agree - on any
+  disagreement, or if the old pipeline refuses, the OLD result/refusal
+  is returned (R1 by construction). report["stages"]["s3_fast_path"]
+  is always recorded when attempted. The candidate list from the probe
+  is passed to intersect_models as precomputed_candidates so the broad
+  phase never runs twice (intersection.py gains the keyword-only arg).
+- perf.py: s3_fast_path_attempt, s3_fast_path_hit,
+  s3_fast_path_internal_error, s3_shadow_mismatch.
+- tests/test_s3_fast_paths.py (new): 35 tests - separated battery x3
+  ops vs the old pipeline, near-touching inside/outside pads, touching
+  boxes never fire, nested box/cylinder/sphere/NURBS batteries,
+  multi-component containment, L-notch disjoint with overlapping
+  boxes, mixed configs fall back, shadow agreement, shadow-refusal
+  propagation (monkeypatched impl), flags-off unchanged.
+- tools/review_probes/bench_s3_separated.py (new): two 170-box
+  compounds (1020 faces per operand), best-of-2.
+
+Measurements (26 Sept 2026, local machine, OCCT 8.0.1 venv):
+- Separated compounds: old 273.8 s, S3 1.87 s, 146x (>= 5x gate).
+  Scaling: 21x at 20 boxes, 42x at 40, 80x at 80 - the old pipeline is
+  ~quadratic here, the fast path ~linear, so the margin grows.
+- Honest caveat: the 146x is the whole-pipeline number on a fully
+  separated input; overlapping inputs take the fallback and see only
+  the probe cost (component boxes + one shared broad phase).
+
+Regression: new 35/35 pass; all 40 suites green on the full re-run
+with the S3 hook live in the pipeline for every boolean call.
+Zero em dashes added.
+
+S3 COMPLETE per its pass criteria: 146x >= 5x on 1000+ faces per
+operand; shadow mode agrees with the old pipeline on every probe;
+uncertainty always falls back (never raises).
+
+---
+
+## S3 review corrections (27 Sept 2026, branch speed/s3-fast-paths)
+
+ChatGPT's review of the S0-S3 stack; every finding verified against
+the code before fixing.
+
+- Shadow equivalence: the S3 report claimed shadowed behavior was
+  "identical to the old pipeline by construction", but _s3_finish
+  served the fast-path shape after checking only topology counts and
+  volume. Changed: the old pipeline's result is now served in every
+  shadowed case (agreement validates the fast result; disagreement or
+  old-pipeline refusal serves the old result and counts the mismatch),
+  which makes the claim literally true. Docstrings, report, and this
+  ledger updated to match.
+- PreparedBRep immutability (S1): frozen=True blocked reassignment but
+  not in-place array mutation, and HybridBoxIndex aliased the caller's
+  box array. New _freeze_array helper (owned C-contiguous read-only
+  copy) applied to every prepared array; HybridBoxIndex copies and
+  freezes its boxes the same way. The TopoDS_Shape non-mutation
+  contract is now documented explicitly on the class and module.
+- analytic_mask (S1): was "BSpline absent from the type string", which
+  marks Bezier/offset/extrusion/revolution surfaces analytic. Now uses
+  the canonical assembly._ANALYTIC_SURFACES predicate, same as
+  _all_faces_analytic. No S0-S3 code relied on the old mask for a
+  certification decision.
+- OCP 7.8 CI: test_nurbs_adversarial_corpus.py::t6 failed on 7.8 with
+  a SectionToleranceTooLoose refusal (2.18e-5 vs the 1.28e-5 ceiling),
+  the documented version difference the C1 fallbacks already handle
+  in neighboring tests. t6 now records that refusal as a pass on
+  OCP < 8.0.
+
+Regression: S3 tests 35/35, prepared/spatial/nurbs-corpus suites green
+after the fixes; full 40-file suite re-run queued before commit.
+
+---
+
 ## G0 - Tooling, baseline, CI, dependency pins
 
 - Date: 2026-09-25
@@ -2927,3 +3022,235 @@ SectionToleranceTooLoose as documented 7.8 difference (7.8 section edge
 tolerance 2.18e-5 exceeds 1.28e-5 ceiling) instead of crashing.
 
 7.8 venv created at ~/workspace/brep-ocp78-venv (OCP 7.8.1.1) per I14.
+
+---
+
+## S2 - HybridBoxIndex: spatial index for box queries (26 Sept 2026, branch speed/s2-spatial-index)
+
+What changed:
+- New module src/brepkernel/spatial.py: HybridBoxIndex, one
+  implementation for face-box and edge-box point/radius queries. Below
+  BVH_THRESHOLD (256) boxes it is the vectorized NumPy scan (a tree
+  cannot beat it there); at/above it builds a median-split
+  bounding-volume hierarchy, no third-party dependency. Queries traverse
+  the tree and apply the identical per-box test at the leaves, so the
+  returned candidate set is exactly the vector scan's set (a fortiori
+  the conservative superset the plan requires). BRepExtrema stays the
+  exact test downstream. Pruning safety: node bounds are exact min/max
+  of the child boxes and correctly-rounded subtraction is monotone, so
+  a box passing the per-box test implies every ancestor passes the
+  prune test; the tree can never miss a scan candidate.
+- prepared.py: PreparedBRep gains face_index / edge_index, built eagerly
+  at prepare time (immutable like the rest).
+- assembly.py: _MultiRayClassifier(..., edge_index=None) and
+  _point_boundary_distances(..., face_index=None) prefer the prepared
+  index; one_side threads both through from other_prepared.
+  _witness_material_verdict and classify_untouched_single_witness
+  forward face_index. All keyword-only, fallback-safe: a length
+  mismatch falls back to the old paths, so stale data can never
+  silently change a result. The prepared edge_index is only ever used
+  together with the prepared edge list it was built over (same order),
+  never against the explorer's list. The old _near_box_indices scan now
+  lives in spatial.py as scan_box_indices (same code, one home); the
+  fallback paths still use it.
+- perf.py: two canonical counters, bvh_query and vector_scan_query.
+- tests/test_spatial_index.py (new): 5 groups - randomized BVH-vs-scan
+  set equality (20k queries x 5 sizes incl. degenerate boxes, zero
+  radii, on-boundary points), threshold boundary behavior via uses_bvh
+  and the perf counters, degenerate inputs (empty, singleton, 1e8
+  offsets, inf radius), prepared-boolean verdict equivalence with the
+  index live and zero rebuilds, mismatched-index fallback.
+- tools/review_probes/bench_s2_bvh.py (new): crossover benchmark;
+  tools/review_probes/probe_s2_1M.py (new): the plan's 1M-query gate.
+
+Measurements (26 Sept 2026, local machine, OCCT 8.0.1 venv):
+- Crossover (production-like radii, cap = 20*tol, median per query,
+  best of 3): BVH leads from N ~= 32 up: 1.07x at 32, 1.31x at 256,
+  1.72x at 512, 2.28x at 1024, 5.12x at 4096 (vector 243 us, BVH
+  47.5 us). Threshold set to 256 for cross-runner margin; leaf size 32
+  (sweep winner at 4096: 8 -> 47.6 us, 16 -> 44.9 us, 32 -> 43.3 us).
+  Note: the first traversal cut only reached 1.64x at 4096; scalar
+  per-node comparisons in the hot loop (instead of np.any on
+  temporaries) got it to 5.12x, clearing the plan's 3x gate at 4096.
+- 1M randomized queries (N = 256..4096, degenerate/duplicate boxes,
+  zero radii, on-boundary points): missing = 0, extra = 0 (exact set
+  equality), 147 s.
+- Production plate (262 faces, prepared boolean): bvh_query=1654,
+  vector_scan_query=1472 (plate side on the BVH; slot and result-side
+  geometry on the vector path), face_box_build=0, edge_box_build=2
+  (result-side classifiers, pre-existing), verdict and volume
+  identical to raw.
+- Honest caveat: at 262 faces the per-query saving is ~7 us, so S2 is
+  worth ~10 ms on the plate. The payoff scales with model size; that
+  is what the plan's synthetic gate measures.
+
+Regression: new 5/5 pass; all 40 suites green on the re-run
+(full list in ~/workspace/s2_suite_logs/suite.log).
+Zero em dashes added.
+
+S2 COMPLETE per its pass criteria: 1M queries with zero missing
+candidates; downstream verdicts match on the full suite; 5.12x >= 3x
+at 4096 boxes.
+
+---
+
+## S0 - Expensive-call profiler (26 Sept 2026, branch speed/s0-profiler)
+
+Scope: speed-improvement plan step S0. Add a zero-cost-when-disabled
+expensive-call profiler so later steps can measure before/after per call
+site. No behavior changes, no caching, no algorithm changes.
+
+What was built:
+- `src/brepkernel/perf.py` (new): `PerfCounters` with `bump`/`snapshot`,
+  a module-level `count(name, n=1)` fast path over a
+  `contextvars.ContextVar` (no-op when no counters are active;
+  `parallel=True` is OCCT-internal, no Python worker threads, so a
+  context var is safe), reentrant `scoped()` manager, `wants_perf()`
+  reading `BREPKERNEL_PERF`, 20 canonical counter names, and
+  `report_section()`. Counters live exactly for one `boolean_brep`
+  call (plan rule R6, no global caches).
+- Instrumentation (all additive one-liners, no control-flow change):
+  assembly.py: exact_edge_distance (3 DistShapeShape sites),
+  exact_face_distance (vertex-vs-face), exact_solid_distance
+  (_solids_touch), ray_intersector_perform (_cast_ray),
+  ray_pair_cast (classify loop), face_box_build / edge_box_build
+  (the 2 _conservative_boxes sites), solid_classifier_eval,
+  face_classifier_eval (3 constructor sites),
+  curve_on_surface_projection (2 coincident-piece sites),
+  volume_integration (cache miss only), single_witness_attempt /
+  single_witness_hit / single_witness_fallback (C9), region_propagated
+  (bumped by count); intersection.py: section_pair_attempt,
+  section_engine_call (intersect_models entry),
+  raw_intersector_perform, face_classifier_eval (batched verifier,
+  bumped 2/sample; _match_raw_component inner classify, 2),
+  exact_face_distance (_shape_distance, _point_shape_distance),
+  adaptive_edge_samples (by sample count),
+  completeness_leaf_intervals (by leaf count); freeform.py:
+  face_classifier_eval (_trim_contains), exact_face_distance
+  (_exact_trimmed_distance).
+- pipeline.py: new `boolean_brep(..., collect_perf=False)` (also
+  `BREPKERNEL_PERF=1`). Counters attach as `report["performance"]`
+  after evidence emission, so the evidence record and its
+  content-derived name are byte-identical with profiling on or off;
+  only `report["performance"]` differs. `crosscheck_ops` companion
+  runs share the outer call's counters (documented aggregation).
+- tools/review_probes/perf_budget.py: `--perf` flag records S0
+  counters beside time on `--record` and enforces recorded
+  `max_calls` ceilings on `--check` (existing budget JSONs have no
+  max_calls: no behavior change by default).
+- tests/test_perf_counters.py (new): 7 tests - disabled run has no
+  performance key; enabled run records all canonical counters;
+  BREPKERNEL_PERF=1 works; verdict/volume/solid-count/refusal-kind
+  and evidence names identical perf-on vs perf-off across 5 ops;
+  single_witness_attempt == hit + fallback; enabled overhead <25%
+  on cyl/box guard; ambient counters reset after the call.
+
+Measurements (26 Sept 2026, local machine, OCCT 8.0.1 venv):
+- Overhead on the 262-face plate minus slot (interleaved best-of-3,
+  idle machine): perf off 7.93s, perf on 7.90s, overhead -0.43%
+  (noise floor). Plan criterion <2% enabled: PASS. First attempt
+  measured +4.49% but was invalid - a regression suite was running
+  concurrently and both series drifted upward with machine load.
+- count() micro-benchmark: 118 ns/call disabled, 363 ns/call
+  enabled; ~12.8k calls on the plate run (about 5 ms of the 7.9 s).
+  Disabled matches the pre-profiler 7.96s baseline (G12), so
+  disabled cost is effectively zero.
+- Plate counters (fastest perf-on run): exact_face_distance 328,
+  exact_edge_distance 298, solid_classifier_eval 546,
+  face_classifier_eval 2325, ray_intersector_perform 5559,
+  ray_pair_cast 2784, section_pair_attempt 8, section_engine_call 1,
+  raw_intersector_perform 8, adaptive_edge_samples 264,
+  completeness_leaf_intervals 160, volume_integration 5,
+  face_box_build 2, edge_box_build 4, single_witness_attempt 275
+  (hit 259, fallback 16), region_propagated 3.
+  The 275 attempts / 259 hits on side-A-style pieces line up with
+  the plan's 257/261 shortcut figure.
+
+Regression: new 7/7 pass; existing suites all green
+(test_brep_pipeline, test_degenerate, test_regression, test_evidence,
+test_g17_evidence_integrity, test_assembly_indexes, test_g12b_propagation,
+test_g10_com_witness, test_batched_section_verifier,
+test_freeform_assembly, test_freeform_intersection,
+test_freeform_split, test_metamorphic). Zero em dashes added.
+
+S0 COMPLETE per its pass criteria: instrumentation in place,
+verdicts equivalent on/off, overhead within noise of zero.
+
+## S1 - PreparedBRep: build accel data once, reuse across calls (26 Sept 2026, branch speed/s1-prepared-brep)
+
+What changed:
+- New module src/brepkernel/prepared.py: frozen PreparedBRep dataclass
+  holding the BRepModel plus its acceleration data, all computed once:
+  face_boxes (n,6 conservative boxes, bit-identical to the C6 per-call
+  build), face_tol (per-face OCCT tolerances), face_adjacency
+  (index-based, symmetric, matches naive IsSame recomputation),
+  edges (deduplicated TopoDS edges via hash-bucket IsSame), edge_boxes,
+  solid_boxes, analytic/freeform face masks, max_tolerance, base_tol.
+  prepare_brep(shape) / prepare_model(model) / ensure_prepared(x)
+  (accepts raw shape, BRepModel, or PreparedBRep passthrough).
+  Pads are NOT frozen: PreparedBRep stores immutable face_tol and
+  exposes face_pads(contact_tol) = contact_tol + face_tol, because
+  contact_tol is a per-call boolean_brep parameter. prepare() never
+  tessellates or mutates the input shape (verified: no face gains a
+  triangulation, input volumes unchanged).
+- pipeline.py: _boolean_brep_impl now ensure_prepared()s both inputs,
+  so even raw-shape calls build accel data exactly once per call;
+  pads come from pa.face_pads(contact_tol) (same arithmetic as
+  face_broadphase_pads, asserted equal); max tolerance from
+  pa.max_tolerance/pb.max_tolerance; prepared_a/prepared_b threaded
+  into assemble_boolean. _as_shape() unwraps PreparedBRep for evidence
+  hashing so prepared calls emit identical evidence records.
+- assembly.py consumers (all keyword-only, fallback-safe, length-mismatch
+  falls back to the old per-call build so stale data can never silently
+  change a result): _point_boundary_distances(..., face_boxes=None),
+  _MultiRayClassifier(..., edges=None, edge_boxes=None),
+  classify_untouched_single_witness and _witness_material_verdict take
+  face_boxes; one_side takes other_prepared; _classify_pieces /
+  assemble_boolean take prepared_a/prepared_b. The two single-solid
+  classifier sites (result-side shells built during assembly) and the
+  result-side _unique_edges were deliberately left alone: result
+  geometry does not exist at prepare time, and whole-base edges would
+  be a superset that changes their min-distances.
+- perf.py: two canonical counters, prepared_face_box_hit and
+  prepared_edge_index_hit. The prepare-time builders also bump
+  face_box_build/edge_box_build so the counters stay truthful about
+  where work happens.
+- tests/test_prepared_brep.py (new): 7 groups - verdict equivalence
+  raw vs prepared (6 cases incl. typed refusals), zero rebuilds on
+  reuse (face_box_build 0 with prepared inputs, hits recorded),
+  PreparedBRep/BRepModel/raw passthrough, no-tessellation/no-mutation,
+  adjacency symmetry vs naive, prepared-consumption unit tests with
+  fallback coverage, bit-identity of boxes and pads.
+
+Measurements (26 Sept 2026, local machine, OCCT 8.0.1 venv, 262-face
+plate minus slot, best-of-3):
+- prepare_brep cost: plate 0.30s (262 faces, 780 edges), slot 0.00s.
+- Raw boolean (internal prepare): best 7.81s, volume 22.2350,
+  face_box_build=2, edge_box_build=4, prepared_face_box_hit=300,
+  prepared_edge_index_hit=2.
+- Prepared boolean (prepare once outside): best 6.96s, volume
+  22.2350, face_box_build=0, edge_box_build=2,
+  prepared_face_box_hit=300, prepared_edge_index_hit=2.
+  Verdict and volume identical raw vs prepared.
+- The 2 remaining edge_box_build on prepared runs are the result-side
+  single-solid classifiers (shells assembled during that call); the
+  input bases contribute zero rebuilds. Prepared saves ~0.85s on the
+  plate (7.81 -> 6.96).
+- Note: the plate256.brep cache under
+  goals/robust-brep-booleans-prototype/hidden_files/ vanished
+  mid-session (overlayfs showed a stale dentry via find while the file
+  was unreadable); bench_s1_plate.py now drills fresh on cache miss
+  and re-caches, mirroring bench_plate256.py.
+
+Regression: new 7/7 pass; all 14 existing suites green
+(test_brep_pipeline, test_degenerate, test_regression, test_evidence,
+test_g17_evidence_integrity, test_assembly_indexes, test_g12b_propagation,
+test_g10_com_witness, test_batched_section_verifier,
+test_freeform_assembly, test_freeform_intersection,
+test_freeform_split, test_metamorphic, test_perf_counters).
+Zero em dashes added.
+
+S1 COMPLETE per its pass criteria: raw and prepared calls are
+verdict-equivalent; a prepared base sees zero face-box and zero
+edge-index rebuilds on later Booleans (counters prove it); prepare
+does not tessellate or mutate the input.
