@@ -311,12 +311,17 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     from . import evidence as _evidence
     from . import perf as _perf
     from .step_ingest import BRepModel as _BRepModel
+    from .prepared import PreparedBRep as _PreparedBRep
 
     _started_utc = _datetime.now(_timezone.utc).isoformat()
     _t0 = _time.perf_counter()
     _operation_id = _uuid.uuid4().hex
 
     def _as_shape(x):
+        # S1: PreparedBRep unwraps to its model's shape so evidence
+        # hashing sees the same input bytes as a raw-shape call.
+        if isinstance(x, _PreparedBRep):
+            x = x.model
         return x.shape if isinstance(x, _BRepModel) else x
 
     def _params(report):
@@ -441,8 +446,9 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
     Returns (TopoDS_Shape, report) and leaves the existing mesh/proxy
     boolean() API unchanged.
 
-    shapeA and shapeB may be OCCT TopoDS shapes or already-indexed BRepModel
-    objects. Ambiguous contacts, failed p-curve verification, split
+    shapeA and shapeB may be OCCT TopoDS shapes, already-indexed BRepModel
+    objects, or PreparedBRep objects (which additionally skip the
+    per-call acceleration rebuilds). Ambiguous contacts, failed p-curve verification, split
     inconsistencies, open/non-manifold sewing, and boundary-only patch
     classifications refuse through BRepAmbiguousResult rather than being
     converted into a guessed result.
@@ -475,8 +481,7 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
     from OCP.BRepCheck import BRepCheck_Analyzer
 
     from .freeform import FreeformError
-    from .step_ingest import (BRepModel, face_broadphase_pads, index_shape,
-                              model_max_tolerance)
+    from .prepared import ensure_prepared
     from .intersection import intersect_models
     from .split import split_models
     from .assembly import assemble_boolean, _shape_volume, clear_volume_cache
@@ -643,8 +648,13 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
 
     t_stage = perf_counter()
     try:
-        a = shapeA if isinstance(shapeA, BRepModel) else index_shape(shapeA)
-        b = shapeB if isinstance(shapeB, BRepModel) else index_shape(shapeB)
+        # S1: accept a raw TopoDS_Shape, a BRepModel, or a PreparedBRep.
+        # Prepared inputs skip re-indexing and the per-call accel
+        # rebuilds; anything else is prepared internally, so the
+        # resulting BRepModels are identical to the old path.
+        pa = ensure_prepared(shapeA, base_tol=float(base_tol))
+        pb = ensure_prepared(shapeB, base_tol=float(base_tol))
+        a, b = pa.model, pb.model
     except FreeformError as exc:
         report["timings_ms"]["ingest"] = (perf_counter() - t_stage) * 1000.0
         report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
@@ -678,14 +688,16 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
     # set, which can add typed refusals but never new acceptances.
     # An explicitly passed broadphase_pad is still honored verbatim as a
     # uniform scalar (documented escape hatch for callers).
-    _tol_max = max(model_max_tolerance(a), model_max_tolerance(b))
+    _tol_max = max(pa.max_tolerance, pb.max_tolerance)
     if _pad_explicit:
         _face_pads = None
         _pad_mode = "explicit_scalar"
         _pad_summary = None
     else:
-        _pads_a = face_broadphase_pads(a, float(contact_tol))
-        _pads_b = face_broadphase_pads(b, float(contact_tol))
+        # S1: pads are contact_tol + prepared per-face tol_face, the same
+        # arithmetic as face_broadphase_pads.
+        _pads_a = pa.face_pads(float(contact_tol))
+        _pads_b = pb.face_pads(float(contact_tol))
         _face_pads = (_pads_a, _pads_b)
         broadphase_pad = float(max(_pads_a.max(initial=0.0),
                                     _pads_b.max(initial=0.0)))
@@ -884,7 +896,8 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
         assembled = assemble_boolean(
             a, b, sp, op, base_tol=float(base_tol), sew_tol=sew_tol,
             allow_nonmanifold=bool(allow_nonmanifold),
-            candidate_face_ids_a=cand_a, candidate_face_ids_b=cand_b)
+            candidate_face_ids_a=cand_a, candidate_face_ids_b=cand_b,
+            prepared_a=pa, prepared_b=pb)
     except FreeformError as exc:
         report["timings_ms"]["assembly"] = (
             perf_counter() - t_stage) * 1000.0

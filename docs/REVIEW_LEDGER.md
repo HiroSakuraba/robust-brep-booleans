@@ -3011,3 +3011,82 @@ test_freeform_split, test_metamorphic). Zero em dashes added.
 
 S0 COMPLETE per its pass criteria: instrumentation in place,
 verdicts equivalent on/off, overhead within noise of zero.
+
+## S1 - PreparedBRep: build accel data once, reuse across calls (26 Sept 2026, branch speed/s1-prepared-brep)
+
+What changed:
+- New module src/brepkernel/prepared.py: frozen PreparedBRep dataclass
+  holding the BRepModel plus its acceleration data, all computed once:
+  face_boxes (n,6 conservative boxes, bit-identical to the C6 per-call
+  build), face_tol (per-face OCCT tolerances), face_adjacency
+  (index-based, symmetric, matches naive IsSame recomputation),
+  edges (deduplicated TopoDS edges via hash-bucket IsSame), edge_boxes,
+  solid_boxes, analytic/freeform face masks, max_tolerance, base_tol.
+  prepare_brep(shape) / prepare_model(model) / ensure_prepared(x)
+  (accepts raw shape, BRepModel, or PreparedBRep passthrough).
+  Pads are NOT frozen: PreparedBRep stores immutable face_tol and
+  exposes face_pads(contact_tol) = contact_tol + face_tol, because
+  contact_tol is a per-call boolean_brep parameter. prepare() never
+  tessellates or mutates the input shape (verified: no face gains a
+  triangulation, input volumes unchanged).
+- pipeline.py: _boolean_brep_impl now ensure_prepared()s both inputs,
+  so even raw-shape calls build accel data exactly once per call;
+  pads come from pa.face_pads(contact_tol) (same arithmetic as
+  face_broadphase_pads, asserted equal); max tolerance from
+  pa.max_tolerance/pb.max_tolerance; prepared_a/prepared_b threaded
+  into assemble_boolean. _as_shape() unwraps PreparedBRep for evidence
+  hashing so prepared calls emit identical evidence records.
+- assembly.py consumers (all keyword-only, fallback-safe, length-mismatch
+  falls back to the old per-call build so stale data can never silently
+  change a result): _point_boundary_distances(..., face_boxes=None),
+  _MultiRayClassifier(..., edges=None, edge_boxes=None),
+  classify_untouched_single_witness and _witness_material_verdict take
+  face_boxes; one_side takes other_prepared; _classify_pieces /
+  assemble_boolean take prepared_a/prepared_b. The two single-solid
+  classifier sites (result-side shells built during assembly) and the
+  result-side _unique_edges were deliberately left alone: result
+  geometry does not exist at prepare time, and whole-base edges would
+  be a superset that changes their min-distances.
+- perf.py: two canonical counters, prepared_face_box_hit and
+  prepared_edge_index_hit. The prepare-time builders also bump
+  face_box_build/edge_box_build so the counters stay truthful about
+  where work happens.
+- tests/test_prepared_brep.py (new): 7 groups - verdict equivalence
+  raw vs prepared (6 cases incl. typed refusals), zero rebuilds on
+  reuse (face_box_build 0 with prepared inputs, hits recorded),
+  PreparedBRep/BRepModel/raw passthrough, no-tessellation/no-mutation,
+  adjacency symmetry vs naive, prepared-consumption unit tests with
+  fallback coverage, bit-identity of boxes and pads.
+
+Measurements (26 Sept 2026, local machine, OCCT 8.0.1 venv, 262-face
+plate minus slot, best-of-3):
+- prepare_brep cost: plate 0.30s (262 faces, 780 edges), slot 0.00s.
+- Raw boolean (internal prepare): best 7.81s, volume 22.2350,
+  face_box_build=2, edge_box_build=4, prepared_face_box_hit=300,
+  prepared_edge_index_hit=2.
+- Prepared boolean (prepare once outside): best 6.96s, volume
+  22.2350, face_box_build=0, edge_box_build=2,
+  prepared_face_box_hit=300, prepared_edge_index_hit=2.
+  Verdict and volume identical raw vs prepared.
+- The 2 remaining edge_box_build on prepared runs are the result-side
+  single-solid classifiers (shells assembled during that call); the
+  input bases contribute zero rebuilds. Prepared saves ~0.85s on the
+  plate (7.81 -> 6.96).
+- Note: the plate256.brep cache under
+  goals/robust-brep-booleans-prototype/hidden_files/ vanished
+  mid-session (overlayfs showed a stale dentry via find while the file
+  was unreadable); bench_s1_plate.py now drills fresh on cache miss
+  and re-caches, mirroring bench_plate256.py.
+
+Regression: new 7/7 pass; all 14 existing suites green
+(test_brep_pipeline, test_degenerate, test_regression, test_evidence,
+test_g17_evidence_integrity, test_assembly_indexes, test_g12b_propagation,
+test_g10_com_witness, test_batched_section_verifier,
+test_freeform_assembly, test_freeform_intersection,
+test_freeform_split, test_metamorphic, test_perf_counters).
+Zero em dashes added.
+
+S1 COMPLETE per its pass criteria: raw and prepared calls are
+verdict-equivalent; a prepared base sees zero face-box and zero
+edge-index rebuilds on later Booleans (counters prove it); prepare
+does not tessellate or mutate the input.

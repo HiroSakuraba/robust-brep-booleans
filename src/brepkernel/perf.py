@@ -51,6 +51,8 @@ SINGLE_WITNESS_ATTEMPT = "single_witness_attempt"    # C9 shortcut tries
 SINGLE_WITNESS_HIT = "single_witness_hit"            # shortcut applied
 SINGLE_WITNESS_FALLBACK = "single_witness_fallback"  # full rule ran instead
 REGION_PROPAGATED = "region_propagated"          # G12b propagated decisions
+PREPARED_FACE_BOX_HIT = "prepared_face_box_hit"  # S1: reused prepared face boxes
+PREPARED_EDGE_INDEX_HIT = "prepared_edge_index_hit"  # S1: reused prepared edges
 
 CANONICAL_COUNTERS = (
     EXACT_FACE_DISTANCE,
@@ -73,6 +75,8 @@ CANONICAL_COUNTERS = (
     SINGLE_WITNESS_HIT,
     SINGLE_WITNESS_FALLBACK,
     REGION_PROPAGATED,
+    PREPARED_FACE_BOX_HIT,
+    PREPARED_EDGE_INDEX_HIT,
 )
 
 ENV_VAR = "BREPKERNEL_PERF"

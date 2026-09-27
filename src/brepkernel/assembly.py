@@ -383,7 +383,9 @@ class _MultiRayClassifier:
     an odd bidirectional sum, discards the pair.
     """
 
-    def __init__(self, solids: list, tol: float):
+    def __init__(self, solids: list, tol: float, *,
+                 edges: "tuple | None" = None,
+                 edge_boxes: "np.ndarray | None" = None):
         from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
         from OCP.TopAbs import TopAbs_EDGE
         from OCP.TopExp import TopExp_Explorer
@@ -398,14 +400,25 @@ class _MultiRayClassifier:
             self._intersectors.append(inter)
         self._edges = self._edge_compound(self._solids)
         # C6: per-edge list and conservative boxes for thresholded distances.
-        self._edge_list = []
-        for _solid in self._solids:
-            _ex = TopExp_Explorer(_solid, TopAbs_EDGE)
-            while _ex.More():
-                self._edge_list.append(TopoDS.Edge(_ex.Current()))
-                _ex.Next()
-        self._edge_boxes = _conservative_boxes(self._edge_list)
-        _perf_count("edge_box_build")
+        # S1: a caller may supply prepared (deduplicated) edges and their
+        # boxes instead of re-exploring. The prepared list is the deduped
+        # union of the same per-solid explorers, so the min-distance this
+        # classifier computes is unchanged (duplicates never move a min);
+        # any length mismatch falls back to the explorer path.
+        if (edges is not None and edge_boxes is not None
+                and len(edges) == len(edge_boxes)):
+            self._edge_list = list(edges)
+            self._edge_boxes = np.asarray(edge_boxes, dtype=np.float64)
+            _perf_count("prepared_edge_index_hit")
+        else:
+            self._edge_list = []
+            for _solid in self._solids:
+                _ex = TopExp_Explorer(_solid, TopAbs_EDGE)
+                while _ex.More():
+                    self._edge_list.append(TopoDS.Edge(_ex.Current()))
+                    _ex.Next()
+            self._edge_boxes = _conservative_boxes(self._edge_list)
+            _perf_count("edge_box_build")
 
     @staticmethod
     def _edge_compound(solids):
@@ -626,13 +639,21 @@ def classify_point_two_classifier(point, model, tol: float) -> dict:
 
 def _point_boundary_distances(points: np.ndarray,
                               model: BRepModel,
-                              cap: float = float("inf")) -> list[float]:
+                              cap: float = float("inf"),
+                              *,
+                              face_boxes: "np.ndarray | None" = None,
+                              ) -> list[float]:
     """Distance from each point to the model's faces, capped at `cap` (C6).
 
     Measured against FACES (OCCT reports 0 for a point inside a solid).
     Faces whose conservative box is farther than `cap` are skipped; a
     point with no face in range reports `cap`, meaning "at least cap".
     With the default cap=inf every face is measured, as before.
+
+    S1: `face_boxes` may carry prepared (n, 6) boxes (e.g. from a
+    PreparedBRep). They are used verbatim when their length matches the
+    model's face count; any mismatch falls back to the per-call build,
+    so a stale array can never silently change a distance.
     """
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
     from OCP.BRepExtrema import BRepExtrema_DistShapeShape
@@ -641,14 +662,18 @@ def _point_boundary_distances(points: np.ndarray,
     faces = [fr.face for fr in model.faces]
     boxes = None
     if np.isfinite(cap):
-        boxes = getattr(model, "_c6_face_boxes", None)
-        if boxes is None or len(boxes) != len(faces):
-            boxes = _conservative_boxes(faces)
-            _perf_count("face_box_build")
-            try:
-                model._c6_face_boxes = boxes   # one build per model per call
-            except AttributeError:
-                pass
+        if face_boxes is not None and len(face_boxes) == len(faces):
+            boxes = face_boxes
+            _perf_count("prepared_face_box_hit")
+        else:
+            boxes = getattr(model, "_c6_face_boxes", None)
+            if boxes is None or len(boxes) != len(faces):
+                boxes = _conservative_boxes(faces)
+                _perf_count("face_box_build")
+                try:
+                    model._c6_face_boxes = boxes   # one build per model per call
+                except AttributeError:
+                    pass
     dists = []
     for p in points:
         idx = (range(len(faces)) if boxes is None
@@ -674,7 +699,8 @@ def _witness_material_verdict(points: np.ndarray, classes: tuple[str, ...],
                               model: BRepModel, tol: float, *,
                               operand: str, parent_face_id: int,
                               piece_index: int,
-                              min_points: int = 3) -> str:
+                              min_points: int = 3,
+                              face_boxes: "np.ndarray | None" = None) -> str:
     """Decide one patch's material state from dual-classified witnesses.
 
     G5 witness preference: witnesses at distance >= 10x tol from the other
@@ -698,7 +724,8 @@ def _witness_material_verdict(points: np.ndarray, classes: tuple[str, ...],
     under a 10x tol band.  NOT applied in _shell_records nesting either,
     which reuses those same near-boundary witnesses.
     """
-    dists = _point_boundary_distances(points, model, cap=20.0 * float(tol))
+    dists = _point_boundary_distances(points, model, cap=20.0 * float(tol),
+                                      face_boxes=face_boxes)
     band = 10.0 * float(tol)
     far = [c for c, d in zip(classes, dists) if d >= band]
     near = [c for c, d in zip(classes, dists) if d < band]
@@ -1073,7 +1100,8 @@ def _choose_representative(face_ids, groups):
 
 
 def classify_untouched_single_witness(piece, other: "BRepModel", tol: float,
-                                      ray, candidate_ids):
+                                      ray, candidate_ids, *,
+                                      face_boxes: "np.ndarray | None" = None):
     """Return (verdict, point) for a piece whose parent had no candidates.
 
     C9: the broad phase only widens the candidate set (per-face pads from
@@ -1101,7 +1129,8 @@ def classify_untouched_single_witness(piece, other: "BRepModel", tol: float,
         points = _face_points(piece.face, tol, max_points=3, min_points=1)
     except AssemblyError:
         return None  # no stable witness at all: full rule refuses
-    dists = _point_boundary_distances(points, other, cap=20.0 * tol)
+    dists = _point_boundary_distances(points, other, cap=20.0 * tol,
+                                      face_boxes=face_boxes)
     for p, d in sorted(zip(points, dists), key=lambda x: -x[1]):
         if d < 10.0 * tol:
             continue  # stay out of the confusion band
@@ -1115,7 +1144,9 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                      split: ModelSplitResult, operation: str,
                      base_tol: float, *,
                      candidate_face_ids_a=None,
-                     candidate_face_ids_b=None) -> list[PatchDecision]:
+                     candidate_face_ids_b=None,
+                     prepared_a=None,
+                     prepared_b=None) -> list[PatchDecision]:
     """Classify exact B-rep patches.
 
     candidate_face_ids_a/_b are the parent face ids appearing in ANY
@@ -1125,6 +1156,11 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
     soundness proof behind the C9 single-witness shortcut. When None
     (direct unit-test calls), the shortcut is disabled and every face
     gets the full multi-witness rule.
+
+    S1: prepared_a/prepared_b are optional PreparedBRep wrappers for
+    model_a/model_b. When present, their precomputed face boxes and
+    edge indexes are reused instead of rebuilt; when absent, every
+    consumer falls back to its existing per-call build.
     """
     from OCP.BRep import BRep_Tool
 
@@ -1138,7 +1174,8 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
 
     out: list[PatchDecision] = []
 
-    def one_side(operand: str, groups, other: BRepModel, candidate_ids):
+    def one_side(operand: str, groups, other: BRepModel, candidate_ids,
+                 other_prepared=None):
         # One multi-ray classifier per side, built at the loosest piece
         # tolerance: a wider edge/near-origin discard band is the
         # conservative choice, and the per-piece OCCT tolerance still
@@ -1175,8 +1212,17 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                 else:
                     skipped.append((piece.parent_face_id, piece, tol))
         ray_tol = max([t for _, t in jobs], default=float(base_tol))
+        # S1: reuse the prepared edge index for the other operand when
+        # available (it is the deduped union of these same solids'
+        # explorers, so the classifier's min-distances are unchanged).
+        _pe = other_prepared.edges if other_prepared is not None else None
+        _pb = (other_prepared.edge_boxes
+               if other_prepared is not None else None)
         ray = _MultiRayClassifier(
-            [sr.solid for sr in other.solids], ray_tol)
+            [sr.solid for sr in other.solids], ray_tol,
+            edges=_pe, edge_boxes=_pb)
+        _other_face_boxes = (other_prepared.face_boxes
+                             if other_prepared is not None else None)
         # Store decisions by (face_id, piece_index) for propagation
         decisions_by_key = {}
         n_single_witness = 0
@@ -1217,7 +1263,8 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
             # shortcut does not apply, the full multi-witness rule runs
             # unchanged, so the missed-section backstop stays intact.
             shortcut = classify_untouched_single_witness(
-                piece, other, tol, ray, candidate_ids)
+                piece, other, tol, ray, candidate_ids,
+                face_boxes=_other_face_boxes)
             _perf_count("single_witness_attempt")
             if shortcut is not None:
                 _perf_count("single_witness_hit")
@@ -1238,7 +1285,8 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                         operand=operand,
                         parent_face_id=piece.parent_face_id,
                         piece_index=piece.piece_index,
-                        min_points=3)
+                        min_points=3,
+                        face_boxes=_other_face_boxes)
                     if full_cls != cls_word:
                         raise AssemblyError(
                             f"{operand} face {piece.parent_face_id} piece "
@@ -1278,7 +1326,8 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                 operand=operand,
                 parent_face_id=piece.parent_face_id,
                 piece_index=piece.piece_index,
-                min_points=3)
+                min_points=3,
+                face_boxes=_other_face_boxes)
             # G2.1 canonical states: map the dual-classified
             # inside/outside verdict onto the four-state model before the
             # keep table.
@@ -1349,8 +1398,10 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
         }
 
 
-    stats_a = one_side("A", split.faces_a, model_b, candidate_face_ids_a)
-    stats_b = one_side("B", split.faces_b, model_a, candidate_face_ids_b)
+    stats_a = one_side("A", split.faces_a, model_b, candidate_face_ids_a,
+                       prepared_b)
+    stats_b = one_side("B", split.faces_b, model_a, candidate_face_ids_b,
+                       prepared_a)
     # Attach region stats to the output for the report
     # (stored on the function for access by caller)
     _classify_pieces.region_stats = {
@@ -2402,6 +2453,8 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
                      allow_nonmanifold: bool = False,
                      candidate_face_ids_a=None,
                      candidate_face_ids_b=None,
+                     prepared_a=None,
+                     prepared_b=None,
                      ) -> BooleanAssemblyResult:
     """Classify exact B-rep patches and assemble union/intersection/A-B.
 
@@ -2411,6 +2464,10 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     candidate_face_ids_a/_b are the broad-phase candidate face ids
     (see _classify_pieces); when None the C9 single-witness shortcut
     is disabled.
+
+    S1: prepared_a/prepared_b are optional PreparedBRep wrappers for
+    model_a/model_b; their precomputed boxes and edge indexes are
+    reused instead of rebuilt (fallback: rebuilt per call as before).
     """
     # G13: one Boolean call, one volume-cache lifetime.
     clear_volume_cache()
@@ -2427,7 +2484,9 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     decisions = _classify_pieces(
         model_a, model_b, split, operation, float(base_tol),
         candidate_face_ids_a=candidate_face_ids_a,
-        candidate_face_ids_b=candidate_face_ids_b)
+        candidate_face_ids_b=candidate_face_ids_b,
+        prepared_a=prepared_a,
+        prepared_b=prepared_b)
     selected = [d for d in decisions if d.keep]
     # G12b: capture region stats from _classify_pieces
     region_stats = getattr(_classify_pieces, "region_stats", {})
