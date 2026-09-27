@@ -484,7 +484,8 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
                  crosscheck_ops=False,
                  allow_nonmanifold=False,
                  fast_paths=True,
-                 fast_path_shadow=True):
+                 fast_path_shadow=True,
+                 _ctx=None):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
 
     Returns (TopoDS_Shape, report) and leaves the existing mesh/proxy
@@ -528,11 +529,16 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
     from .prepared import ensure_prepared
     from .intersection import intersect_models
     from .split import split_models
-    from .assembly import assemble_boolean, _shape_volume, clear_volume_cache
+    from .assembly import assemble_boolean, _shape_volume
     from .same_domain import same_domain_models
 
-    # G13: one Boolean call, one volume-cache lifetime.
-    clear_volume_cache()
+    # S4: one Boolean call, one QueryContext.  It owns the volume cache,
+    # classifier set, and query memos; there is no module-global mutable
+    # query state.  The S3 shadow re-run shares the outer call's context
+    # (same operands, same tolerances).
+    if _ctx is None:
+        from .query import QueryContext
+        _ctx = QueryContext(base_tol=float(base_tol))
 
     if op not in ("union", "intersection", "difference"):
         raise ValueError(f"unknown op {op!r}")
@@ -617,7 +623,7 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
                 return 0.0
             if not TopExp_Explorer(shape, TopAbs_SOLID).More():
                 return 0.0
-            return abs(float(_shape_volume(shape)))
+            return abs(float(_shape_volume(shape, ctx=_ctx)))
 
         def _report_tol(rep):
             ver = rep.get("stages", {}).get("verification", {})
@@ -901,7 +907,7 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
             return 0.0
         if not TopExp_Explorer(shape, TopAbs_SOLID).More():
             return 0.0
-        return abs(float(_shape_volume(shape)))
+        return abs(float(_shape_volume(shape, ctx=_ctx)))
 
     def _s3_old_pipeline():
         """Run the old pipeline (fast paths disabled).
@@ -909,13 +915,24 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
         Returns (out, report, exc) with exc the BRepAmbiguousResult when
         the old pipeline refuses.  Perf counters are scoped to a fresh
         object so the shadow run does not pollute the outer profile.
+
+        S4 (review fix): the shadow gets a completely FRESH QueryContext.
+        It must answer "would the old pipeline independently reach the
+        same answer?" -- sharing the outer call's classifiers, volumes,
+        or point-verdict memos would let one cached bug make both paths
+        falsely agree.  Independence is the point of this run, not
+        speed.  Prepared input references are carried over (they describe
+        the inputs, not query results); every memo starts empty.
         """
         from . import perf as _perf_mod
+        from .query import QueryContext
 
         kwargs = dict(_pass_kwargs)
         kwargs.update(fast_paths=False, fast_path_shadow=False,
                       crosscheck_ops=False, include_full_evidence=False,
-                      allow_nonmanifold=allow_nonmanifold)
+                      allow_nonmanifold=allow_nonmanifold,
+                      _ctx=QueryContext(base_tol=float(base_tol),
+                                        prepared_a=pa, prepared_b=pb))
         with _perf_mod.scoped(_perf_mod.PerfCounters()):
             try:
                 old_out, old_report = _boolean_brep_impl(
@@ -1109,7 +1126,7 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
             a, b, sp, op, base_tol=float(base_tol), sew_tol=sew_tol,
             allow_nonmanifold=bool(allow_nonmanifold),
             candidate_face_ids_a=cand_a, candidate_face_ids_b=cand_b,
-            prepared_a=pa, prepared_b=pb)
+            prepared_a=pa, prepared_b=pb, ctx=_ctx)
     except FreeformError as exc:
         report["timings_ms"]["assembly"] = (
             perf_counter() - t_stage) * 1000.0
@@ -1271,8 +1288,8 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
     # shell-orientation errors without using a second Boolean engine.
     # G13: coarse bounds only; the documented error budget applies.
     from .assembly import _COARSE_VOLUME_TOL
-    va = abs(float(_shape_volume(a.shape, tol=_COARSE_VOLUME_TOL)))
-    vb = abs(float(_shape_volume(b.shape, tol=_COARSE_VOLUME_TOL)))
+    va = abs(float(_shape_volume(a.shape, tol=_COARSE_VOLUME_TOL, ctx=_ctx)))
+    vb = abs(float(_shape_volume(b.shape, tol=_COARSE_VOLUME_TOL, ctx=_ctx)))
     vr = abs(float(assembled.volume))
     all_faces = a.faces + b.faces
     if all_faces:

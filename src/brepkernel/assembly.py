@@ -591,7 +591,7 @@ def _raise_classifier_disagreement(point: np.ndarray, occt_verdict: str,
 
 
 def _agreed_point_verdict(point: np.ndarray, model: BRepModel, tol: float,
-                          ray: _MultiRayClassifier) -> str:
+                          ray: _MultiRayClassifier, ctx=None) -> str:
     """Classify a decision witness with both classifiers.
 
     Returns the agreed 'inside'/'outside' verdict, or the OCCT
@@ -599,12 +599,27 @@ def _agreed_point_verdict(point: np.ndarray, model: BRepModel, tol: float,
     Any OCCT inside/outside verdict the multi-ray classifier does not
     confirm raises ClassifierDisagreement carrying both verdicts and the
     point.
+
+    S4: when `ctx` is given, agreed verdicts are memoized on the
+    per-call QueryContext keyed by (point, model, classifier, tol).
+    The verdict is a pure function of those inputs, so a hit is exactly
+    what a fresh dual classification would return; disagreements raise
+    and are never cached.
     """
+    if ctx is not None:
+        from .query import _point_key
+        key = (_point_key(point), id(model), id(ray), float(tol))
+        hit = ctx.point_verdicts.get(key)
+        if hit is not None:
+            _perf_count("ctx_point_verdict_hit")
+            return hit
     occt = _classify_point_in_model(point, model, tol)
     if occt not in ("inside", "outside"):
         return occt
     independent = ray.classify(point)
     if independent == occt:
+        if ctx is not None:
+            ctx.point_verdicts[key] = occt
         return occt
     _raise_classifier_disagreement(point, occt, independent)
 
@@ -649,6 +664,7 @@ def _point_boundary_distances(points: np.ndarray,
                               *,
                               face_boxes: "np.ndarray | None" = None,
                               face_index: "HybridBoxIndex | None" = None,
+                              ctx=None,
                               ) -> list[float]:
     """Distance from each point to the model's faces, capped at `cap` (C6).
 
@@ -665,6 +681,12 @@ def _point_boundary_distances(points: np.ndarray,
     S2: `face_index` may carry the prepared HybridBoxIndex built over those
     same boxes.  It is preferred when its length matches; the query set is
     identical to the flat scan.
+
+    S4: when `ctx` is given, per-point distances are memoized on the
+    per-call QueryContext.  The distance is a pure function of (point,
+    model faces, cap) -- the box/index inputs only select a
+    conservative superset of candidate faces, never the minimum --
+    so a hit is exactly what a fresh computation would return.
     """
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
     from OCP.BRepExtrema import BRepExtrema_DistShapeShape
@@ -689,15 +711,30 @@ def _point_boundary_distances(points: np.ndarray,
                     model._c6_face_boxes = boxes   # one build per model per call
                 except AttributeError:
                     pass
+    if ctx is not None:
+        from .query import _point_key
+        memo = ctx.boundary_distances
+        model_id = id(model)
+        cap_f = float(cap)
     dists = []
     for p in points:
+        if ctx is not None:
+            key = (_point_key(p), model_id, cap_f)
+            hit = memo.get(key)
+            if hit is not None:
+                _perf_count("ctx_boundary_distance_hit")
+                dists.append(hit)
+                continue
         if index is not None:
             idx = index.query_point(p, cap)
         else:
             idx = (range(len(faces)) if boxes is None
                    else _near_box_indices(boxes, p, cap))
         if len(idx) == 0:
-            dists.append(cap)
+            best = cap
+            dists.append(best)
+            if ctx is not None:
+                memo[key] = float(best)
             continue
         v = BRepBuilderAPI_MakeVertex(
             gp_Pnt(float(p[0]), float(p[1]), float(p[2]))).Vertex()
@@ -709,7 +746,10 @@ def _point_boundary_distances(points: np.ndarray,
                 d.Perform()
             if d.IsDone():
                 best = min(best, float(d.Value()))
+        best = float(best)
         dists.append(best)
+        if ctx is not None:
+            memo[key] = best
     return dists
 
 
@@ -719,7 +759,8 @@ def _witness_material_verdict(points: np.ndarray, classes: tuple[str, ...],
                               piece_index: int,
                               min_points: int = 3,
                               face_boxes: "np.ndarray | None" = None,
-                              face_index: "HybridBoxIndex | None" = None) -> str:
+                              face_index: "HybridBoxIndex | None" = None,
+                              ctx=None) -> str:
     """Decide one patch's material state from dual-classified witnesses.
 
     G5 witness preference: witnesses at distance >= 10x tol from the other
@@ -745,7 +786,8 @@ def _witness_material_verdict(points: np.ndarray, classes: tuple[str, ...],
     """
     dists = _point_boundary_distances(points, model, cap=20.0 * float(tol),
                                       face_boxes=face_boxes,
-                                      face_index=face_index)
+                                      face_index=face_index,
+                                      ctx=ctx)
     band = 10.0 * float(tol)
     far = [c for c, d in zip(classes, dists) if d >= band]
     near = [c for c, d in zip(classes, dists) if d < band]
@@ -1122,7 +1164,8 @@ def _choose_representative(face_ids, groups):
 def classify_untouched_single_witness(piece, other: "BRepModel", tol: float,
                                       ray, candidate_ids, *,
                                       face_boxes: "np.ndarray | None" = None,
-                                      face_index: "HybridBoxIndex | None" = None):
+                                      face_index: "HybridBoxIndex | None" = None,
+                                      ctx=None):
     """Return (verdict, point) for a piece whose parent had no candidates.
 
     C9: the broad phase only widens the candidate set (per-face pads from
@@ -1152,11 +1195,12 @@ def classify_untouched_single_witness(piece, other: "BRepModel", tol: float,
         return None  # no stable witness at all: full rule refuses
     dists = _point_boundary_distances(points, other, cap=20.0 * tol,
                                       face_boxes=face_boxes,
-                                      face_index=face_index)
+                                      face_index=face_index,
+                                      ctx=ctx)
     for p, d in sorted(zip(points, dists), key=lambda x: -x[1]):
         if d < 10.0 * tol:
             continue  # stay out of the confusion band
-        verdict = _agreed_point_verdict(p, other, tol, ray)
+        verdict = _agreed_point_verdict(p, other, tol, ray, ctx)
         if verdict in ("inside", "outside"):
             return verdict, p
     return None  # no clean witness: full rule
@@ -1168,7 +1212,8 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                      candidate_face_ids_a=None,
                      candidate_face_ids_b=None,
                      prepared_a=None,
-                     prepared_b=None) -> list[PatchDecision]:
+                     prepared_b=None,
+                     ctx=None) -> list[PatchDecision]:
     """Classify exact B-rep patches.
 
     candidate_face_ids_a/_b are the parent face ids appearing in ANY
@@ -1178,6 +1223,13 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
     soundness proof behind the C9 single-witness shortcut. When None
     (direct unit-test calls), the shortcut is disabled and every face
     gets the full multi-witness rule.
+
+    S4: `ctx` is the per-Boolean-call QueryContext.  The two multi-ray
+    intersectors (one per operand/tolerance bucket) are shared through
+    it instead of rebuilt, and the region stats are stored on it
+    (replacing the old _classify_pieces.region_stats function
+    attribute).  When None, a throwaway context is used: behavior is
+    identical, only cross-call sharing is lost.
 
     S1: prepared_a/prepared_b are optional PreparedBRep wrappers for
     model_a/model_b. When present, their precomputed face boxes and
@@ -1195,6 +1247,13 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
             kind="UnresolvedContact")
 
     out: list[PatchDecision] = []
+
+    # S4: every per-call cache lives on the QueryContext.  Direct
+    # unit-test callers pass ctx=None and get a throwaway context:
+    # identical behavior, only cross-call sharing is lost.
+    if ctx is None:
+        from .query import QueryContext
+        ctx = QueryContext(base_tol=float(base_tol))
 
     def one_side(operand: str, groups, other: BRepModel, candidate_ids,
                  other_prepared=None):
@@ -1237,14 +1296,19 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
         # S1: reuse the prepared edge index for the other operand when
         # available (it is the deduped union of these same solids'
         # explorers, so the classifier's min-distances are unchanged).
+        # S4: one multi-ray intersector per operand/tolerance bucket,
+        # shared on the QueryContext instead of rebuilt.
         _pe = other_prepared.edges if other_prepared is not None else None
         _pb = (other_prepared.edge_boxes
                if other_prepared is not None else None)
         _px = (other_prepared.edge_index
                if other_prepared is not None else None)
-        ray = _MultiRayClassifier(
-            [sr.solid for sr in other.solids], ray_tol,
-            edges=_pe, edge_boxes=_pb, edge_index=_px)
+        _other_solids = [sr.solid for sr in other.solids]
+        ray = ctx.get_or_create(
+            ("classifier", operand, float(ray_tol)),
+            lambda: _MultiRayClassifier(
+                _other_solids, ray_tol,
+                edges=_pe, edge_boxes=_pb, edge_index=_px))
         _other_face_boxes = (other_prepared.face_boxes
                              if other_prepared is not None else None)
         _other_face_index = (other_prepared.face_index
@@ -1290,7 +1354,8 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
             # unchanged, so the missed-section backstop stays intact.
             shortcut = classify_untouched_single_witness(
                 piece, other, tol, ray, candidate_ids,
-                face_boxes=_other_face_boxes, face_index=_other_face_index)
+                face_boxes=_other_face_boxes, face_index=_other_face_index,
+                        ctx=ctx)
             _perf_count("single_witness_attempt")
             if shortcut is not None:
                 _perf_count("single_witness_hit")
@@ -1304,7 +1369,7 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                     # soundness: refuse loudly, never silently.
                     full_points = _face_points(piece.face, tol)
                     full_classes = tuple(
-                        _agreed_point_verdict(p, other, tol, ray)
+                        _agreed_point_verdict(p, other, tol, ray, ctx)
                         for p in full_points)
                     full_cls = _witness_material_verdict(
                         full_points, full_classes, other, tol,
@@ -1312,7 +1377,8 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                         parent_face_id=piece.parent_face_id,
                         piece_index=piece.piece_index,
                         min_points=3,
-                        face_boxes=_other_face_boxes, face_index=_other_face_index)
+                        face_boxes=_other_face_boxes, face_index=_other_face_index,
+                        ctx=ctx)
                     if full_cls != cls_word:
                         raise AssemblyError(
                             f"{operand} face {piece.parent_face_id} piece "
@@ -1345,7 +1411,7 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
             _perf_count("single_witness_fallback")
             points = _face_points(piece.face, tol)
             classes = tuple(
-                _agreed_point_verdict(p, other, tol, ray)
+                _agreed_point_verdict(p, other, tol, ray, ctx)
                 for p in points)
             cls = _witness_material_verdict(
                 points, classes, other, tol,
@@ -1353,7 +1419,8 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                 parent_face_id=piece.parent_face_id,
                 piece_index=piece.piece_index,
                 min_points=3,
-                face_boxes=_other_face_boxes, face_index=_other_face_index)
+                face_boxes=_other_face_boxes, face_index=_other_face_index,
+                        ctx=ctx)
             # G2.1 canonical states: map the dual-classified
             # inside/outside verdict onto the four-state model before the
             # keep table.
@@ -1428,9 +1495,10 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                        prepared_b)
     stats_b = one_side("B", split.faces_b, model_a, candidate_face_ids_b,
                        prepared_a)
-    # Attach region stats to the output for the report
-    # (stored on the function for access by caller)
-    _classify_pieces.region_stats = {
+    # S4: region stats live on the QueryContext (explicit per-call
+    # state), replacing the old _classify_pieces.region_stats function
+    # attribute.
+    ctx.region_stats = {
         "A": stats_a,
         "B": stats_b,
     }
@@ -1446,20 +1514,10 @@ def _empty_compound():
     return c
 
 
-# G13: per-Boolean-call volume cache.  Input volumes are measured several
-# times during one Boolean call (operation invariants, evidence, shell
-# checks); recomputing the adaptive 1e-10 integration each time is the
-# dominant cost on rotated/titled geometry.  The cache is keyed by
-# (id(shape), tol) and holds a strong reference to the shape so id() reuse
-# after GC cannot alias a dead entry.  It is cleared at the start of every
-# top-level Boolean call (see clear_volume_cache callers); entries never
-# outlive one call, so stale results from mutated shapes are impossible.
-_VOLUME_CACHE: dict = {}
-
-
-def clear_volume_cache() -> None:
-    """Drop all cached volume measurements.  Called once per Boolean call."""
-    _VOLUME_CACHE.clear()
+# S4: the per-Boolean-call volume cache now lives on QueryContext
+# (brepkernel.query); there is no module-global mutable query state.
+# _shape_volume(..., ctx=None) computes uncached for direct callers
+# (tests, probes); the pipeline always threads a context.
 
 
 # Error budget for lower-precision internal volume checks (G13).  The
@@ -1513,8 +1571,14 @@ def _centered_copy(shape):
     return BRepBuilderAPI_Transform(shape, t, True).Shape()
 
 
-def _shape_volume(shape, tol: float = 1e-10) -> float:
-    """Volume of a closed shape, cached for the duration of one Boolean call.
+def _shape_volume(shape, tol: float = 1e-10, ctx=None) -> float:
+    """Volume of a closed shape, cached on the QueryContext for one call.
+
+    The ctx cache is valid under the QueryContext.volumes contract: only
+    finalized shapes are cached (input solids under the TopoDS
+    non-mutation contract, freshly built result solids).  A shape mutated
+    in place after caching would serve a stale volume, so callers must
+    never cache a shape they will mutate.
 
     Routing (review correction C4):
     - every face analytic: OCCT's adaptive Gauss integration
@@ -1526,11 +1590,18 @@ def _shape_volume(shape, tol: float = 1e-10) -> float:
     - any B-spline/Bezier/offset/other face: Gauss-Kronrod at `tol` with
       span integration, as before.
     Gauss-Kronrod runs on a copy centred at the origin.
+
+    S4: `ctx` is the per-Boolean-call QueryContext.  When given, volumes
+    are memoized on it (keyed by (id(shape), tol) with a strong shape
+    reference, as the old global cache was); when None the volume is
+    computed uncached.  There is no module-global cache: two simultaneous
+    Boolean calls cannot see each other's entries.
     """
-    key = (id(shape), float(tol))
-    hit = _VOLUME_CACHE.get(key)
-    if hit is not None and hit[0] is shape:
-        return hit[1]
+    if ctx is not None:
+        hit = ctx.volume_get(shape, tol)
+        if hit is not None:
+            _perf_count("ctx_volume_hit")
+            return hit
     _perf_count("volume_integration")
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
@@ -1546,8 +1617,18 @@ def _shape_volume(shape, tol: float = 1e-10) -> float:
             raise AssemblyError("adaptive volume integration failed",
                                 kind="VolumeIntegrationFailed")
     vol = float(g.Mass())
-    _VOLUME_CACHE[key] = (shape, vol)
+    if ctx is not None:
+        ctx.volume_put(shape, tol, vol)
     return vol
+
+
+def clear_volume_cache() -> None:
+    """Deprecated S4 shim: the volume cache now lives on QueryContext.
+
+    Kept so existing callers keep importing; it does nothing because
+    there is no longer any module-global cache to clear.  New code
+    should thread a QueryContext instead.
+    """
 
 
 def _extract_shells(shape) -> list[object]:
@@ -1767,7 +1848,8 @@ def _solid_interior_points(solid, tol: float, *,
             kind="InsufficientShellWitnesses")
     return np.vstack(points[:max_points])
 
-def _shell_records(shells: list[object], tol: float
+def _shell_records(shells: list[object], tol: float,
+                   ctx=None
                    ) -> list[ShellAssemblyRecord]:
     from OCP.BRepClass3d import BRepClass3d_SolidClassifier
     from OCP.TopAbs import TopAbs_IN
@@ -1778,7 +1860,7 @@ def _shell_records(shells: list[object], tol: float
         solid, outward = _make_outward_solid(sh)
         # G13: sign check only; coarse precision is safe per the documented
         # error budget above.
-        vol = abs(_shape_volume(solid, tol=_COARSE_VOLUME_TOL))
+        vol = abs(_shape_volume(solid, tol=_COARSE_VOLUME_TOL, ctx=ctx))
         if not vol > 0:
             raise AssemblyError("assembled shell has non-positive volume",
                                 kind="ZeroVolumeShell")
@@ -1872,7 +1954,8 @@ def _shell_records(shells: list[object], tol: float
     ]
 
 
-def _build_nested_solids(records: list[ShellAssemblyRecord]
+def _build_nested_solids(records: list[ShellAssemblyRecord],
+                         ctx=None
                          ) -> list[SolidAssemblyRecord]:
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
     from OCP.BRepCheck import BRepCheck_Analyzer
@@ -1904,7 +1987,7 @@ def _build_nested_solids(records: list[ShellAssemblyRecord]
                                 kind="SolidInvalid")
         # G13: sign check only; coarse precision is safe per the documented
         # error budget above.
-        vol = _shape_volume(solid, tol=_COARSE_VOLUME_TOL)
+        vol = _shape_volume(solid, tol=_COARSE_VOLUME_TOL, ctx=ctx)
         if not vol > 0:
             raise AssemblyError("result solid has non-positive volume",
                                 kind="SolidInvalid")
@@ -2481,6 +2564,7 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
                      candidate_face_ids_b=None,
                      prepared_a=None,
                      prepared_b=None,
+                     ctx=None,
                      ) -> BooleanAssemblyResult:
     """Classify exact B-rep patches and assemble union/intersection/A-B.
 
@@ -2494,9 +2578,16 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     S1: prepared_a/prepared_b are optional PreparedBRep wrappers for
     model_a/model_b; their precomputed boxes and edge indexes are
     reused instead of rebuilt (fallback: rebuilt per call as before).
+
+    S4: `ctx` is the per-Boolean-call QueryContext.  When None a fresh
+    one is created (the old clear_volume_cache() semantics: one call,
+    one cache lifetime).  The pipeline threads its context through so
+    the S3 shadow re-run shares volumes, classifiers and memos.
     """
-    # G13: one Boolean call, one volume-cache lifetime.
-    clear_volume_cache()
+    if ctx is None:
+        from .query import QueryContext
+        ctx = QueryContext(base_tol=float(base_tol),
+                           prepared_a=prepared_a, prepared_b=prepared_b)
     from OCP.BRep import BRep_Tool
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
     from OCP.BRepCheck import BRepCheck_Analyzer
@@ -2512,10 +2603,11 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         candidate_face_ids_a=candidate_face_ids_a,
         candidate_face_ids_b=candidate_face_ids_b,
         prepared_a=prepared_a,
-        prepared_b=prepared_b)
+        prepared_b=prepared_b,
+        ctx=ctx)
     selected = [d for d in decisions if d.keep]
     # G12b: capture region stats from _classify_pieces
-    region_stats = getattr(_classify_pieces, "region_stats", {})
+    region_stats = dict(ctx.region_stats)
 
     if not selected:
         empty = _empty_compound()
@@ -2577,8 +2669,8 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         raise AssemblyError("closed sewing result contains no shells",
                             kind="SewingFailed")
 
-    shell_records = _shell_records(raw_shells, float(sew_tol))
-    solids = _build_nested_solids(shell_records)
+    shell_records = _shell_records(raw_shells, float(sew_tol), ctx=ctx)
+    solids = _build_nested_solids(shell_records, ctx=ctx)
     if not solids:
         raise AssemblyError("closed shells produced no material solids",
                             kind="SolidBuildFailed")
@@ -2620,7 +2712,7 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     # Review correction C5: the reported result volume is evidence, so it
     # uses the full-precision path (fast now that volumes are routed), not
     # the coarse sign-check values stored on the solid records.
-    volume = float(sum(_shape_volume(s.solid) for s in solids))
+    volume = float(sum(_shape_volume(s.solid, ctx=ctx) for s in solids))
     edge_lineage = _build_edge_lineage(
         result_shape, selected, split, model_a, model_b, float(base_tol))
     section_payloads = _build_section_payloads(split, edge_lineage)
