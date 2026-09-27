@@ -17,10 +17,12 @@ truth here.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
+import time as _time
 
 from .freeform import FreeformError
 from .perf import count as _perf_count
@@ -28,6 +30,25 @@ from .spatial import HybridBoxIndex
 from .spatial import scan_box_indices as _near_box_indices
 from .split import ModelSplitResult
 from .step_ingest import BRepModel
+
+
+@contextmanager
+def _timed(_timers, key):
+    """Accumulate perf_counter milliseconds into _timers[key].
+
+    S8B: assembly sub-stage profiling.  Purely additive instrumentation:
+    when _timers is None the block runs untimed and behavior is
+    unchanged.
+    """
+    if _timers is None:
+        yield
+        return
+    t0 = _time.perf_counter()
+    try:
+        yield
+    finally:
+        _timers[key] = _timers.get(key, 0.0) + (
+            _time.perf_counter() - t0) * 1000.0
 
 
 class AssemblyError(FreeformError):
@@ -248,18 +269,40 @@ def _face_points(face, tol: float, *, max_points: int = 7,
     return np.vstack(candidates[:max_points])
 
 def _occt_point_verdict(point: np.ndarray, solids: list,
-                        tol: float) -> str:
-    """Raw BRepClass3d_SolidClassifier verdict against a list of solids."""
+                        tol: float, _solid_boxes=None,
+                        _classifiers=None) -> str:
+    """Raw BRepClass3d_SolidClassifier verdict against a list of solids.
+
+    S8A work-avoidance, both optional and behavior-preserving:
+    - _solid_boxes: per-solid conservative (6,) AABBs aligned with
+      `solids`.  A point farther than tol from a solid's box can be
+      neither IN nor ON (the surface lies inside the box and the ON
+      band is exactly tol), so that solid is skipped with no
+      classifier call.
+    - _classifiers: prebuilt BRepClass3d_SolidClassifier instances, one
+      per solid.  Construction costs ~2.5x a Perform call (measured
+      49 us vs 20 us per call on a box), so reuse across the many
+      witness points of one classify pass is pure win.  Perform fully
+      resets the classifier state each call.
+    Both default to None, which keeps the original construct-per-call
+    behavior (used by classify_point_two_classifier and unit tests).
+    """
     from OCP.BRepClass3d import BRepClass3d_SolidClassifier
     from OCP.TopAbs import TopAbs_IN, TopAbs_ON, TopAbs_OUT
     from OCP.gp import gp_Pnt
 
     p = gp_Pnt(float(point[0]), float(point[1]), float(point[2]))
+    t = float(tol)
     saw_on = False
-    for solid in solids:
+    for idx, solid in enumerate(solids):
+        if _solid_boxes is not None:
+            if _point_box_dist2(point, _solid_boxes[idx]) > t * t:
+                _perf_count("occt_box_prune")
+                continue  # provably neither IN nor ON
         _perf_count("solid_classifier_eval")
-        c = BRepClass3d_SolidClassifier(solid)
-        c.Perform(p, float(tol))
+        c = (_classifiers[idx] if _classifiers is not None
+             else BRepClass3d_SolidClassifier(solid))
+        c.Perform(p, t)
         st = c.State()
         if st == TopAbs_IN:
             return "inside"
@@ -271,7 +314,8 @@ def _occt_point_verdict(point: np.ndarray, solids: list,
 
 
 def _classify_point_in_model(point: np.ndarray, model: BRepModel,
-                             tol: float) -> str:
+                             tol: float, _solid_boxes=None,
+                             _classifiers=None) -> str:
     """Classify a point against the union of the model's OCCT solids."""
     if not model.solids:
         raise AssemblyError(
@@ -279,7 +323,8 @@ def _classify_point_in_model(point: np.ndarray, model: BRepModel,
             "shell-only input is unsupported at this stage",
             kind="ShellOnlyClassificationUnsupported")
     return _occt_point_verdict(
-        point, [sr.solid for sr in model.solids], tol)
+        point, [sr.solid for sr in model.solids], tol,
+        _solid_boxes=_solid_boxes, _classifiers=_classifiers)
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +376,54 @@ _N_RAYS_MIN = 3      # minimum valid agreeing rays for a verdict
 _TANGENT_COS = 0.05
 _RAY_PMAX = 1e100
 
+# S8A: signed full-line ray cast.  When True, every bidirectional pair
+# cast runs BOTH the old two-half-ray path and the new single signed
+# line path and raises LineCastShadowMismatch on any disagreement
+# (counts or degenerate/None).  Validation-only: the complete suite
+# must pass with zero mismatches (on both OCCT 8.0.1 and 7.8) before
+# the old path is trusted to be equivalent.  Default False (production
+# uses the single line cast).
+_LINE_CAST_SHADOW = False
+
+
+def _point_box_dist2(point: np.ndarray, box: np.ndarray) -> float:
+    """Squared distance from a point to a (6,) AABB [lo,hi]."""
+    p = np.asarray(point, dtype=np.float64).reshape(3)
+    dx = max(box[0] - p[0], 0.0, p[0] - box[3])
+    dy = max(box[1] - p[1], 0.0, p[1] - box[4])
+    dz = max(box[2] - p[2], 0.0, p[2] - box[5])
+    return dx * dx + dy * dy + dz * dz
+
+
+def _segment_hits_aabb(point: np.ndarray, direction: np.ndarray,
+                       box: np.ndarray, pmax: float) -> bool:
+    """Whether the segment point + t*direction, |t| <= pmax, meets the AABB.
+
+    Conservative slab test: a False return proves the segment cannot
+    touch anything inside the box, so a solid contained in the box can
+    be skipped.  A True return means "may hit" (no pruning).
+    """
+    p = np.asarray(point, dtype=np.float64).reshape(3)
+    d = np.asarray(direction, dtype=np.float64).reshape(3)
+    n = float(np.linalg.norm(d))
+    if n == 0.0:
+        return True
+    d = d / n
+    tmin, tmax = -pmax, pmax
+    for i in range(3):
+        di = d[i]
+        if abs(di) < 1e-300:
+            if p[i] < box[i] or p[i] > box[i + 3]:
+                return False
+        else:
+            t1 = (box[i] - p[i]) / di
+            t2 = (box[i + 3] - p[i]) / di
+            tmin = max(tmin, min(t1, t2))
+            tmax = min(tmax, max(t1, t2))
+            if tmin > tmax:
+                return False
+    return True
+
 
 
 def _conservative_boxes(shapes) -> np.ndarray:
@@ -381,7 +474,8 @@ class _MultiRayClassifier:
     def __init__(self, solids: list, tol: float, *,
                  edges: "tuple | None" = None,
                  edge_boxes: "np.ndarray | None" = None,
-                 edge_index: "HybridBoxIndex | None" = None):
+                 edge_index: "HybridBoxIndex | None" = None,
+                 solid_boxes: "np.ndarray | None" = None):
         from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
         from OCP.TopAbs import TopAbs_EDGE
         from OCP.TopExp import TopExp_Explorer
@@ -394,6 +488,14 @@ class _MultiRayClassifier:
             inter = IntCurvesFace_ShapeIntersector()
             inter.Load(solid, self._tol)
             self._intersectors.append(inter)
+        # S8A: per-solid conservative AABBs for ray segment pruning (a
+        # caller may supply them to share one computation across the
+        # ray and OCCT paths; otherwise computed here once).
+        if (solid_boxes is not None
+                and len(solid_boxes) == len(self._solids)):
+            self._solid_boxes = np.asarray(solid_boxes, dtype=np.float64)
+        else:
+            self._solid_boxes = _conservative_boxes(self._solids)
         self._edges = self._edge_compound(self._solids)
         # C6: per-edge list and conservative boxes for thresholded distances.
         # S1: a caller may supply prepared (deduplicated) edges and their
@@ -548,6 +650,68 @@ class _MultiRayClassifier:
                 return None
         return plus
 
+    def _cast_line_pair(self, point: np.ndarray,
+                        direction: np.ndarray) -> Optional[list[int]]:
+        """+d crossing counts per solid from ONE signed full-line cast.
+
+        S8A: replaces the two half-ray Performs of _cast_bidirectional
+        with a single Perform over [-_RAY_PMAX, +_RAY_PMAX], partitioning
+        hits by the sign of WParameter.  Same contract (returns the +d
+        counts, or None when the line is degenerate), same degenerate
+        rules: a hit with |w| < tol is exactly the union of the old
+        "+d hit within tol of the origin" and "-d hit within tol of the
+        origin" cases (the old -d ray saw the same geometric point at
+        w' = -w in (0, tol)); grazing and near-edge checks are
+        direction-sign agnostic.  The per-solid bidirectional even-sum
+        check is applied per solid as its hits are collected.
+
+        S8A: solids whose conservative AABB the signed segment cannot
+        meet are skipped without a Perform call (their counts stay 0,
+        an even contribution, and no degenerate condition can hide in
+        an empty hit list).
+        """
+        from OCP.TopoDS import TopoDS
+        from OCP.gp import gp_Ax1, gp_Dir, gp_Lin, gp_Pnt
+
+        d = np.asarray(direction, dtype=np.float64).reshape(3)
+        lin = gp_Lin(gp_Ax1(
+            gp_Pnt(float(point[0]), float(point[1]), float(point[2])),
+            gp_Dir(float(d[0]), float(d[1]), float(d[2]))))
+        plus = [0] * len(self._intersectors)
+        minus = [0] * len(self._intersectors)
+        for solid_i, inter in enumerate(self._intersectors):
+            if not _segment_hits_aabb(point, d, self._solid_boxes[solid_i],
+                                      _RAY_PMAX):
+                _perf_count("ray_aabb_prune")
+                continue  # segment cannot meet this solid: 0 crossings
+            _perf_count("ray_intersector_perform")
+            inter.Perform(lin, -_RAY_PMAX, _RAY_PMAX)
+            if not inter.IsDone():
+                return None
+            for i in range(1, inter.NbPnt() + 1):
+                w = float(inter.WParameter(i))
+                if abs(w) < self._tol:
+                    return None  # hit at/within tol of the origin
+                face = TopoDS.Face(inter.Face(i))
+                nrm = self._face_normal(
+                    face, float(inter.UParameter(i)),
+                    float(inter.VParameter(i)))
+                if nrm is None:
+                    return None
+                if abs(float(np.dot(nrm, d))) < _TANGENT_COS:
+                    return None  # grazing hit
+                hp = inter.Pnt(i)
+                if self._dist_to_edges(
+                        np.array([hp.X(), hp.Y(), hp.Z()])) < self._tol:
+                    return None  # within tol of an edge or vertex
+                if w > 0.0:
+                    plus[solid_i] += 1
+                else:
+                    minus[solid_i] += 1
+            if (plus[solid_i] + minus[solid_i]) % 2 == 1:
+                return None
+        return plus
+
     def classify(self, point: np.ndarray) -> str:
         """Return 'inside', 'outside', or 'unknown'.
 
@@ -560,7 +724,22 @@ class _MultiRayClassifier:
         verdicts = []
         for direction in _RAY_DIRECTIONS:
             _perf_count("ray_pair_cast")
-            counts = self._cast_bidirectional(p, direction)
+            if _LINE_CAST_SHADOW:
+                # S8A validation: run both paths; any disagreement
+                # (counts or degenerate/None) is a loud refusal, never
+                # a silent divergence.
+                old_counts = self._cast_bidirectional(p, direction)
+                new_counts = self._cast_line_pair(p, direction)
+                if old_counts != new_counts:
+                    raise AssemblyError(
+                        f"S8A line-cast shadow mismatch at "
+                        f"{tuple(float(x) for x in p)} direction "
+                        f"{tuple(float(x) for x in direction)}: "
+                        f"two-ray={old_counts} signed-line={new_counts}",
+                        kind="LineCastShadowMismatch")
+                counts = new_counts
+            else:
+                counts = self._cast_line_pair(p, direction)
             if counts is None:
                 continue
             verdicts.append(
@@ -591,7 +770,9 @@ def _raise_classifier_disagreement(point: np.ndarray, occt_verdict: str,
 
 
 def _agreed_point_verdict(point: np.ndarray, model: BRepModel, tol: float,
-                          ray: _MultiRayClassifier, ctx=None) -> str:
+                          ray: _MultiRayClassifier, ctx=None,
+                          _timers=None, _solid_boxes=None,
+                          _occt_classifiers=None) -> str:
     """Classify a decision witness with both classifiers.
 
     Returns the agreed 'inside'/'outside' verdict, or the OCCT
@@ -639,10 +820,14 @@ def _agreed_point_verdict(point: np.ndarray, model: BRepModel, tol: float,
                 if ctx is not None:
                     ctx.point_verdicts[key] = "outside"
                 return "outside"
-    occt = _classify_point_in_model(point, model, tol)
+    with _timed(_timers, "classify.occt_classifier"):
+        occt = _classify_point_in_model(point, model, tol,
+                                        _solid_boxes=_solid_boxes,
+                                        _classifiers=_occt_classifiers)
     if occt not in ("inside", "outside"):
         return occt
-    independent = ray.classify(point)
+    with _timed(_timers, "classify.ray_classifier"):
+        independent = ray.classify(point)
     if independent == occt:
         if ctx is not None:
             ctx.point_verdicts[key] = occt
@@ -786,7 +971,8 @@ def _witness_material_verdict(points: np.ndarray, classes: tuple[str, ...],
                               min_points: int = 3,
                               face_boxes: "np.ndarray | None" = None,
                               face_index: "HybridBoxIndex | None" = None,
-                              ctx=None) -> str:
+                              ctx=None,
+                              _timers=None) -> str:
     """Decide one patch's material state from dual-classified witnesses.
 
     G5 witness preference: witnesses at distance >= 10x tol from the other
@@ -810,10 +996,11 @@ def _witness_material_verdict(points: np.ndarray, classes: tuple[str, ...],
     under a 10x tol band.  NOT applied in _shell_records nesting either,
     which reuses those same near-boundary witnesses.
     """
-    dists = _point_boundary_distances(points, model, cap=20.0 * float(tol),
-                                      face_boxes=face_boxes,
-                                      face_index=face_index,
-                                      ctx=ctx)
+    with _timed(_timers, "classify.boundary_distance"):
+        dists = _point_boundary_distances(points, model, cap=20.0 * float(tol),
+                                          face_boxes=face_boxes,
+                                          face_index=face_index,
+                                          ctx=ctx)
     band = 10.0 * float(tol)
     far = [c for c, d in zip(classes, dists) if d >= band]
     near = [c for c, d in zip(classes, dists) if d < band]
@@ -1191,7 +1378,10 @@ def classify_untouched_single_witness(piece, other: "BRepModel", tol: float,
                                       ray, candidate_ids, *,
                                       face_boxes: "np.ndarray | None" = None,
                                       face_index: "HybridBoxIndex | None" = None,
-                                      ctx=None):
+                                      ctx=None,
+                                      _timers=None,
+                                      _solid_boxes=None,
+                                      _occt_classifiers=None):
     """Return (verdict, point) for a piece whose parent had no candidates.
 
     C9: the broad phase only widens the candidate set (per-face pads from
@@ -1216,17 +1406,22 @@ def classify_untouched_single_witness(piece, other: "BRepModel", tol: float,
     if piece.coincidence is not None:
         return None  # coincident pieces use the keep table
     try:
-        points = _face_points(piece.face, tol, max_points=3, min_points=1)
+        with _timed(_timers, "classify.witness_gen"):
+            points = _face_points(piece.face, tol, max_points=3, min_points=1)
     except AssemblyError:
         return None  # no stable witness at all: full rule refuses
-    dists = _point_boundary_distances(points, other, cap=20.0 * tol,
-                                      face_boxes=face_boxes,
-                                      face_index=face_index,
-                                      ctx=ctx)
+    with _timed(_timers, "classify.boundary_distance"):
+        dists = _point_boundary_distances(points, other, cap=20.0 * tol,
+                                          face_boxes=face_boxes,
+                                          face_index=face_index,
+                                          ctx=ctx)
     for p, d in sorted(zip(points, dists), key=lambda x: -x[1]):
         if d < 10.0 * tol:
             continue  # stay out of the confusion band
-        verdict = _agreed_point_verdict(p, other, tol, ray, ctx)
+        verdict = _agreed_point_verdict(p, other, tol, ray, ctx,
+                                        _timers=_timers,
+                                        _solid_boxes=_solid_boxes,
+                                        _occt_classifiers=_occt_classifiers)
         if verdict in ("inside", "outside"):
             return verdict, p
     return None  # no clean witness: full rule
@@ -1239,7 +1434,8 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                      candidate_face_ids_b=None,
                      prepared_a=None,
                      prepared_b=None,
-                     ctx=None) -> list[PatchDecision]:
+                     ctx=None,
+                     _timers=None) -> list[PatchDecision]:
     """Classify exact B-rep patches.
 
     candidate_face_ids_a/_b are the parent face ids appearing in ANY
@@ -1291,15 +1487,16 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
         # G12b: Build untouched-face regions. Only region representatives
         # (and touched faces) are classified; results propagate to the
         # rest of the region.
-        region_map, regions = _build_untouched_regions(
-            groups, split.section_edges, base_tol)
-        # Map face_id -> representative face_id (for non-representatives)
-        # Representative maps to itself.
-        rep_for = {}
-        for region_id, face_ids in regions.items():
-            rep = _choose_representative(face_ids, groups)
-            for fid in face_ids:
-                rep_for[fid] = rep
+        with _timed(_timers, "classify.region_build"):
+            region_map, regions = _build_untouched_regions(
+                groups, split.section_edges, base_tol)
+            # Map face_id -> representative face_id (for non-representatives)
+            # Representative maps to itself.
+            rep_for = {}
+            for region_id, face_ids in regions.items():
+                rep = _choose_representative(face_ids, groups)
+                for fid in face_ids:
+                    rep_for[fid] = rep
         # Faces to actually classify: touched faces + representatives
         # A face is classified if it's not in a region, or if it's the rep.
         def should_classify(face_id):
@@ -1330,11 +1527,22 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
         _px = (other_prepared.edge_index
                if other_prepared is not None else None)
         _other_solids = [sr.solid for sr in other.solids]
+        # S8A: per-solid conservative AABBs, computed once per side and
+        # shared by the ray path (segment/AABB pruning inside
+        # _cast_line_pair) and the OCCT path (far-solid pruning inside
+        # _occt_point_verdict).  Plus one reusable BRepClass3d
+        # classifier per solid: construction costs ~2.5x a Perform
+        # call, and Perform fully resets the state each call.
+        _other_solid_boxes = _conservative_boxes(_other_solids)
+        from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+        _occt_classifiers = [BRepClass3d_SolidClassifier(s)
+                             for s in _other_solids]
         ray = ctx.get_or_create(
             ("classifier", operand, float(ray_tol)),
             lambda: _MultiRayClassifier(
                 _other_solids, ray_tol,
-                edges=_pe, edge_boxes=_pb, edge_index=_px))
+                edges=_pe, edge_boxes=_pb, edge_index=_px,
+                solid_boxes=_other_solid_boxes))
         _other_face_boxes = (other_prepared.face_boxes
                              if other_prepared is not None else None)
         _other_face_index = (other_prepared.face_index
@@ -1348,8 +1556,9 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
             # to be ON the partner support with a matching normal-dot
             # sign, else CoincidenceWitnessMismatch.
             if piece.coincidence is not None:
-                cls = _classify_coincident_piece(
-                    piece, operand, base_tol)
+                with _timed(_timers, "classify.coincident"):
+                    cls = _classify_coincident_piece(
+                        piece, operand, base_tol)
                 keep, rev = _decision_rule(operation, operand, cls)
                 source = piece.face
                 selected = _reverse_face(source) if keep and rev else (
@@ -1378,10 +1587,13 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
             # and must clear the 10x tol confusion band; when the
             # shortcut does not apply, the full multi-witness rule runs
             # unchanged, so the missed-section backstop stays intact.
-            shortcut = classify_untouched_single_witness(
-                piece, other, tol, ray, candidate_ids,
-                face_boxes=_other_face_boxes, face_index=_other_face_index,
-                        ctx=ctx)
+            with _timed(_timers, "classify.single_witness"):
+                shortcut = classify_untouched_single_witness(
+                    piece, other, tol, ray, candidate_ids,
+                    face_boxes=_other_face_boxes, face_index=_other_face_index,
+                    ctx=ctx, _timers=_timers,
+                    _solid_boxes=_other_solid_boxes,
+                    _occt_classifiers=_occt_classifiers)
             _perf_count("single_witness_attempt")
             if shortcut is not None:
                 _perf_count("single_witness_hit")
@@ -1393,9 +1605,13 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                     # disagreement means the broad-phase "no candidate"
                     # proof was wrong, which would break the shortcut's
                     # soundness: refuse loudly, never silently.
-                    full_points = _face_points(piece.face, tol)
+                    with _timed(_timers, "classify.witness_gen"):
+                        full_points = _face_points(piece.face, tol)
                     full_classes = tuple(
-                        _agreed_point_verdict(p, other, tol, ray, ctx)
+                        _agreed_point_verdict(p, other, tol, ray, ctx,
+                                              _timers=_timers,
+                                              _solid_boxes=_other_solid_boxes,
+                                              _occt_classifiers=_occt_classifiers)
                         for p in full_points)
                     full_cls = _witness_material_verdict(
                         full_points, full_classes, other, tol,
@@ -1403,8 +1619,9 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                         parent_face_id=piece.parent_face_id,
                         piece_index=piece.piece_index,
                         min_points=3,
-                        face_boxes=_other_face_boxes, face_index=_other_face_index,
-                        ctx=ctx)
+                        face_boxes=_other_face_boxes,
+                        face_index=_other_face_index,
+                        ctx=ctx, _timers=_timers)
                     if full_cls != cls_word:
                         raise AssemblyError(
                             f"{operand} face {piece.parent_face_id} piece "
@@ -1435,9 +1652,13 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                 decisions_by_key[(piece.parent_face_id, piece.piece_index)] = dec
                 continue
             _perf_count("single_witness_fallback")
-            points = _face_points(piece.face, tol)
+            with _timed(_timers, "classify.witness_gen"):
+                points = _face_points(piece.face, tol)
             classes = tuple(
-                _agreed_point_verdict(p, other, tol, ray, ctx)
+                _agreed_point_verdict(p, other, tol, ray, ctx,
+                                      _timers=_timers,
+                                      _solid_boxes=_other_solid_boxes,
+                                      _occt_classifiers=_occt_classifiers)
                 for p in points)
             cls = _witness_material_verdict(
                 points, classes, other, tol,
@@ -1446,7 +1667,7 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                 piece_index=piece.piece_index,
                 min_points=3,
                 face_boxes=_other_face_boxes, face_index=_other_face_index,
-                        ctx=ctx)
+                ctx=ctx, _timers=_timers)
             # G2.1 canonical states: map the dual-classified
             # inside/outside verdict onto the four-state model before the
             # keep table.
@@ -1472,40 +1693,42 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
             decisions_by_key[(piece.parent_face_id, piece.piece_index)] = dec
 
         # G12b: Propagate representative decisions to skipped faces.
-        for face_id, piece, tol in skipped:
-            rep_id = rep_for[face_id]
-            # Find the representative's decision (piece_index 0 for untouched)
-            rep_key = (rep_id, 0)
-            if rep_key not in decisions_by_key:
-                # C7: never drop a face silently; a missing representative
-                # decision is an internal inconsistency, so refuse.
-                raise AssemblyError(
-                    f"{operand} face {face_id}: region representative "
-                    f"{rep_id} has no decision to propagate",
-                    kind="RegionPropagationInconsistent")
-            rep_dec = decisions_by_key[rep_key]
-            # Create propagated decision with this face's geometry
-            # but the representative's classification.
-            points = _face_points(piece.face, tol)
-            keep, rev = _decision_rule(operation, operand, rep_dec.classification)
-            source = piece.face
-            selected = _reverse_face(source) if keep and rev else (
-                source if keep else None)
-            out.append(PatchDecision(
-                operand=operand,
-                parent_face_id=face_id,
-                piece_index=piece.piece_index,
-                classification=rep_dec.classification,
-                keep=keep,
-                reverse_for_difference=rev,
-                witness_xyz=points[0],
-                witness_xyz_all=points,
-                witness_classifications=tuple(
-                    [rep_dec.classification] * len(points)),
-                source_face=source,
-                selected_face=selected,
-                propagated_from=rep_id,
-            ))
+        with _timed(_timers, "classify.propagation"):
+            for face_id, piece, tol in skipped:
+                rep_id = rep_for[face_id]
+                # Find the representative's decision (piece_index 0 for untouched)
+                rep_key = (rep_id, 0)
+                if rep_key not in decisions_by_key:
+                    # C7: never drop a face silently; a missing representative
+                    # decision is an internal inconsistency, so refuse.
+                    raise AssemblyError(
+                        f"{operand} face {face_id}: region representative "
+                        f"{rep_id} has no decision to propagate",
+                        kind="RegionPropagationInconsistent")
+                rep_dec = decisions_by_key[rep_key]
+                # Create propagated decision with this face's geometry
+                # but the representative's classification.
+                with _timed(_timers, "classify.witness_gen"):
+                    points = _face_points(piece.face, tol)
+                keep, rev = _decision_rule(operation, operand, rep_dec.classification)
+                source = piece.face
+                selected = _reverse_face(source) if keep and rev else (
+                    source if keep else None)
+                out.append(PatchDecision(
+                    operand=operand,
+                    parent_face_id=face_id,
+                    piece_index=piece.piece_index,
+                    classification=rep_dec.classification,
+                    keep=keep,
+                    reverse_for_difference=rev,
+                    witness_xyz=points[0],
+                    witness_xyz_all=points,
+                    witness_classifications=tuple(
+                        [rep_dec.classification] * len(points)),
+                    source_face=source,
+                    selected_face=selected,
+                    propagated_from=rep_id,
+                ))
 
         # Return region stats for the report
         _perf_count("region_propagated", len(skipped))
@@ -2591,6 +2814,7 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
                      prepared_a=None,
                      prepared_b=None,
                      ctx=None,
+                     _timers=None,
                      ) -> BooleanAssemblyResult:
     """Classify exact B-rep patches and assemble union/intersection/A-B.
 
@@ -2624,105 +2848,112 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
     if not base_tol > 0:
         raise ValueError("base_tol must be positive")
 
-    decisions = _classify_pieces(
-        model_a, model_b, split, operation, float(base_tol),
-        candidate_face_ids_a=candidate_face_ids_a,
-        candidate_face_ids_b=candidate_face_ids_b,
-        prepared_a=prepared_a,
-        prepared_b=prepared_b,
-        ctx=ctx)
-    selected = [d for d in decisions if d.keep]
-    # G12b: capture region stats from _classify_pieces
-    region_stats = dict(ctx.region_stats)
+    with _timed(_timers, "classify"):
+        decisions = _classify_pieces(
+            model_a, model_b, split, operation, float(base_tol),
+            candidate_face_ids_a=candidate_face_ids_a,
+            candidate_face_ids_b=candidate_face_ids_b,
+            prepared_a=prepared_a,
+            prepared_b=prepared_b,
+            ctx=ctx,
+            _timers=_timers)
+    with _timed(_timers, "commit.face_select"):
+        selected = [d for d in decisions if d.keep]
+        # G12b: capture region stats from _classify_pieces
+        region_stats = dict(ctx.region_stats)
 
-    if not selected:
-        empty = _empty_compound()
-        return BooleanAssemblyResult(
-            operation=operation, decisions=decisions, selected_faces=0,
-            sewed_shape=empty, shells=[], solids=[], shape=empty,
-            volume=0.0, free_edges=0, multiple_edges=0,
-            edge_lineage=[],
-            section_payloads=[],
-            notes=["empty material result"],
-            region_stats=region_stats)
+        if not selected:
+            empty = _empty_compound()
+            return BooleanAssemblyResult(
+                operation=operation, decisions=decisions, selected_faces=0,
+                sewed_shape=empty, shells=[], solids=[], shape=empty,
+                volume=0.0, free_edges=0, multiple_edges=0,
+                edge_lineage=[],
+                section_payloads=[],
+                notes=["empty material result"],
+                region_stats=region_stats)
 
-    if sew_tol is None:
-        face_tols = [
-            float(BRep_Tool.Tolerance_s(d.selected_face))
-            for d in selected if d.selected_face is not None]
-        sew_tol = max(float(base_tol),
-                      2.0 * max(face_tols, default=base_tol))
-    if not sew_tol > 0:
-        raise ValueError("sew_tol must be positive")
+        if sew_tol is None:
+            face_tols = [
+                float(BRep_Tool.Tolerance_s(d.selected_face))
+                for d in selected if d.selected_face is not None]
+            sew_tol = max(float(base_tol),
+                          2.0 * max(face_tols, default=base_tol))
+        if not sew_tol > 0:
+            raise ValueError("sew_tol must be positive")
 
-    sew = BRepBuilderAPI_Sewing(
-        float(sew_tol), True, True, True, False)
-    sew.SetSameParameterMode(True)
-    sew.SetLocalTolerancesMode(True)
-    for d in selected:
-        sew.Add(d.selected_face)
-    sew.Perform()
+    with _timed(_timers, "commit.sewing"):
+        sew = BRepBuilderAPI_Sewing(
+            float(sew_tol), True, True, True, False)
+        sew.SetSameParameterMode(True)
+        sew.SetLocalTolerancesMode(True)
+        for d in selected:
+            sew.Add(d.selected_face)
+        sew.Perform()
 
-    free = int(sew.NbFreeEdges())
-    multi = int(sew.NbMultipleEdges())
-    if multi:
-        raise AssemblyError(
-            f"sewing produced {multi} non-manifold multiple edge(s)",
-            kind="NonManifoldAssembly")
-    if free:
-        raise AssemblyError(
-            f"sewing left {free} free boundary edge(s)",
-            kind="OpenAssembly")
+        free = int(sew.NbFreeEdges())
+        multi = int(sew.NbMultipleEdges())
+        if multi:
+            raise AssemblyError(
+                f"sewing produced {multi} non-manifold multiple edge(s)",
+                kind="NonManifoldAssembly")
+        if free:
+            raise AssemblyError(
+                f"sewing left {free} free boundary edge(s)",
+                kind="OpenAssembly")
 
-    sewed = sew.SewedShape()
-    if sewed.IsNull():
-        raise AssemblyError("OCCT sewing returned a null result",
-                            kind="SewingFailed")
-    if not BRepCheck_Analyzer(sewed, True).IsValid():
-        raise AssemblyError("sewed patch complex is B-rep invalid",
-                            kind="SewingInvalid")
+        sewed = sew.SewedShape()
+        if sewed.IsNull():
+            raise AssemblyError("OCCT sewing returned a null result",
+                                kind="SewingFailed")
+        if not BRepCheck_Analyzer(sewed, True).IsValid():
+            raise AssemblyError("sewed patch complex is B-rep invalid",
+                                kind="SewingInvalid")
 
-    for d in selected:
-        try:
-            d.sewed_face = (sew.Modified(d.selected_face)
-                            if sew.IsModified(d.selected_face)
-                            else d.selected_face)
-        except Exception:
-            d.sewed_face = d.selected_face
+        for d in selected:
+            try:
+                d.sewed_face = (sew.Modified(d.selected_face)
+                                if sew.IsModified(d.selected_face)
+                                else d.selected_face)
+            except Exception:
+                d.sewed_face = d.selected_face
 
-    raw_shells = _extract_shells(sewed)
-    if not raw_shells:
-        raise AssemblyError("closed sewing result contains no shells",
-                            kind="SewingFailed")
+    with _timed(_timers, "commit.shell_extract"):
+        raw_shells = _extract_shells(sewed)
+        if not raw_shells:
+            raise AssemblyError("closed sewing result contains no shells",
+                                kind="SewingFailed")
 
-    shell_records = _shell_records(raw_shells, float(sew_tol), ctx=ctx)
-    solids = _build_nested_solids(shell_records, ctx=ctx)
+    with _timed(_timers, "commit.shell_records"):
+        shell_records = _shell_records(raw_shells, float(sew_tol), ctx=ctx)
+    with _timed(_timers, "commit.solid_build"):
+        solids = _build_nested_solids(shell_records, ctx=ctx)
     if not solids:
         raise AssemblyError("closed shells produced no material solids",
                             kind="SolidBuildFailed")
 
-    result_shape = (solids[0].solid if len(solids) == 1
-                    else _compound_solids(solids))
-    # G2.5: a union of solids that only touch (along an edge or at a
-    # point) is non-manifold. Refuse typed by default; the optional
-    # allow_nonmanifold flag returns the compound with the contact
-    # recorded in the report notes.
-    touching_solids = (operation == "union" and len(solids) > 1
-                       and _solids_touch(solids, max(float(base_tol),
-                                                    float(sew_tol)) * 4.0))
-    if touching_solids and not allow_nonmanifold:
-        raise AssemblyError(
-            f"union of {len(solids)} solids that touch geometrically: "
-            f"non-manifold result refused",
-            kind="NonManifoldResult")
-    # C3: a single solid whose boundary touches itself is non-manifold too.
-    self_touch = _self_touching_edge_pairs(
-        result_shape, max(float(base_tol), float(sew_tol)) * 4.0)
-    if self_touch and not allow_nonmanifold:
-        raise AssemblyError(
-            f"result boundary touches itself along {self_touch} coincident "
-            f"edge pair(s): non-manifold result refused",
-            kind="NonManifoldResult")
+    with _timed(_timers, "commit.topo_checks"):
+        result_shape = (solids[0].solid if len(solids) == 1
+                        else _compound_solids(solids))
+        touching_solids = (operation == "union" and len(solids) > 1
+                           and _solids_touch(solids, max(float(base_tol),
+                                                        float(sew_tol)) * 4.0))
+        if touching_solids and not allow_nonmanifold:
+            raise AssemblyError(
+                f"union of {len(solids)} solids that touch geometrically: "
+                f"non-manifold result refused",
+                kind="NonManifoldResult")
+        # C3: a single solid whose boundary touches itself is non-manifold too.
+        self_touch = _self_touching_edge_pairs(
+            result_shape, max(float(base_tol), float(sew_tol)) * 4.0)
+        if self_touch and not allow_nonmanifold:
+            raise AssemblyError(
+                f"result boundary touches itself along {self_touch} coincident "
+                f"edge pair(s): non-manifold result refused",
+                kind="NonManifoldResult")
+        if not BRepCheck_Analyzer(result_shape, True).IsValid():
+            raise AssemblyError("final assembled result is B-rep invalid",
+                                kind="SolidInvalid")
     notes = []
     if self_touch:
         notes.append(
@@ -2732,16 +2963,15 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         notes.append(
             f"non-manifold contact accepted: {len(solids)} touching "
             f"solids returned as a compound (allow_nonmanifold=True)")
-    if not BRepCheck_Analyzer(result_shape, True).IsValid():
-        raise AssemblyError("final assembled result is B-rep invalid",
-                            kind="SolidInvalid")
     # Review correction C5: the reported result volume is evidence, so it
     # uses the full-precision path (fast now that volumes are routed), not
     # the coarse sign-check values stored on the solid records.
-    volume = float(sum(_shape_volume(s.solid, ctx=ctx) for s in solids))
-    edge_lineage = _build_edge_lineage(
-        result_shape, selected, split, model_a, model_b, float(base_tol))
-    section_payloads = _build_section_payloads(split, edge_lineage)
+    with _timed(_timers, "commit.volume"):
+        volume = float(sum(_shape_volume(s.solid, ctx=ctx) for s in solids))
+    with _timed(_timers, "commit.lineage"):
+        edge_lineage = _build_edge_lineage(
+            result_shape, selected, split, model_a, model_b, float(base_tol))
+        section_payloads = _build_section_payloads(split, edge_lineage)
 
     return BooleanAssemblyResult(
         operation=operation,

@@ -3301,3 +3301,77 @@ Notes:
   ambiguous contacts on first placement); the suite-proven converted
   sphere cap covers the NURBS-section class at 0.68s.
 - nightly.yml step renamed to "fails if a pinned case exceeds its budget".
+
+## S8B: assembly sub-stage profile (27 Sept 2026)
+
+Branch `speed/s8b-assembly-profile` (`26e8cdd`); instrumentation only,
+no behavior change (88/88 s3/s4/s6/s7 tests pass).
+
+`_timed` accumulator threaded through assemble_boolean ->
+_classify_pieces -> _agreed_point_verdict / _witness_material_verdict /
+classify_untouched_single_witness; substage timings in
+report["stages"]["assembly"]["substage_ms"]. Profiler:
+tools/review_probes/profile_s8b.py.
+
+- plate (wall 5.71s): CLASSIFY 0.552s (9.7% of wall; ray 5.4%, occt
+  2.2%); COMMIT 2.482s (43.4%; lineage 13.7%, shell_records 8.4%,
+  solid_build 6.6%, volume 5.8%, sewing 4.4%, topo_checks 4.2%).
+- many64 (wall 20.60s): CLASSIFY 11.010s (53.4% of wall; ray 32.0%,
+  occt 18.2%, boundary_distance 0.8%); COMMIT 3.484s (16.9%;
+  lineage 13.8%).
+
+Decision vs the 38%-of-wall bar for 8-core 1.5x: many64's
+point-classification core (occt+ray+bdistance) = 51.0% of wall --
+CLEARS the bar (ideal Amdahl ~1.8x), so an S8C
+parallel-classification / serial-commit prototype is justified for
+the many workload. The plate (9.7%) does not clear it; its cost is
+serial commit-side OCCT work.
+
+Side findings: commit.lineage (evidence bookkeeping) is ~14% of wall
+on BOTH benchmarks -- a serial work-avoidance target of its own; the
+ray classifier is the single biggest leaf on many64 (32.0%), which is
+what the S8A proposals (signed line cast, per-solid AABB pruning)
+attack. Recommended order: S8A first, re-profile, then S8C if the
+classification core still clears 38%.
+
+## S8A: ray work-avoidance (27 Sept 2026)
+
+Branch `speed/s8a-ray-avoidance` (uncommitted at time of writing; stacked
+on `speed/s8b-assembly-profile`). Implemented per the S8B recommendation
+(the four no-thread items; the two parallel sketches deferred).
+
+1. `_MultiRayClassifier._cast_line_pair`: one signed full-line
+   `Perform(lin, -PMAX, +PMAX)` per pair instead of two half-ray
+   Performs; hits partitioned by sign of WParameter. Same contract,
+   same degenerate rules (|w| < tol unifies the two near-origin cases).
+2. Per-solid AABB pruning for rays (slab test on the signed segment;
+   counter `ray_aabb_prune`).
+3. Per-solid AABB pruning for the OCCT classifier (point farther than
+   tol from a solid's box can be neither IN nor ON; counter
+   `occt_box_prune`). Boxes/classifiers threaded through one_side ->
+   classify_untouched_single_witness / _agreed_point_verdict ->
+   _classify_point_in_model -> _occt_point_verdict.
+4. One `BRepClass3d_SolidClassifier` per solid per classify pass,
+   reused across witness points (construction measured 49 us vs
+   20 us per Perform, 2.5x).
+
+Validation (the 100% shadow rule): `_LINE_CAST_SHADOW` runs old and
+new paths on every pair cast, raises `LineCastShadowMismatch` on any
+divergence. OCCT 8.0.1 shadow subset 12/12 PASS, OCCT 7.8.1 5/5
+runnable PASS, zero mismatches in either log. New
+tests/test_s8a_ray_avoidance.py 8/8. Targeted suite (shadow OFF):
+72 pytest tests pass, test_brep_pipeline ALL PASS,
+test_g7_seam_stress PASS.
+
+Measured (quiet machine, S8B profiler re-run): many64 wall
+20.60s -> 15.63s (0.76x); occt leaf 3.740s -> 0.249s (93% down,
+box pruning + reuse); ray leaf 6.596s -> 5.001s (24% down).
+Prune counters (many64): ray_aabb_prune 290266 vs 14124 performs;
+occt_box_prune 29120 vs 2688 evals. Plate 5.71s -> 5.34s (0.94x).
+
+S8C decision: the point-classification core (occt+ray+bdistance) on
+many64 is now 34.6% of wall -- BELOW the ~38% bar for 8-core 1.5x
+(ideal Amdahl ceiling ~1.43x). Recommendation: do NOT build S8C.
+Largest remaining leaf is commit.lineage (evidence bookkeeping):
+18.2% (many64) / 14.4% (plate), serial by design -- the next
+work-avoidance target if further speedup is wanted.
