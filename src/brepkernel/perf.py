@@ -62,6 +62,8 @@ S3_SHADOW_MISMATCH = "s3_shadow_mismatch"          # S3: shadow disagreement
 CTX_VOLUME_HIT = "ctx_volume_hit"                  # S4: QueryContext volume memo
 CTX_POINT_VERDICT_HIT = "ctx_point_verdict_hit"    # S4: QueryContext verdict memo
 CTX_BOUNDARY_DISTANCE_HIT = "ctx_boundary_distance_hit"  # S4: QueryContext dist memo
+POINT_VERDICT_BBOX_SHORTCIRCUIT = "point_verdict_bbox_shortcircuit"  # SX: point farther than tol outside model bbox -> "outside", both classifiers skipped
+SAMEDOMAIN_BBOX_SHORTCIRCUIT = "samedomain_bbox_shortcircuit"  # S5: bbox skips canonicalization
 
 CANONICAL_COUNTERS = (
     EXACT_FACE_DISTANCE,

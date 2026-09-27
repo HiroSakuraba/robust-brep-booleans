@@ -605,7 +605,18 @@ def _agreed_point_verdict(point: np.ndarray, model: BRepModel, tol: float,
     The verdict is a pure function of those inputs, so a hit is exactly
     what a fresh dual classification would return; disagreements raise
     and are never cached.
+
+    SX: geometric short-circuit.  When the point is farther than `tol`
+    outside the model's conservative bbox, the verdict is provably
+    "outside" and both classifiers are skipped: the solid lies inside
+    its bbox, and OCCT's boundary (ON) band is exactly `tol`, so the
+    OCCT half could only say "outside" and the multi-ray half has no
+    confusion zone to arbitrate.  Conservative: the proof fires only
+    when dist(point, bbox) > tol; every other point -- inside the bbox
+    or within `tol` of it -- takes the full dual path unchanged, and a
+    model with no solids still raises via the existing path below.
     """
+    key = None
     if ctx is not None:
         from .query import _point_key
         key = (_point_key(point), id(model), id(ray), float(tol))
@@ -613,6 +624,21 @@ def _agreed_point_verdict(point: np.ndarray, model: BRepModel, tol: float,
         if hit is not None:
             _perf_count("ctx_point_verdict_hit")
             return hit
+    if getattr(model, "solids", None):
+        from .query import _conservative_model_bbox
+        bb = (ctx.model_bbox(model) if ctx is not None
+              else _conservative_model_bbox(model))
+        if bb is not None:
+            p = np.asarray(point, dtype=np.float64).reshape(3)
+            dx = max(bb[0] - p[0], 0.0, p[0] - bb[3])
+            dy = max(bb[1] - p[1], 0.0, p[1] - bb[4])
+            dz = max(bb[2] - p[2], 0.0, p[2] - bb[5])
+            t = float(tol)
+            if dx * dx + dy * dy + dz * dz > t * t:
+                _perf_count("point_verdict_bbox_shortcircuit")
+                if ctx is not None:
+                    ctx.point_verdicts[key] = "outside"
+                return "outside"
     occt = _classify_point_in_model(point, model, tol)
     if occt not in ("inside", "outside"):
         return occt
