@@ -104,20 +104,6 @@ class BooleanSession:
         return False
 
 
-def boolean_brep_many(base, tools, op="difference", **kw):
-    """S7 Phase 1 reference: sequential multi-tool Boolean.
+from .many import boolean_brep_many  # noqa: F401  (public API lives in many.py)
 
-    Applies each tool to the previous result with plain ``boolean_brep``
-    calls (no cross-tool optimization). Returns
-    ``(final_shape, {"steps": [reports...], "optimized": False})``.
-    Later S7 phases may return ``optimized: True`` once equivalence with
-    this reference is demonstrated.
-    """
-    from .pipeline import boolean_brep
-
-    out = base
-    reports = []
-    for tool in tools:
-        out, report = boolean_brep(out, tool, op, **kw)
-        reports.append(report)
-    return out, {"steps": reports, "optimized": False}
+__all__ = ["BRepSessionClosed", "BooleanSession", "boolean_brep_many"]
