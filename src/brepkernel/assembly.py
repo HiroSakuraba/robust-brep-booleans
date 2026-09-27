@@ -24,6 +24,8 @@ import numpy as np
 
 from .freeform import FreeformError
 from .perf import count as _perf_count
+from .spatial import HybridBoxIndex
+from .spatial import scan_box_indices as _near_box_indices
 from .split import ModelSplitResult
 from .step_ingest import BRepModel
 
@@ -352,13 +354,6 @@ def _conservative_boxes(shapes) -> np.ndarray:
     return out
 
 
-def _near_box_indices(boxes: np.ndarray, p, radius: float) -> np.ndarray:
-    """Indices of boxes within `radius` of point p (conservative)."""
-    q = np.asarray(p, dtype=np.float64)
-    return np.nonzero(np.all((q >= boxes[:, :3] - radius)
-                             & (q <= boxes[:, 3:] + radius), axis=1))[0]
-
-
 class _MultiRayClassifier:
     """Independent point-in-solid classifier via ray parity.
 
@@ -385,7 +380,8 @@ class _MultiRayClassifier:
 
     def __init__(self, solids: list, tol: float, *,
                  edges: "tuple | None" = None,
-                 edge_boxes: "np.ndarray | None" = None):
+                 edge_boxes: "np.ndarray | None" = None,
+                 edge_index: "HybridBoxIndex | None" = None):
         from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
         from OCP.TopAbs import TopAbs_EDGE
         from OCP.TopExp import TopExp_Explorer
@@ -410,6 +406,15 @@ class _MultiRayClassifier:
             self._edge_list = list(edges)
             self._edge_boxes = np.asarray(edge_boxes, dtype=np.float64)
             _perf_count("prepared_edge_index_hit")
+            # S2: reuse the prepared proximity index, built over these same
+            # boxes in this same order; otherwise wrap the local boxes
+            # (vector path below the threshold, BVH above).  The query set
+            # is identical to the flat scan either way.
+            if (edge_index is not None
+                    and len(edge_index) == len(self._edge_list)):
+                self._edge_index = edge_index
+            else:
+                self._edge_index = HybridBoxIndex(self._edge_boxes)
         else:
             self._edge_list = []
             for _solid in self._solids:
@@ -419,6 +424,7 @@ class _MultiRayClassifier:
                     _ex.Next()
             self._edge_boxes = _conservative_boxes(self._edge_list)
             _perf_count("edge_box_build")
+            self._edge_index = HybridBoxIndex(self._edge_boxes)
 
     @staticmethod
     def _edge_compound(solids):
@@ -470,7 +476,7 @@ class _MultiRayClassifier:
         from OCP.BRepExtrema import BRepExtrema_DistShapeShape
         from OCP.gp import gp_Pnt
 
-        near = _near_box_indices(self._edge_boxes, point, 2.0 * self._tol)
+        near = self._edge_index.query_point(point, 2.0 * self._tol)
         if len(near) == 0:
             return 2.0 * self._tol
         v = BRepBuilderAPI_MakeVertex(
@@ -642,6 +648,7 @@ def _point_boundary_distances(points: np.ndarray,
                               cap: float = float("inf"),
                               *,
                               face_boxes: "np.ndarray | None" = None,
+                              face_index: "HybridBoxIndex | None" = None,
                               ) -> list[float]:
     """Distance from each point to the model's faces, capped at `cap` (C6).
 
@@ -654,6 +661,10 @@ def _point_boundary_distances(points: np.ndarray,
     PreparedBRep). They are used verbatim when their length matches the
     model's face count; any mismatch falls back to the per-call build,
     so a stale array can never silently change a distance.
+
+    S2: `face_index` may carry the prepared HybridBoxIndex built over those
+    same boxes.  It is preferred when its length matches; the query set is
+    identical to the flat scan.
     """
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
     from OCP.BRepExtrema import BRepExtrema_DistShapeShape
@@ -661,8 +672,12 @@ def _point_boundary_distances(points: np.ndarray,
 
     faces = [fr.face for fr in model.faces]
     boxes = None
+    index = None
     if np.isfinite(cap):
-        if face_boxes is not None and len(face_boxes) == len(faces):
+        if face_index is not None and len(face_index) == len(faces):
+            index = face_index
+            _perf_count("prepared_face_box_hit")
+        elif face_boxes is not None and len(face_boxes) == len(faces):
             boxes = face_boxes
             _perf_count("prepared_face_box_hit")
         else:
@@ -676,8 +691,11 @@ def _point_boundary_distances(points: np.ndarray,
                     pass
     dists = []
     for p in points:
-        idx = (range(len(faces)) if boxes is None
-               else _near_box_indices(boxes, p, cap))
+        if index is not None:
+            idx = index.query_point(p, cap)
+        else:
+            idx = (range(len(faces)) if boxes is None
+                   else _near_box_indices(boxes, p, cap))
         if len(idx) == 0:
             dists.append(cap)
             continue
@@ -700,7 +718,8 @@ def _witness_material_verdict(points: np.ndarray, classes: tuple[str, ...],
                               operand: str, parent_face_id: int,
                               piece_index: int,
                               min_points: int = 3,
-                              face_boxes: "np.ndarray | None" = None) -> str:
+                              face_boxes: "np.ndarray | None" = None,
+                              face_index: "HybridBoxIndex | None" = None) -> str:
     """Decide one patch's material state from dual-classified witnesses.
 
     G5 witness preference: witnesses at distance >= 10x tol from the other
@@ -725,7 +744,8 @@ def _witness_material_verdict(points: np.ndarray, classes: tuple[str, ...],
     which reuses those same near-boundary witnesses.
     """
     dists = _point_boundary_distances(points, model, cap=20.0 * float(tol),
-                                      face_boxes=face_boxes)
+                                      face_boxes=face_boxes,
+                                      face_index=face_index)
     band = 10.0 * float(tol)
     far = [c for c, d in zip(classes, dists) if d >= band]
     near = [c for c, d in zip(classes, dists) if d < band]
@@ -1101,7 +1121,8 @@ def _choose_representative(face_ids, groups):
 
 def classify_untouched_single_witness(piece, other: "BRepModel", tol: float,
                                       ray, candidate_ids, *,
-                                      face_boxes: "np.ndarray | None" = None):
+                                      face_boxes: "np.ndarray | None" = None,
+                                      face_index: "HybridBoxIndex | None" = None):
     """Return (verdict, point) for a piece whose parent had no candidates.
 
     C9: the broad phase only widens the candidate set (per-face pads from
@@ -1130,7 +1151,8 @@ def classify_untouched_single_witness(piece, other: "BRepModel", tol: float,
     except AssemblyError:
         return None  # no stable witness at all: full rule refuses
     dists = _point_boundary_distances(points, other, cap=20.0 * tol,
-                                      face_boxes=face_boxes)
+                                      face_boxes=face_boxes,
+                                      face_index=face_index)
     for p, d in sorted(zip(points, dists), key=lambda x: -x[1]):
         if d < 10.0 * tol:
             continue  # stay out of the confusion band
@@ -1218,10 +1240,14 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
         _pe = other_prepared.edges if other_prepared is not None else None
         _pb = (other_prepared.edge_boxes
                if other_prepared is not None else None)
+        _px = (other_prepared.edge_index
+               if other_prepared is not None else None)
         ray = _MultiRayClassifier(
             [sr.solid for sr in other.solids], ray_tol,
-            edges=_pe, edge_boxes=_pb)
+            edges=_pe, edge_boxes=_pb, edge_index=_px)
         _other_face_boxes = (other_prepared.face_boxes
+                             if other_prepared is not None else None)
+        _other_face_index = (other_prepared.face_index
                              if other_prepared is not None else None)
         # Store decisions by (face_id, piece_index) for propagation
         decisions_by_key = {}
@@ -1264,7 +1290,7 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
             # unchanged, so the missed-section backstop stays intact.
             shortcut = classify_untouched_single_witness(
                 piece, other, tol, ray, candidate_ids,
-                face_boxes=_other_face_boxes)
+                face_boxes=_other_face_boxes, face_index=_other_face_index)
             _perf_count("single_witness_attempt")
             if shortcut is not None:
                 _perf_count("single_witness_hit")
@@ -1286,7 +1312,7 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                         parent_face_id=piece.parent_face_id,
                         piece_index=piece.piece_index,
                         min_points=3,
-                        face_boxes=_other_face_boxes)
+                        face_boxes=_other_face_boxes, face_index=_other_face_index)
                     if full_cls != cls_word:
                         raise AssemblyError(
                             f"{operand} face {piece.parent_face_id} piece "
@@ -1327,7 +1353,7 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                 parent_face_id=piece.parent_face_id,
                 piece_index=piece.piece_index,
                 min_points=3,
-                face_boxes=_other_face_boxes)
+                face_boxes=_other_face_boxes, face_index=_other_face_index)
             # G2.1 canonical states: map the dual-classified
             # inside/outside verdict onto the four-state model before the
             # keep table.

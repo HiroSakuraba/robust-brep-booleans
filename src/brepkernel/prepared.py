@@ -40,6 +40,7 @@ from typing import Optional, Union
 import numpy as np
 
 from . import perf as _perf
+from .spatial import HybridBoxIndex
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,8 @@ class PreparedBRep:
     freeform_mask: np.ndarray           # (n,) bool, True = freeform/NURBS
     all_faces_analytic: bool
     max_tolerance: float
+    face_index: HybridBoxIndex             # S2: proximity index over face_boxes
+    edge_index: HybridBoxIndex             # S2: proximity index over edge_boxes
     base_tol: float = 1e-7
 
     @property
@@ -183,6 +186,8 @@ def _prepare_from_model(model, *, base_tol: float) -> PreparedBRep:
 
     asm = _import_assembly()
     edges = _build_unique_edges(model)
+    face_boxes = _build_face_boxes(model)
+    edge_boxes = _build_edge_boxes(edges)
     surface_kinds = [str(fr.surface_type) for fr in model.faces]
     analytic_mask = np.array(
         ["BSpline" not in (k or "") for k in surface_kinds], dtype=bool)
@@ -190,9 +195,9 @@ def _prepare_from_model(model, *, base_tol: float) -> PreparedBRep:
         [fr.freeform is not None for fr in model.faces], dtype=bool)
     return PreparedBRep(
         model=model,
-        face_boxes=_build_face_boxes(model),
+        face_boxes=face_boxes,
         edges=edges,
-        edge_boxes=_build_edge_boxes(edges),
+        edge_boxes=edge_boxes,
         face_tol=np.array([float(fr.tol_face) for fr in model.faces],
                           dtype=np.float64),
         face_adjacency=_build_face_adjacency(model),
@@ -202,6 +207,8 @@ def _prepare_from_model(model, *, base_tol: float) -> PreparedBRep:
         all_faces_analytic=asm._all_faces_analytic(model.shape),
         max_tolerance=float(model_max_tolerance(model)),
         base_tol=float(base_tol),
+        face_index=HybridBoxIndex(face_boxes),
+        edge_index=HybridBoxIndex(edge_boxes),
     )
 
 

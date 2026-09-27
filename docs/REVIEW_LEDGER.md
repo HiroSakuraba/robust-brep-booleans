@@ -2930,6 +2930,75 @@ tolerance 2.18e-5 exceeds 1.28e-5 ceiling) instead of crashing.
 
 ---
 
+## S2 - HybridBoxIndex: spatial index for box queries (26 Sept 2026, branch speed/s2-spatial-index)
+
+What changed:
+- New module src/brepkernel/spatial.py: HybridBoxIndex, one
+  implementation for face-box and edge-box point/radius queries. Below
+  BVH_THRESHOLD (256) boxes it is the vectorized NumPy scan (a tree
+  cannot beat it there); at/above it builds a median-split
+  bounding-volume hierarchy, no third-party dependency. Queries traverse
+  the tree and apply the identical per-box test at the leaves, so the
+  returned candidate set is exactly the vector scan's set (a fortiori
+  the conservative superset the plan requires). BRepExtrema stays the
+  exact test downstream. Pruning safety: node bounds are exact min/max
+  of the child boxes and correctly-rounded subtraction is monotone, so
+  a box passing the per-box test implies every ancestor passes the
+  prune test; the tree can never miss a scan candidate.
+- prepared.py: PreparedBRep gains face_index / edge_index, built eagerly
+  at prepare time (immutable like the rest).
+- assembly.py: _MultiRayClassifier(..., edge_index=None) and
+  _point_boundary_distances(..., face_index=None) prefer the prepared
+  index; one_side threads both through from other_prepared.
+  _witness_material_verdict and classify_untouched_single_witness
+  forward face_index. All keyword-only, fallback-safe: a length
+  mismatch falls back to the old paths, so stale data can never
+  silently change a result. The prepared edge_index is only ever used
+  together with the prepared edge list it was built over (same order),
+  never against the explorer's list. The old _near_box_indices scan now
+  lives in spatial.py as scan_box_indices (same code, one home); the
+  fallback paths still use it.
+- perf.py: two canonical counters, bvh_query and vector_scan_query.
+- tests/test_spatial_index.py (new): 5 groups - randomized BVH-vs-scan
+  set equality (20k queries x 5 sizes incl. degenerate boxes, zero
+  radii, on-boundary points), threshold boundary behavior via uses_bvh
+  and the perf counters, degenerate inputs (empty, singleton, 1e8
+  offsets, inf radius), prepared-boolean verdict equivalence with the
+  index live and zero rebuilds, mismatched-index fallback.
+- tools/review_probes/bench_s2_bvh.py (new): crossover benchmark;
+  tools/review_probes/probe_s2_1M.py (new): the plan's 1M-query gate.
+
+Measurements (26 Sept 2026, local machine, OCCT 8.0.1 venv):
+- Crossover (production-like radii, cap = 20*tol, median per query,
+  best of 3): BVH leads from N ~= 32 up: 1.07x at 32, 1.31x at 256,
+  1.72x at 512, 2.28x at 1024, 5.12x at 4096 (vector 243 us, BVH
+  47.5 us). Threshold set to 256 for cross-runner margin; leaf size 32
+  (sweep winner at 4096: 8 -> 47.6 us, 16 -> 44.9 us, 32 -> 43.3 us).
+  Note: the first traversal cut only reached 1.64x at 4096; scalar
+  per-node comparisons in the hot loop (instead of np.any on
+  temporaries) got it to 5.12x, clearing the plan's 3x gate at 4096.
+- 1M randomized queries (N = 256..4096, degenerate/duplicate boxes,
+  zero radii, on-boundary points): missing = 0, extra = 0 (exact set
+  equality), 147 s.
+- Production plate (262 faces, prepared boolean): bvh_query=1654,
+  vector_scan_query=1472 (plate side on the BVH; slot and result-side
+  geometry on the vector path), face_box_build=0, edge_box_build=2
+  (result-side classifiers, pre-existing), verdict and volume
+  identical to raw.
+- Honest caveat: at 262 faces the per-query saving is ~7 us, so S2 is
+  worth ~10 ms on the plate. The payoff scales with model size; that
+  is what the plan's synthetic gate measures.
+
+Regression: new 5/5 pass; all 40 suites green on the re-run
+(full list in ~/workspace/s2_suite_logs/suite.log).
+Zero em dashes added.
+
+S2 COMPLETE per its pass criteria: 1M queries with zero missing
+candidates; downstream verdicts match on the full suite; 5.12x >= 3x
+at 4096 boxes.
+
+---
+
 ## S0 - Expensive-call profiler (26 Sept 2026, branch speed/s0-profiler)
 
 Scope: speed-improvement plan step S0. Add a zero-cost-when-disabled

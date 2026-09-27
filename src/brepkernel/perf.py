@@ -53,6 +53,8 @@ SINGLE_WITNESS_FALLBACK = "single_witness_fallback"  # full rule ran instead
 REGION_PROPAGATED = "region_propagated"          # G12b propagated decisions
 PREPARED_FACE_BOX_HIT = "prepared_face_box_hit"  # S1: reused prepared face boxes
 PREPARED_EDGE_INDEX_HIT = "prepared_edge_index_hit"  # S1: reused prepared edges
+BVH_QUERY = "bvh_query"                      # S2: HybridBoxIndex query via BVH
+VECTOR_SCAN_QUERY = "vector_scan_query"      # S2: HybridBoxIndex query via flat scan
 
 CANONICAL_COUNTERS = (
     EXACT_FACE_DISTANCE,
@@ -77,6 +79,8 @@ CANONICAL_COUNTERS = (
     REGION_PROPAGATED,
     PREPARED_FACE_BOX_HIT,
     PREPARED_EDGE_INDEX_HIT,
+    BVH_QUERY,
+    VECTOR_SCAN_QUERY,
 )
 
 ENV_VAR = "BREPKERNEL_PERF"
