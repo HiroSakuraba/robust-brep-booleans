@@ -15,6 +15,7 @@ Tier A identical inputs (A op A) resolve exactly without the engine.
 """
 
 import numpy as np
+from .perf import count as _perf_count, S3_SHADOW_MISMATCH
 from .ingest import audit_solid, ToleranceLedger, IngestError
 from .proxy import certified_proxy
 from .arrange import arrange, ArrangementError
@@ -274,6 +275,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                  shadow_section_crosscheck=False,
                  crosscheck_ops=False,
                  allow_nonmanifold=False,
+                 fast_paths=True,
+                 fast_path_shadow=True,
                  evidence_dir=None,
                  collect_perf=False):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
@@ -302,6 +305,17 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     evaluations, section attempts, witness statistics, ...). When
     profiling is off, report has no "performance" key and the evidence
     record is identical to a run that never knew the profiler existed.
+
+    fast_paths=True (S3) enables whole-operation fast paths: when
+    conservative model-level facts prove section/split/assembly cannot
+    change the verdict (disjoint expanded component boxes, or zero
+    broad-phase candidates with a decisive containment relation), the
+    result is built directly and those stages are skipped. Any
+    uncertainty falls back to the full pipeline. fast_path_shadow=True
+    (default) additionally re-runs the old pipeline in shadow mode and
+    requires status, topology counts, and volume to agree; on any
+    disagreement the old pipeline's result is returned, so with shadow
+    on the observable behavior is identical to the old pipeline.
     """
     import hashlib as _hashlib
     import time as _time
@@ -415,7 +429,9 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             sew_tol=sew_tol, include_full_evidence=include_full_evidence,
             shadow_section_crosscheck=shadow_section_crosscheck,
             crosscheck_ops=crosscheck_ops,
-            allow_nonmanifold=allow_nonmanifold)
+            allow_nonmanifold=allow_nonmanifold,
+            fast_paths=fast_paths,
+            fast_path_shadow=fast_path_shadow)
         if _counters is None:
             out, report = _boolean_brep_impl(shapeA, shapeB, op,
                                              **_impl_kwargs)
@@ -432,6 +448,31 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     return out, report
 
 
+def _operation_volume_bounds(op, va, vb, vr, volume_scale, base_tol):
+    """Shared volume-bound check for normal and S3 fast-path results.
+
+    The same coarse bounds the main pipeline enforces: catastrophic
+    selection or shell-orientation errors fail here on either path.
+    """
+    volume_tol = max(
+        1e-10,
+        256.0 * float(base_tol) * volume_scale * volume_scale,
+        2e-8 * max(va, vb, vr, 1.0))
+    if op == "union":
+        ok = (vr + volume_tol >= max(va, vb)
+              and vr <= va + vb + volume_tol)
+        bounds = [max(va, vb), va + vb]
+    elif op == "intersection":
+        ok = vr <= min(va, vb) + volume_tol
+        bounds = [0.0, min(va, vb)]
+    elif op == "difference":
+        ok = (vr <= va + volume_tol) and (vr + volume_tol >= va - vb)
+        bounds = [max(0.0, va - vb), va]
+    else:
+        raise ValueError(f"unknown op {op!r}")
+    return ok, bounds, volume_tol
+
+
 def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
                  broadphase_pad=None, chord_tol=None, contact_tol=None,
                  fuzzy=0.0, parallel=True, use_obb=True,
@@ -440,7 +481,9 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
                  include_full_evidence=False,
                  shadow_section_crosscheck=False,
                  crosscheck_ops=False,
-                 allow_nonmanifold=False):
+                 allow_nonmanifold=False,
+                 fast_paths=True,
+                 fast_path_shadow=True):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
 
     Returns (TopoDS_Shape, report) and leaves the existing mesh/proxy
@@ -543,7 +586,8 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
         tangent_sin_tol=tangent_sin_tol, max_section_tol=max_section_tol,
         area_rel_tol=area_rel_tol, sew_tol=sew_tol,
         include_full_evidence=include_full_evidence,
-        shadow_section_crosscheck=shadow_section_crosscheck)
+        shadow_section_crosscheck=shadow_section_crosscheck,
+        fast_paths=fast_paths, fast_path_shadow=fast_path_shadow)
 
     def _finalize(out, result_report):
         """Run the optional cross-operation identity check (G1).
@@ -818,6 +862,164 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
         report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
         return _finalize(out, report)
 
+    # S3: whole-operation fast paths (disjoint components / containment).
+    # Conservative model-level facts that prove section/split/assembly
+    # cannot change the verdict.  Any uncertainty falls back to the full
+    # pipeline below.  With fast_path_shadow (default) the old pipeline
+    # is re-run and must agree on status, topology counts, and volume --
+    # on disagreement the OLD result is returned, so shadowed behavior
+    # is identical to the old pipeline by construction (R1).
+    def _s3_volume_scale():
+        all_faces = a.faces + b.faces
+        if not all_faces:
+            return 1.0
+        lo = np.min(np.vstack([fr.bbox_lo for fr in all_faces]), axis=0)
+        hi = np.max(np.vstack([fr.bbox_hi for fr in all_faces]), axis=0)
+        return max(float(np.linalg.norm(hi - lo)), 1.0)
+
+    def _s3_counts(shape):
+        from OCP.TopAbs import TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE
+        from OCP.TopExp import TopExp_Explorer
+
+        out = []
+        for kind in (TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE):
+            ex = TopExp_Explorer(shape, kind)
+            n = 0
+            while ex.More():
+                n += 1
+                ex.Next()
+            out.append(n)
+        return tuple(out)
+
+    def _s3_safe_volume(shape):
+        from OCP.TopAbs import TopAbs_SOLID
+        from OCP.TopExp import TopExp_Explorer
+
+        if shape.IsNull():
+            return 0.0
+        if not TopExp_Explorer(shape, TopAbs_SOLID).More():
+            return 0.0
+        return abs(float(_shape_volume(shape)))
+
+    def _s3_old_pipeline():
+        """Run the old pipeline (fast paths disabled).
+
+        Returns (out, report, exc) with exc the BRepAmbiguousResult when
+        the old pipeline refuses.  Perf counters are scoped to a fresh
+        object so the shadow run does not pollute the outer profile.
+        """
+        from . import perf as _perf_mod
+
+        kwargs = dict(_pass_kwargs)
+        kwargs.update(fast_paths=False, fast_path_shadow=False,
+                      crosscheck_ops=False, include_full_evidence=False,
+                      allow_nonmanifold=allow_nonmanifold)
+        with _perf_mod.scoped(_perf_mod.PerfCounters()):
+            try:
+                old_out, old_report = _boolean_brep_impl(
+                    shapeA, shapeB, op, **kwargs)
+            except BRepAmbiguousResult as exc:
+                return None, exc.report, exc
+        return old_out, old_report, None
+
+    def _s3_agrees(fast_shape, old_out):
+        scale = _s3_volume_scale()
+        cf, co = _s3_counts(fast_shape), _s3_counts(old_out)
+        vf, vo = _s3_safe_volume(fast_shape), _s3_safe_volume(old_out)
+        _, _, vtol = _operation_volume_bounds(
+            op, _s3_safe_volume(a.shape), _s3_safe_volume(b.shape),
+            vf, scale, base_tol)
+        agree = cf == co and abs(vf - vo) <= vtol
+        return agree, {
+            "fast": {"solids_shells_faces": list(cf), "volume": vf},
+            "old": {"solids_shells_faces": list(co), "volume": vo},
+            "volume_tolerance": vtol,
+        }
+
+    def _s3_finish(fast_shape, info):
+        from OCP.BRepCheck import BRepCheck_Analyzer
+
+        has_solids = _s3_counts(fast_shape)[0] > 0
+        valid = (True if not has_solids
+                 else bool(BRepCheck_Analyzer(fast_shape, True).IsValid()))
+        va = _s3_safe_volume(a.shape)
+        vb = _s3_safe_volume(b.shape)
+        vr = _s3_safe_volume(fast_shape)
+        scale = _s3_volume_scale()
+        bounds_ok, bounds, vtol = _operation_volume_bounds(
+            op, va, vb, vr, scale, base_tol)
+        info["verification"] = {
+            "brep_valid": bool(valid),
+            "volume_bounds_ok": bool(bounds_ok),
+            "volume_bounds": bounds,
+            "volume_tolerance": vtol,
+            "input_volume_A": va,
+            "input_volume_B": vb,
+            "result_volume": vr,
+        }
+        if not (valid and bounds_ok):
+            # R3: never ship a fast-path result that fails its own
+            # checks; run the old pipeline instead.
+            info["fallback"] = "fast_result_failed_verification"
+            old_out, old_report, old_exc = _s3_old_pipeline()
+            if old_exc is not None:
+                old_exc.report["stages"]["s3_fast_path"] = dict(info)
+                raise old_exc
+            old_report["stages"]["s3_fast_path"] = dict(info)
+            return _finalize(old_out, old_report)
+        if fast_path_shadow:
+            old_out, old_report, old_exc = _s3_old_pipeline()
+            info["shadow"] = True
+            if old_exc is not None:
+                # status disagreement: old pipeline refused, so we
+                # refuse too (R1: status must agree).
+                info["shadow_agreement"] = False
+                info["shadow_detail"] = {"old_pipeline_refused": True}
+                _perf_count(S3_SHADOW_MISMATCH)
+                old_exc.report["stages"]["s3_fast_path"] = dict(info)
+                raise old_exc
+            agree, detail = _s3_agrees(fast_shape, old_out)
+            info["shadow_agreement"] = bool(agree)
+            info["shadow_detail"] = detail
+            if not agree:
+                _perf_count(S3_SHADOW_MISMATCH)
+                old_report["stages"]["s3_fast_path"] = dict(info)
+                return _finalize(old_out, old_report)
+        else:
+            info["shadow"] = False
+        report["stages"]["s3_fast_path"] = dict(info)
+        report["stages"]["verification"] = {
+            "brep_valid": bool(valid),
+            "s3_fast_path": info.get("path"),
+            "volume_bounds_ok": bool(bounds_ok),
+            "volume_bounds": bounds,
+            "volume_tolerance": vtol,
+            "input_volume_A": va,
+            "input_volume_B": vb,
+            "result_volume": vr,
+        }
+        report["accepted"] = True
+        report["timings_ms"]["total"] = (perf_counter() - t_total) * 1000.0
+        return _finalize(fast_shape, report)
+
+    t_stage = perf_counter()
+    s3_shape, s3_info, s3_candidates = (
+        None, {"attempted": bool(fast_paths), "path": None,
+               "reason": None}, None)
+    if fast_paths:
+        from .fastpaths import try_fast_path
+
+        s3_shape, s3_info, s3_candidates = try_fast_path(
+            pa, pb, op, base_tol=float(base_tol),
+            contact_tol=float(contact_tol),
+            pad_scalar=(float(broadphase_pad) if _pad_explicit else 0.0),
+            pads=_face_pads)
+        report["stages"]["s3_fast_path"] = dict(s3_info)
+    report["timings_ms"]["s3_fast_path"] = (
+        perf_counter() - t_stage) * 1000.0
+    if s3_shape is not None:
+        return _s3_finish(s3_shape, s3_info)
+
     t_stage = perf_counter()
     try:
         ix = intersect_models(
@@ -831,7 +1033,8 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
             tangent_sin_tol=float(tangent_sin_tol),
             max_section_tol=(None if max_section_tol is None
                              else float(max_section_tol)),
-            crosscheck_nonapprox=bool(shadow_section_crosscheck))
+            crosscheck_nonapprox=bool(shadow_section_crosscheck),
+            precomputed_candidates=s3_candidates)
     except FreeformError as exc:
         report["timings_ms"]["intersection"] = (
             perf_counter() - t_stage) * 1000.0
@@ -1069,22 +1272,8 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
         volume_scale = max(float(np.linalg.norm(hi - lo)), 1.0)
     else:
         volume_scale = 1.0
-    volume_tol = max(
-        1e-10,
-        256.0 * float(base_tol) * volume_scale * volume_scale,
-        2e-8 * max(va, vb, vr, 1.0))
-    if op == "union":
-        volume_bounds_ok = (
-            vr + volume_tol >= max(va, vb)
-            and vr <= va + vb + volume_tol)
-        volume_bounds = [max(va, vb), va + vb]
-    elif op == "intersection":
-        volume_bounds_ok = vr <= min(va, vb) + volume_tol
-        volume_bounds = [0.0, min(va, vb)]
-    elif op == "difference":
-        volume_bounds_ok = (vr <= va + volume_tol) and (
-            vr + volume_tol >= va - vb)
-        volume_bounds = [max(0.0, va - vb), va]
+    volume_bounds_ok, volume_bounds, volume_tol = _operation_volume_bounds(
+        op, va, vb, vr, volume_scale, base_tol)
 
     report["stages"]["verification"] = {
         "brep_valid": valid,

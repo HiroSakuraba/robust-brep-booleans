@@ -1464,19 +1464,27 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
                      tangent_sin_tol: float = 1e-4,
                      max_section_tol: Optional[float] = None,
                      crosscheck_nonapprox: bool = False,
-                     completeness_probe: bool = True
+                     completeness_probe: bool = True,
+                     precomputed_candidates=None,
                      ) -> ModelIntersectionResult:
     """Run verified section work only for conservative candidate face pairs.
 
     broadphase_face_pads is an optional (pads_a, pads_b) tuple of per-face
     pads (see step_ingest.face_broadphase_pads); when given, each face's
     box is expanded by its own pad instead of the uniform broadphase_pad.
+
+    precomputed_candidates skips the broad-phase call and uses the given
+    candidate list (must have been computed with the same pad/pads
+    arguments, e.g. by the S3 fast-path probe); None recomputes.
     """
     _perf_count("section_engine_call")
     pads_a, pads_b = (None, None) if broadphase_face_pads is None \
         else broadphase_face_pads
-    candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad),
-                                      pads_a=pads_a, pads_b=pads_b)
+    if precomputed_candidates is None:
+        candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad),
+                                          pads_a=pads_a, pads_b=pads_b)
+    else:
+        candidates = precomputed_candidates
     results: list[FaceIntersectionResult] = []
     section_calls = 0
     verified_edges = 0

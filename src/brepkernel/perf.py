@@ -55,6 +55,10 @@ PREPARED_FACE_BOX_HIT = "prepared_face_box_hit"  # S1: reused prepared face boxe
 PREPARED_EDGE_INDEX_HIT = "prepared_edge_index_hit"  # S1: reused prepared edges
 BVH_QUERY = "bvh_query"                      # S2: HybridBoxIndex query via BVH
 VECTOR_SCAN_QUERY = "vector_scan_query"      # S2: HybridBoxIndex query via flat scan
+S3_FAST_PATH_ATTEMPT = "s3_fast_path_attempt"      # S3: fast-path tries
+S3_FAST_PATH_HIT = "s3_fast_path_hit"              # S3: fast path resolved op
+S3_FAST_PATH_INTERNAL_ERROR = "s3_fast_path_internal_error"  # S3: bug->fallback
+S3_SHADOW_MISMATCH = "s3_shadow_mismatch"          # S3: shadow disagreement
 
 CANONICAL_COUNTERS = (
     EXACT_FACE_DISTANCE,
@@ -81,6 +85,10 @@ CANONICAL_COUNTERS = (
     PREPARED_EDGE_INDEX_HIT,
     BVH_QUERY,
     VECTOR_SCAN_QUERY,
+    S3_FAST_PATH_ATTEMPT,
+    S3_FAST_PATH_HIT,
+    S3_FAST_PATH_INTERNAL_ERROR,
+    S3_SHADOW_MISMATCH,
 )
 
 ENV_VAR = "BREPKERNEL_PERF"

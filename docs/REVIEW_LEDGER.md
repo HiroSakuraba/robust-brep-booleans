@@ -5,6 +5,66 @@ anything else stays open and is recorded honestly here (invariant I6).
 
 ---
 
+## S3 - Whole-operation fast paths (26 Sept 2026, branch speed/s3-fast-paths)
+
+What changed:
+- New module src/brepkernel/fastpaths.py: try_fast_path(pa, pb, op,
+  ...) returns (shape, info, candidates); shape None means "run the
+  full pipeline". Two paths. Path A (disjoint): per-solid boxes as
+  min/max over the solid's own prepared face boxes (containment by
+  construction), expanded by the max per-face broad-phase pad; strict
+  separation of every A-solid/B-solid pair implies every face pair is a
+  broad-phase non-candidate, so section/split/assembly cannot change
+  the verdict. Path B (containment): zero broad-phase candidates (the
+  same candidate_face_pairs call the pipeline makes) plus one clean
+  interior witness per solid - UV samples per face, plus/minus normal
+  offsets at 11x contact tol against a 10x confusion band, each witness
+  dual-classified inside by the G5 agreed classifier; only uniform
+  relations (A_in_B, B_in_A, disjoint) resolve, difference with B_in_A
+  (a cavity) always falls back. Any unknown / near-boundary /
+  disagreement / non-uniform outcome falls back. Never raises on
+  uncertainty: a catch-all records s3_internal_error and falls back.
+- pipeline.py: boolean_brep gains fast_paths=True,
+  fast_path_shadow=True; the hook sits after the same_domain block and
+  before intersect_models. _s3_finish verifies the fast result (B-rep
+  validity + the shared _operation_volume_bounds check, extracted from
+  the old inline code so both paths enforce identical bounds), then
+  shadow-runs the old pipeline (fast paths off, fresh perf counters)
+  and requires status, topology counts, and volume to agree - on any
+  disagreement, or if the old pipeline refuses, the OLD result/refusal
+  is returned (R1 by construction). report["stages"]["s3_fast_path"]
+  is always recorded when attempted. The candidate list from the probe
+  is passed to intersect_models as precomputed_candidates so the broad
+  phase never runs twice (intersection.py gains the keyword-only arg).
+- perf.py: s3_fast_path_attempt, s3_fast_path_hit,
+  s3_fast_path_internal_error, s3_shadow_mismatch.
+- tests/test_s3_fast_paths.py (new): 35 tests - separated battery x3
+  ops vs the old pipeline, near-touching inside/outside pads, touching
+  boxes never fire, nested box/cylinder/sphere/NURBS batteries,
+  multi-component containment, L-notch disjoint with overlapping
+  boxes, mixed configs fall back, shadow agreement, shadow-refusal
+  propagation (monkeypatched impl), flags-off unchanged.
+- tools/review_probes/bench_s3_separated.py (new): two 170-box
+  compounds (1020 faces per operand), best-of-2.
+
+Measurements (26 Sept 2026, local machine, OCCT 8.0.1 venv):
+- Separated compounds: old 273.8 s, S3 1.87 s, 146x (>= 5x gate).
+  Scaling: 21x at 20 boxes, 42x at 40, 80x at 80 - the old pipeline is
+  ~quadratic here, the fast path ~linear, so the margin grows.
+- Honest caveat: the 146x is the whole-pipeline number on a fully
+  separated input; overlapping inputs take the fallback and see only
+  the probe cost (component boxes + one shared broad phase).
+
+Regression: new 35/35 pass; all 40 suites green on the full re-run
+with the S3 hook live in the pipeline for every boolean call.
+Zero em dashes added.
+
+S3 COMPLETE per its pass criteria: 146x >= 5x on 1000+ faces per
+operand; shadow mode agrees with the old pipeline on every probe;
+uncertainty always falls back (never raises).
+
+---
+
 ## G0 - Tooling, baseline, CI, dependency pins
 
 - Date: 2026-09-25
