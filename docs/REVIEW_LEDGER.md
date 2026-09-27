@@ -3254,3 +3254,50 @@ S1 COMPLETE per its pass criteria: raw and prepared calls are
 verdict-equivalent; a prepared base sees zero face-box and zero
 edge-index rebuilds on later Booleans (counters prove it); prepare
 does not tessellate or mutate the input.
+
+## S8: parallelism decision (27 Sept 2026)
+
+Plan rule: profile after S1-S7; parallelize only if independent face-pair
+narrow-phase work exceeds ~35% of wall time on the large benchmarks.
+
+Measured stage breakdowns (timings_ms, % of wall):
+- 262-face plate minus slot (wall 5.88s): assembly 53.7%, split 18.4%,
+  intersection 14.3% (8 section calls), verification 6.2%, ingest 5.2%.
+- 64-hole optimized many-tool (wall 20.3s): assembly 69.2%,
+  intersection 23.6%, split 4.8%.
+
+Both below the 35% bar. Amdahl ceiling: perfect parallelization of the
+intersection stage could yield at most ~1.17x (plate) / ~1.31x (64-hole),
+below the plan's 1.5x pass criterion before any threading overhead.
+The dominant cost is assembly, which the plan keeps deterministic in the
+parent. DECISION: no parallel path built, per the plan's own decision rule.
+Profiler: tools/review_probes/profile_s8.py.
+
+## S9: expanded performance CI (27 Sept 2026)
+
+tools/review_probes/perf_budget.py now covers all six plan classes:
+everyday (6 G13 originals), large (plate64/plate256 minus slot),
+nurbs (converted-sphere cap), separated (1020-face compounds, S3 fast
+path), session (10 tools warm, S6), many (16/64 cutters, S7).
+New S9 budget format: measured_s * budget_multiplier (1.5 for S9 cases,
+2.0 retained for the everyday class); --perf records expensive-call
+counters beside time and enforces max_calls ceilings (e.g.
+separated_1020 pins s3_fast_path_hit, so the fast path cannot silently
+stop firing).
+
+Recorded 27 Sept 2026 on the S7 tip (best-of-3, --perf), all 13 cases
+within budget on re-check: plate64 1.624s, plate256 5.586s,
+nurbs_sphere_cap 0.676s, separated_1020 1.905s (144x over the old
+pipeline's 274s), session_10_warm 1.936s, many16 3.233s, many64 20.174s.
+
+Notes:
+- Budget runners pass fast_path_shadow=False: the budget pins the
+  pipeline's algorithmic performance, not the development-time S3 shadow
+  re-run (which costs ~274s on the separated case and would drown the
+  fast path it guards).
+- many256 omitted: extrapolates to ~85s/run (~4min for best-of-3);
+  many64 already pins batch scaling. Revisit if nightly budget allows.
+- The NURBS torus/box candidate was pathological (>4min single run,
+  ambiguous contacts on first placement); the suite-proven converted
+  sphere cap covers the NURBS-section class at 0.68s.
+- nightly.yml step renamed to "fails if a pinned case exceeds its budget".
