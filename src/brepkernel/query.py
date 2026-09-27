@@ -42,6 +42,30 @@ def _point_key(p) -> Tuple[float, float, float]:
     return (round(float(p[0]), 9), round(float(p[1]), 9), round(float(p[2]), 9))
 
 
+def _conservative_model_bbox(model) -> Optional[Tuple[float, float, float,
+                                                     float, float, float]]:
+    """Conservative AABB of a BRepModel's solids, or None when it has none.
+
+    Uses BRepBndLib.Add (not AddOptimal): the box always contains the
+    shape, enlarged by entity tolerances.  A point strictly outside this
+    box is strictly outside every solid of the model -- the geometric
+    fact the SX point-verdict short-circuit rests on.
+    """
+    solids = getattr(model, "solids", None)
+    if not solids:
+        return None
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    b = Bnd_Box()
+    for sr in solids:
+        BRepBndLib.Add_s(sr.solid, b, False)
+    if b.IsVoid():
+        return None
+    lo, hi = b.CornerMin(), b.CornerMax()
+    return (float(lo.X()), float(lo.Y()), float(lo.Z()),
+            float(hi.X()), float(hi.Y()), float(hi.Z()))
+
+
 @dataclass
 class QueryContext:
     """Shared per-Boolean-call query state (S4).
@@ -73,6 +97,12 @@ class QueryContext:
 
     # (point_key, id(model), cap) -> boundary distance (capped).
     boundary_distances: Dict[tuple, float] = field(default_factory=dict)
+
+    # id(model) -> conservative (xmin, ymin, zmin, xmax, ymax, zmax) of
+    # the model's solids (SX).  The models are never mutated during a
+    # call (S1 immutability contract), so the box is valid for the whole
+    # call; a missing entry falls back to computing it.
+    model_bboxes: Dict[int, tuple] = field(default_factory=dict)
 
     # (side, tol) -> _MultiRayClassifier.  One intersector set per
     # operand and tolerance bucket; built lazily via get_or_create.
@@ -146,3 +176,22 @@ class QueryContext:
 
     def boundary_distance_put(self, point, model, cap: float, d: float) -> None:
         self.boundary_distances[(_point_key(point), id(model), float(cap))] = float(d)
+
+    # -- model bbox (SX point-verdict short-circuit) --------------------
+
+    def model_bbox(self, model) -> Optional[Tuple[float, float, float,
+                                                 float, float, float]]:
+        """Conservative bbox of the model's solids, cached for the call.
+
+        Never raises: returns None when the model has no solids (the
+        caller then falls back to the uncached full path, which raises
+        the usual AssemblyError for shell-only input).
+        """
+        key = id(model)
+        hit = self.model_bboxes.get(key)
+        if hit is not None:
+            return hit
+        bb = _conservative_model_bbox(model)
+        if bb is not None:
+            self.model_bboxes[key] = bb
+        return bb
