@@ -20,6 +20,8 @@ from typing import Iterable, Optional
 
 import numpy as np
 
+from .perf import count as _perf_count
+
 
 class FreeformError(Exception):
     """Typed freeform-path refusal / extraction error."""
@@ -310,6 +312,7 @@ class FreeformFaceAccel:
         from OCP.BRepClass import BRepClass_FaceClassifier
         from OCP.gp import gp_Pnt2d
         from OCP.TopAbs import TopAbs_IN, TopAbs_ON
+        _perf_count("face_classifier_eval")
         c = BRepClass_FaceClassifier(self.face,
                                      gp_Pnt2d(float(u), float(v)),
                                      self.trim_tol, True)
@@ -321,6 +324,7 @@ class FreeformFaceAccel:
         from OCP.gp import gp_Pnt
         v = BRepBuilderAPI_MakeVertex(
             gp_Pnt(*map(float, point))).Vertex()
+        _perf_count("exact_face_distance")
         d = BRepExtrema_DistShapeShape(v, self.face)
         if not d.IsDone():
             d.Perform()

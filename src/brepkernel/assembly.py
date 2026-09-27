@@ -23,6 +23,7 @@ from typing import Optional
 import numpy as np
 
 from .freeform import FreeformError
+from .perf import count as _perf_count
 from .split import ModelSplitResult
 from .step_ingest import BRepModel
 
@@ -213,6 +214,7 @@ def _face_points(face, tol: float, *, max_points: int = 7,
     for a, b in zip(fu, fv):
         u = u0 + (u1 - u0) * a
         v = v0 + (v1 - v0) * b
+        _perf_count("face_classifier_eval")
         cl = BRepClass_FaceClassifier(
             face, gp_Pnt2d(float(u), float(v)), float(tol), True)
         if cl.State() == TopAbs_IN:
@@ -228,6 +230,7 @@ def _face_points(face, tol: float, *, max_points: int = 7,
             for b in grid:
                 u = u0 + (u1 - u0) * a
                 v = v0 + (v1 - v0) * b
+                _perf_count("face_classifier_eval")
                 cl = BRepClass_FaceClassifier(
                     face, gp_Pnt2d(float(u), float(v)), float(tol), True)
                 if cl.State() == TopAbs_IN:
@@ -252,6 +255,7 @@ def _occt_point_verdict(point: np.ndarray, solids: list,
     p = gp_Pnt(float(point[0]), float(point[1]), float(point[2]))
     saw_on = False
     for solid in solids:
+        _perf_count("solid_classifier_eval")
         c = BRepClass3d_SolidClassifier(solid)
         c.Perform(p, float(tol))
         st = c.State()
@@ -401,6 +405,7 @@ class _MultiRayClassifier:
                 self._edge_list.append(TopoDS.Edge(_ex.Current()))
                 _ex.Next()
         self._edge_boxes = _conservative_boxes(self._edge_list)
+        _perf_count("edge_box_build")
 
     @staticmethod
     def _edge_compound(solids):
@@ -459,6 +464,7 @@ class _MultiRayClassifier:
             gp_Pnt(float(point[0]), float(point[1]), float(point[2]))).Vertex()
         best = float("inf")
         for k in near:
+            _perf_count("exact_edge_distance")
             d = BRepExtrema_DistShapeShape(v, self._edge_list[int(k)])
             if not d.IsDone():
                 d.Perform()
@@ -479,6 +485,7 @@ class _MultiRayClassifier:
                    float(direction[2]))))
         counts = []
         for inter in self._intersectors:
+            _perf_count("ray_intersector_perform")
             inter.Perform(lin, 0.0, _RAY_PMAX)
             if not inter.IsDone():
                 return None
@@ -533,6 +540,7 @@ class _MultiRayClassifier:
         p = np.asarray(point, dtype=np.float64).reshape(3)
         verdicts = []
         for direction in _RAY_DIRECTIONS:
+            _perf_count("ray_pair_cast")
             counts = self._cast_bidirectional(p, direction)
             if counts is None:
                 continue
@@ -636,6 +644,7 @@ def _point_boundary_distances(points: np.ndarray,
         boxes = getattr(model, "_c6_face_boxes", None)
         if boxes is None or len(boxes) != len(faces):
             boxes = _conservative_boxes(faces)
+            _perf_count("face_box_build")
             try:
                 model._c6_face_boxes = boxes   # one build per model per call
             except AttributeError:
@@ -651,6 +660,7 @@ def _point_boundary_distances(points: np.ndarray,
             gp_Pnt(float(p[0]), float(p[1]), float(p[2]))).Vertex()
         best = cap
         for k in idx:
+            _perf_count("exact_face_distance")
             d = BRepExtrema_DistShapeShape(v, faces[int(k)])
             if not d.IsDone():
                 d.Perform()
@@ -836,6 +846,7 @@ def _classify_coincident_piece(piece, operand: str,
     partner_face = TopoDS.Face(partner_rec.face)
     psurf = BRepAdaptor_Surface(partner_face).Surface().Surface()
     for p in points:
+        _perf_count("curve_on_surface_projection")
         proj = GeomAPI_ProjectPointOnSurf(
             gp_Pnt(float(p[0]), float(p[1]), float(p[2])), psurf)
         if proj.NbPoints() == 0 or \
@@ -863,6 +874,7 @@ def _classify_coincident_piece(piece, operand: str,
             f"{piece.piece_index}: cannot compute outward normal",
             kind="CoincidenceWitnessMismatch")
     p0 = points[0]
+    _perf_count("curve_on_surface_projection")
     proj = GeomAPI_ProjectPointOnSurf(
         gp_Pnt(float(p0[0]), float(p0[1]), float(p0[2])), psurf)
     ub, vb = proj.LowerDistanceParameters()
@@ -1206,7 +1218,9 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
             # unchanged, so the missed-section backstop stays intact.
             shortcut = classify_untouched_single_witness(
                 piece, other, tol, ray, candidate_ids)
+            _perf_count("single_witness_attempt")
             if shortcut is not None:
+                _perf_count("single_witness_hit")
                 cls_word, wpoint = shortcut
                 n_single_witness += 1
                 if n_single_witness % 10 == 0:
@@ -1254,6 +1268,7 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
                 out.append(dec)
                 decisions_by_key[(piece.parent_face_id, piece.piece_index)] = dec
                 continue
+            _perf_count("single_witness_fallback")
             points = _face_points(piece.face, tol)
             classes = tuple(
                 _agreed_point_verdict(p, other, tol, ray)
@@ -1325,6 +1340,7 @@ def _classify_pieces(model_a: "BRepModel", model_b: "BRepModel",
             ))
 
         # Return region stats for the report
+        _perf_count("region_propagated", len(skipped))
         return {
             "n_regions": len(regions),
             "n_propagated": len(skipped),
@@ -1438,6 +1454,7 @@ def _shape_volume(shape, tol: float = 1e-10) -> float:
     hit = _VOLUME_CACHE.get(key)
     if hit is not None and hit[0] is shape:
         return hit[1]
+    _perf_count("volume_integration")
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
     g = GProp_GProps()
@@ -1597,6 +1614,7 @@ def _solid_interior_points(solid, tol: float, *,
                 u = u0 + (u1 - u0) * fu
                 for fv in frac:
                     v = v0 + (v1 - v0) * fv
+                    _perf_count("face_classifier_eval")
                     fc = BRepClass_FaceClassifier(
                         face, gp_Pnt2d(float(u), float(v)),
                         float(tol), True)
@@ -1864,6 +1882,7 @@ def _point_edge_distance(point: np.ndarray, edge) -> float:
 
     v = BRepBuilderAPI_MakeVertex(
         gp_Pnt(float(point[0]), float(point[1]), float(point[2]))).Vertex()
+    _perf_count("exact_edge_distance")
     d = BRepExtrema_DistShapeShape(v, edge)
     if not d.IsDone():
         d.Perform()
@@ -2325,6 +2344,7 @@ def _solids_touch(solids, tol: float) -> bool:
     for i in range(len(shapes)):
         for j in range(i + 1, len(shapes)):
             try:
+                _perf_count("exact_solid_distance")
                 d = BRepExtrema_DistShapeShape(shapes[i], shapes[j])
                 if d.Value() <= tol:
                     return True
@@ -2368,6 +2388,7 @@ def _self_touching_edge_pairs(shape, tol: float) -> int:
             mid = c.Value(0.5 * (c.FirstParameter() + c.LastParameter()))
             v = BRepBuilderAPI_MakeVertex(mid).Vertex()
             for j in range(i + 1, len(edges)):
+                _perf_count("exact_edge_distance")
                 d = BRepExtrema_DistShapeShape(v, edges[j])
                 if d.IsDone() and d.Value() <= tol:
                     pairs += 1

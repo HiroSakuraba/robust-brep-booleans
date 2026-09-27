@@ -274,7 +274,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                  shadow_section_crosscheck=False,
                  crosscheck_ops=False,
                  allow_nonmanifold=False,
-                 evidence_dir=None):
+                 evidence_dir=None,
+                 collect_perf=False):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
 
     Contract (unchanged): returns (TopoDS_Shape, report) on accept;
@@ -294,6 +295,13 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     record is also written there as <name>.json. Emission is strictly
     additive: it never changes the accept/refuse outcome, and any
     failure inside evidence code degrades to report["evidence_error"].
+
+    collect_perf=True (or the BREPKERNEL_PERF=1 environment variable)
+    enables the S0 expensive-call profiler: report["performance"] then
+    carries per-call counters (exact distance calls, classifier
+    evaluations, section attempts, witness statistics, ...). When
+    profiling is off, report has no "performance" key and the evidence
+    record is identical to a run that never knew the profiler existed.
     """
     import hashlib as _hashlib
     import time as _time
@@ -301,6 +309,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     from datetime import datetime as _datetime, timezone as _timezone
 
     from . import evidence as _evidence
+    from . import perf as _perf
     from .step_ingest import BRepModel as _BRepModel
 
     _started_utc = _datetime.now(_timezone.utc).isoformat()
@@ -333,6 +342,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             "crosscheck_ops": bool(crosscheck_ops),
             "parallel": bool(parallel),
             "use_obb": bool(use_obb),
+            "collect_perf": bool(collect_perf),
         }
 
     def _attach(report, result_shape):
@@ -379,9 +389,20 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             except Exception:
                 pass
 
+    # S0 profiler: counters live exactly for this Boolean call (R6).
+    # Attached to the report after evidence emission, so the evidence
+    # record and its content-derived name are identical with profiling
+    # on or off; only report["performance"] differs.
+    _counters = (_perf.PerfCounters()
+                 if (collect_perf or _perf.wants_perf()) else None)
+
+    def _attach_perf(rep):
+        if _counters is not None:
+            rep["performance"] = _perf.report_section(_counters)
+
     try:
-        out, report = _boolean_brep_impl(
-            shapeA, shapeB, op, base_tol=base_tol,
+        _impl_kwargs = dict(
+            base_tol=base_tol,
             broadphase_pad=broadphase_pad, chord_tol=chord_tol,
             contact_tol=contact_tol, fuzzy=fuzzy, parallel=parallel,
             use_obb=use_obb, tangent_sin_tol=tangent_sin_tol,
@@ -390,10 +411,19 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             shadow_section_crosscheck=shadow_section_crosscheck,
             crosscheck_ops=crosscheck_ops,
             allow_nonmanifold=allow_nonmanifold)
+        if _counters is None:
+            out, report = _boolean_brep_impl(shapeA, shapeB, op,
+                                             **_impl_kwargs)
+        else:
+            with _perf.scoped(_counters):
+                out, report = _boolean_brep_impl(shapeA, shapeB, op,
+                                                 **_impl_kwargs)
     except BRepAmbiguousResult as exc:
         _attach(exc.report, None)
+        _attach_perf(exc.report)
         raise
     _attach(report, out)
+    _attach_perf(report)
     return out, report
 
 

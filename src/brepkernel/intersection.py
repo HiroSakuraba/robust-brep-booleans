@@ -25,6 +25,7 @@ import math
 import numpy as np
 
 from .freeform import FreeformError
+from .perf import count as _perf_count
 from .step_ingest import BRepModel, FaceRecord, candidate_face_pairs
 
 
@@ -169,6 +170,7 @@ def _adaptive_edge_samples(edge, chord_tol: float, *,
     ts = sorted(set([leaves[0][0]] + [b for _, b in leaves]))
     T = np.asarray(ts, dtype=np.float64)
     P = np.vstack([point(float(t)) for t in T])
+    _perf_count("adaptive_edge_samples", len(T))
     return T, P
 
 
@@ -517,6 +519,7 @@ def _verify_edge_samples_batched(pre: dict, fa: FaceRecord, fb: FaceRecord,
 
     trim_ok = True
     for i in range(n):
+        _perf_count("face_classifier_eval", 2)
         classifier_a.Perform(fa.face, gp_Pnt2d(UA[i, 0], UA[i, 1]),
                              verify_tol)
         classifier_b.Perform(fb.face, gp_Pnt2d(UB[i, 0], UB[i, 1]),
@@ -629,6 +632,7 @@ def _verify_section_edge(edge, fa: FaceRecord, fb: FaceRecord,
 def _shape_distance(a, b) -> Optional[float]:
     from OCP.BRepExtrema import BRepExtrema_DistShapeShape
 
+    _perf_count("exact_face_distance")
     d = BRepExtrema_DistShapeShape(a, b)
     if not d.IsDone():
         d.Perform()
@@ -644,6 +648,7 @@ def _run_section_engine(fa: FaceRecord, fb: FaceRecord, *,
                         parallel: bool,
                         use_obb: bool):
     """Run one OCCT Section construction mode and return edges/vertices."""
+    _perf_count("section_pair_attempt")
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
     from OCP.BRep import BRep_Tool
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_VERTEX
@@ -710,6 +715,7 @@ def _point_shape_distance(point: np.ndarray, shape) -> float:
 
     v = BRepBuilderAPI_MakeVertex(
         gp_Pnt(float(point[0]), float(point[1]), float(point[2]))).Vertex()
+    _perf_count("exact_face_distance")
     d = BRepExtrema_DistShapeShape(v, shape)
     if not d.IsDone():
         d.Perform()
@@ -911,6 +917,7 @@ def _match_raw_component(ic_index, c3, c2a, c2b, fa, fb, *,
     def classify(t, tol):
         ua = c2a.Value(float(t))
         ub = c2b.Value(float(t))
+        _perf_count("face_classifier_eval", 2)
         ca = BRepClass_FaceClassifier(
             fa.face, gp_Pnt2d(float(ua.X()), float(ua.Y())), tol, True)
         cb = BRepClass_FaceClassifier(
@@ -1110,6 +1117,7 @@ def _raw_intersector_completeness_probe(
     raw.SetParameters(True, True, True, 1e-7)
     if fuzzy > 0.0:
         raw.SetFuzzyValue(float(fuzzy))
+    _perf_count("raw_intersector_perform")
     raw.Perform(fa.face, fb.face, bool(parallel))
     if not raw.IsDone():
         raise IntersectionError(
@@ -1210,6 +1218,7 @@ def _raw_intersector_completeness_probe(
             target=target, edge_ends=edge_ends, wires_thunk=wires_thunk,
             t0=t0, t1=t1, trim_tol=trim_tol, tight_tol=tight_tol,
             tol_i=tol_i, scale=scale)
+        _perf_count("completeness_leaf_intervals", len(leaf_intervals))
         if verdict == "skipped":
             continue
         trimmed_components += 1
@@ -1463,6 +1472,7 @@ def intersect_models(a: BRepModel, b: BRepModel, *,
     pads (see step_ingest.face_broadphase_pads); when given, each face's
     box is expanded by its own pad instead of the uniform broadphase_pad.
     """
+    _perf_count("section_engine_call")
     pads_a, pads_b = (None, None) if broadphase_face_pads is None \
         else broadphase_face_pads
     candidates = candidate_face_pairs(a, b, pad=float(broadphase_pad),

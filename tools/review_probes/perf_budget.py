@@ -75,16 +75,19 @@ def build_case(key):
     raise KeyError(key)
 
 
-def time_case(name, key, op, repeats=3):
+def time_case(name, key, op, repeats=3, collect_perf=False):
     from brepkernel.pipeline import boolean_brep
     best = None
+    last_counters = None
     for _ in range(repeats):
         a, b = build_case(key)
         t0 = time.perf_counter()
-        boolean_brep(a, b, op)
+        _, report = boolean_brep(a, b, op, collect_perf=collect_perf)
         dt = time.perf_counter() - t0
+        if collect_perf:
+            last_counters = report.get("performance", {}).get("counters")
         best = dt if best is None else min(best, dt)
-    return best
+    return best, last_counters
 
 
 def load_budgets():
@@ -103,11 +106,17 @@ def cmd_record(args):
         if args.cases != "all" and name not in args.cases.split(","):
             continue
         print(f"timing {name} ...", flush=True)
-        best = time_case(name, key, op)
-        budgets["cases"][name] = {
+        best, counters = time_case(name, key, op,
+                                   collect_perf=args.perf)
+        entry = {
             "op": op, "measured_s": round(best, 3),
             "budget_s": round(2.0 * best, 3),
         }
+        if args.perf and counters:
+            # S0: record the expensive-call counters beside the time so
+            # later optimizations can show work avoided, not just time.
+            entry["counters"] = counters
+        budgets["cases"][name] = entry
         print(f"  {name}: best-of-3 {best:.3f}s -> budget {2*best:.3f}s")
     path = os.path.abspath(BUDGET_PATH)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -131,11 +140,23 @@ def cmd_check(args):
             continue
         budget = budgets[name]["budget_s"]
         print(f"checking {name} (budget {budget:.3f}s) ...", flush=True)
-        best = time_case(name, key, op)
+        best, counters = time_case(name, key, op,
+                                   collect_perf=args.perf)
         status = "OK" if best <= budget else "OVER BUDGET"
         print(f"  {name}: best-of-3 {best:.3f}s [{status}]")
         if best > budget:
             failures.append((name, best, budget))
+        # S0: when the recorded budget carries max_calls ceilings and we
+        # measured counters, enforce them too.
+        max_calls = budgets[name].get("max_calls") or {}
+        if args.perf and counters and max_calls:
+            over = [(k, counters.get(k, 0), lim)
+                    for k, lim in max_calls.items()
+                    if counters.get(k, 0) > lim]
+            for k, got, lim in over:
+                print(f"  {name}: counter {k} {got} > max_calls {lim} "
+                      f"[OVER BUDGET]")
+                failures.append((f"{name}:{k}", got, lim))
     if failures:
         print("BUDGET FAILURES:")
         for name, best, budget in failures:
@@ -151,6 +172,9 @@ def main():
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--cases", default="all",
                     help="'all' or comma-separated case names")
+    ap.add_argument("--perf", action="store_true",
+                    help="also record/check S0 expensive-call counters "
+                         "(report['performance']['counters']) beside time")
     args = ap.parse_args()
     if args.record:
         cmd_record(args)

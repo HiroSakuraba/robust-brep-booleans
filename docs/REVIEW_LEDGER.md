@@ -2927,3 +2927,87 @@ SectionToleranceTooLoose as documented 7.8 difference (7.8 section edge
 tolerance 2.18e-5 exceeds 1.28e-5 ceiling) instead of crashing.
 
 7.8 venv created at ~/workspace/brep-ocp78-venv (OCP 7.8.1.1) per I14.
+
+---
+
+## S0 - Expensive-call profiler (26 Sept 2026, branch speed/s0-profiler)
+
+Scope: speed-improvement plan step S0. Add a zero-cost-when-disabled
+expensive-call profiler so later steps can measure before/after per call
+site. No behavior changes, no caching, no algorithm changes.
+
+What was built:
+- `src/brepkernel/perf.py` (new): `PerfCounters` with `bump`/`snapshot`,
+  a module-level `count(name, n=1)` fast path over a
+  `contextvars.ContextVar` (no-op when no counters are active;
+  `parallel=True` is OCCT-internal, no Python worker threads, so a
+  context var is safe), reentrant `scoped()` manager, `wants_perf()`
+  reading `BREPKERNEL_PERF`, 20 canonical counter names, and
+  `report_section()`. Counters live exactly for one `boolean_brep`
+  call (plan rule R6, no global caches).
+- Instrumentation (all additive one-liners, no control-flow change):
+  assembly.py: exact_edge_distance (3 DistShapeShape sites),
+  exact_face_distance (vertex-vs-face), exact_solid_distance
+  (_solids_touch), ray_intersector_perform (_cast_ray),
+  ray_pair_cast (classify loop), face_box_build / edge_box_build
+  (the 2 _conservative_boxes sites), solid_classifier_eval,
+  face_classifier_eval (3 constructor sites),
+  curve_on_surface_projection (2 coincident-piece sites),
+  volume_integration (cache miss only), single_witness_attempt /
+  single_witness_hit / single_witness_fallback (C9), region_propagated
+  (bumped by count); intersection.py: section_pair_attempt,
+  section_engine_call (intersect_models entry),
+  raw_intersector_perform, face_classifier_eval (batched verifier,
+  bumped 2/sample; _match_raw_component inner classify, 2),
+  exact_face_distance (_shape_distance, _point_shape_distance),
+  adaptive_edge_samples (by sample count),
+  completeness_leaf_intervals (by leaf count); freeform.py:
+  face_classifier_eval (_trim_contains), exact_face_distance
+  (_exact_trimmed_distance).
+- pipeline.py: new `boolean_brep(..., collect_perf=False)` (also
+  `BREPKERNEL_PERF=1`). Counters attach as `report["performance"]`
+  after evidence emission, so the evidence record and its
+  content-derived name are byte-identical with profiling on or off;
+  only `report["performance"]` differs. `crosscheck_ops` companion
+  runs share the outer call's counters (documented aggregation).
+- tools/review_probes/perf_budget.py: `--perf` flag records S0
+  counters beside time on `--record` and enforces recorded
+  `max_calls` ceilings on `--check` (existing budget JSONs have no
+  max_calls: no behavior change by default).
+- tests/test_perf_counters.py (new): 7 tests - disabled run has no
+  performance key; enabled run records all canonical counters;
+  BREPKERNEL_PERF=1 works; verdict/volume/solid-count/refusal-kind
+  and evidence names identical perf-on vs perf-off across 5 ops;
+  single_witness_attempt == hit + fallback; enabled overhead <25%
+  on cyl/box guard; ambient counters reset after the call.
+
+Measurements (26 Sept 2026, local machine, OCCT 8.0.1 venv):
+- Overhead on the 262-face plate minus slot (interleaved best-of-3,
+  idle machine): perf off 7.93s, perf on 7.90s, overhead -0.43%
+  (noise floor). Plan criterion <2% enabled: PASS. First attempt
+  measured +4.49% but was invalid - a regression suite was running
+  concurrently and both series drifted upward with machine load.
+- count() micro-benchmark: 118 ns/call disabled, 363 ns/call
+  enabled; ~12.8k calls on the plate run (about 5 ms of the 7.9 s).
+  Disabled matches the pre-profiler 7.96s baseline (G12), so
+  disabled cost is effectively zero.
+- Plate counters (fastest perf-on run): exact_face_distance 328,
+  exact_edge_distance 298, solid_classifier_eval 546,
+  face_classifier_eval 2325, ray_intersector_perform 5559,
+  ray_pair_cast 2784, section_pair_attempt 8, section_engine_call 1,
+  raw_intersector_perform 8, adaptive_edge_samples 264,
+  completeness_leaf_intervals 160, volume_integration 5,
+  face_box_build 2, edge_box_build 4, single_witness_attempt 275
+  (hit 259, fallback 16), region_propagated 3.
+  The 275 attempts / 259 hits on side-A-style pieces line up with
+  the plan's 257/261 shortcut figure.
+
+Regression: new 7/7 pass; existing suites all green
+(test_brep_pipeline, test_degenerate, test_regression, test_evidence,
+test_g17_evidence_integrity, test_assembly_indexes, test_g12b_propagation,
+test_g10_com_witness, test_batched_section_verifier,
+test_freeform_assembly, test_freeform_intersection,
+test_freeform_split, test_metamorphic). Zero em dashes added.
+
+S0 COMPLETE per its pass criteria: instrumentation in place,
+verdicts equivalent on/off, overhead within noise of zero.
