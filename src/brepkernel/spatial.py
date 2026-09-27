@@ -52,11 +52,16 @@ class HybridBoxIndex:
     """Point/radius proximity index over an (n, 6) box array.
 
     The index is immutable after construction and safe to share across
-    queries.  Boxes are stored as given; only indices are returned.
+    queries.  Boxes are copied, made C-contiguous, and marked read-only
+    on the way in (so later mutation of the caller's array, or of the
+    stored boxes, cannot desynchronize the BVH node bounds built from
+    them); only indices are returned.
     """
 
     def __init__(self, boxes: np.ndarray):
-        b = np.ascontiguousarray(boxes, dtype=np.float64).reshape(-1, 6)
+        b = np.array(boxes, dtype=np.float64, copy=True, order="C"
+                     ).reshape(-1, 6)
+        b.setflags(write=False)
         self._boxes = b
         # BVH node storage; all None when the vector scan serves queries.
         self._node_lo: np.ndarray | None = None

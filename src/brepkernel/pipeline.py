@@ -312,10 +312,11 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     broad-phase candidates with a decisive containment relation), the
     result is built directly and those stages are skipped. Any
     uncertainty falls back to the full pipeline. fast_path_shadow=True
-    (default) additionally re-runs the old pipeline in shadow mode and
-    requires status, topology counts, and volume to agree; on any
-    disagreement the old pipeline's result is returned, so with shadow
-    on the observable behavior is identical to the old pipeline.
+    (default) additionally re-runs the old pipeline in shadow mode: the
+    fast result must agree with it on acceptance status, topology
+    counts, and volume, and the OLD pipeline's result is served in
+    every case, so with shadow on the observable behavior is exactly
+    the old pipeline's while the fast path is validated against it.
     """
     import hashlib as _hashlib
     import time as _time
@@ -866,9 +867,10 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
     # Conservative model-level facts that prove section/split/assembly
     # cannot change the verdict.  Any uncertainty falls back to the full
     # pipeline below.  With fast_path_shadow (default) the old pipeline
-    # is re-run and must agree on status, topology counts, and volume --
-    # on disagreement the OLD result is returned, so shadowed behavior
-    # is identical to the old pipeline by construction (R1).
+    # is re-run: the fast result must agree with it on acceptance
+    # status, topology counts, and volume, and the OLD result is served
+    # in every case, so shadowed behavior is exactly the old pipeline's
+    # (R1) while the fast path is validated against it.
     def _s3_volume_scale():
         all_faces = a.faces + b.faces
         if not all_faces:
@@ -981,10 +983,17 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
             agree, detail = _s3_agrees(fast_shape, old_out)
             info["shadow_agreement"] = bool(agree)
             info["shadow_detail"] = detail
+            # Shadow rule: the old pipeline's result is served in every
+            # case.  On agreement the fast result has been validated
+            # against it (acceptance status, topology counts, volume);
+            # on disagreement the old result is authoritative and the
+            # mismatch is counted.  Either way, with shadow on the
+            # observable behavior is exactly the old pipeline's (R1)
+            # while the fast path is validated against it.
             if not agree:
                 _perf_count(S3_SHADOW_MISMATCH)
-                old_report["stages"]["s3_fast_path"] = dict(info)
-                return _finalize(old_out, old_report)
+            old_report["stages"]["s3_fast_path"] = dict(info)
+            return _finalize(old_out, old_report)
         else:
             info["shadow"] = False
         report["stages"]["s3_fast_path"] = dict(info)

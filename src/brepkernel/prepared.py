@@ -18,10 +18,18 @@ the pipeline stages otherwise rebuild on every Boolean call:
   max_tolerance, topological counts.
 
 Lifetime (plan rule R6): a PreparedBRep is immutable (frozen dataclass;
-numpy arrays are never mutated after construction) and is valid for as
-long as the caller holds it. ``boolean_brep`` accepts a raw shape, a
-BRepModel, or a PreparedBRep; raw shapes and plain BRepModels are
-prepared internally, so existing callers are unaffected.
+every numpy array is an owned copy marked read-only at construction)
+and is valid for as long as the caller holds it. ``boolean_brep``
+accepts a raw shape, a BRepModel, or a PreparedBRep; raw shapes and
+plain BRepModels are prepared internally, so existing callers are
+unaffected.
+
+Explicit contract: the underlying TopoDS_Shape is shared by reference
+and OCCT shapes are mutable in principle (a caller could move faces or
+rewrite tolerances through handles).  A PreparedBRep assumes nobody
+mutates the shape's topology, geometry, or tolerances after
+preparation; violating that invalidates every cached box, index, and
+mask.  Preparation itself never mutates the input shape.
 
 Deliberately NOT stored here (per the plan): cached classification
 verdicts, tolerance-dependent section results, and mutable OCCT
@@ -45,7 +53,14 @@ from .spatial import HybridBoxIndex
 
 @dataclass(frozen=True)
 class PreparedBRep:
-    """Immutable acceleration data for one indexed shape."""
+    """Immutable acceleration data for one indexed shape.
+
+    All numpy arrays are owned, C-contiguous, read-only copies
+    (write=False); the frozen dataclass additionally blocks attribute
+    reassignment.  The wrapped ``model`` / TopoDS_Shape is shared by
+    reference and must not be mutated after preparation (see the
+    module docstring contract).
+    """
 
     model: object                      # BRepModel from index_shape()
     face_boxes: np.ndarray              # (n, 6) conservative AABBs
@@ -80,10 +95,23 @@ class PreparedBRep:
         return np.asarray(self.face_tol, dtype=np.float64) + float(contact_tol)
 
 
+def _freeze_array(a, dtype=None):
+    """Owned, C-contiguous, read-only copy of a numeric array.
+
+    frozen=True on the dataclass stops attribute reassignment but not
+    in-place mutation (prepared.face_boxes[0, 0] = ...).  The prepared
+    arrays back correctness arguments (and HybridBoxIndex builds BVH
+    node bounds from the same boxes), so every array stored on the
+    dataclass is frozen here at construction.
+    """
+    b = np.array(a, dtype=dtype, copy=True, order="C")
+    b.setflags(write=False)
+    return b
+
+
 def _import_assembly():
     # Lazy: assembly.py must not import prepared.py at module level
-    # (consumers there only duck-type on PreparedBRep), so the
-    # assembly -> prepared direction stays import-cycle free.
+    # (consumers there only duck-type on PreparedBRep), so the    # assembly -> prepared direction stays import-cycle free.
     from . import assembly as _a
     return _a
 
@@ -186,22 +214,29 @@ def _prepare_from_model(model, *, base_tol: float) -> PreparedBRep:
 
     asm = _import_assembly()
     edges = _build_unique_edges(model)
-    face_boxes = _build_face_boxes(model)
-    edge_boxes = _build_edge_boxes(edges)
+    face_boxes = _freeze_array(_build_face_boxes(model), dtype=np.float64)
+    edge_boxes = _freeze_array(_build_edge_boxes(edges), dtype=np.float64)
     surface_kinds = [str(fr.surface_type) for fr in model.faces]
-    analytic_mask = np.array(
-        ["BSpline" not in (k or "") for k in surface_kinds], dtype=bool)
-    freeform_mask = np.array(
+    # Canonical analytic predicate: the same _ANALYTIC_SURFACES set
+    # assembly._all_faces_analytic uses (plane, cylinder, cone, sphere,
+    # torus).  A "BSpline absent" test would wrongly mark Bezier,
+    # offset, extrusion, and revolution surfaces as analytic.
+    _analytic = asm._ANALYTIC_SURFACES
+    analytic_mask = _freeze_array(
+        [(k or "").split(".")[-1] in _analytic for k in surface_kinds],
+        dtype=bool)
+    freeform_mask = _freeze_array(
         [fr.freeform is not None for fr in model.faces], dtype=bool)
     return PreparedBRep(
         model=model,
         face_boxes=face_boxes,
         edges=edges,
         edge_boxes=edge_boxes,
-        face_tol=np.array([float(fr.tol_face) for fr in model.faces],
-                          dtype=np.float64),
+        face_tol=_freeze_array(
+            [float(fr.tol_face) for fr in model.faces], dtype=np.float64),
         face_adjacency=_build_face_adjacency(model),
-        solid_boxes=_build_solid_boxes(model),
+        solid_boxes=_freeze_array(_build_solid_boxes(model),
+                                  dtype=np.float64),
         analytic_mask=analytic_mask,
         freeform_mask=freeform_mask,
         all_faces_analytic=asm._all_faces_analytic(model.shape),

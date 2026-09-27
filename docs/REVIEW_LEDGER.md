@@ -65,6 +65,41 @@ uncertainty always falls back (never raises).
 
 ---
 
+## S3 review corrections (27 Sept 2026, branch speed/s3-fast-paths)
+
+ChatGPT's review of the S0-S3 stack; every finding verified against
+the code before fixing.
+
+- Shadow equivalence: the S3 report claimed shadowed behavior was
+  "identical to the old pipeline by construction", but _s3_finish
+  served the fast-path shape after checking only topology counts and
+  volume. Changed: the old pipeline's result is now served in every
+  shadowed case (agreement validates the fast result; disagreement or
+  old-pipeline refusal serves the old result and counts the mismatch),
+  which makes the claim literally true. Docstrings, report, and this
+  ledger updated to match.
+- PreparedBRep immutability (S1): frozen=True blocked reassignment but
+  not in-place array mutation, and HybridBoxIndex aliased the caller's
+  box array. New _freeze_array helper (owned C-contiguous read-only
+  copy) applied to every prepared array; HybridBoxIndex copies and
+  freezes its boxes the same way. The TopoDS_Shape non-mutation
+  contract is now documented explicitly on the class and module.
+- analytic_mask (S1): was "BSpline absent from the type string", which
+  marks Bezier/offset/extrusion/revolution surfaces analytic. Now uses
+  the canonical assembly._ANALYTIC_SURFACES predicate, same as
+  _all_faces_analytic. No S0-S3 code relied on the old mask for a
+  certification decision.
+- OCP 7.8 CI: test_nurbs_adversarial_corpus.py::t6 failed on 7.8 with
+  a SectionToleranceTooLoose refusal (2.18e-5 vs the 1.28e-5 ceiling),
+  the documented version difference the C1 fallbacks already handle
+  in neighboring tests. t6 now records that refusal as a pass on
+  OCP < 8.0.
+
+Regression: S3 tests 35/35, prepared/spatial/nurbs-corpus suites green
+after the fixes; full 40-file suite re-run queued before commit.
+
+---
+
 ## G0 - Tooling, baseline, CI, dependency pins
 
 - Date: 2026-09-25
