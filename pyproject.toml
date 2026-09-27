@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = []
+test = ["pytest>=8"]
 freeform = []
 
 [tool.setuptools.packages.find]

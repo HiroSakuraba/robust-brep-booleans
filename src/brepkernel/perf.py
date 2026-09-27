@@ -59,6 +59,9 @@ S3_FAST_PATH_ATTEMPT = "s3_fast_path_attempt"      # S3: fast-path tries
 S3_FAST_PATH_HIT = "s3_fast_path_hit"              # S3: fast path resolved op
 S3_FAST_PATH_INTERNAL_ERROR = "s3_fast_path_internal_error"  # S3: bug->fallback
 S3_SHADOW_MISMATCH = "s3_shadow_mismatch"          # S3: shadow disagreement
+CTX_VOLUME_HIT = "ctx_volume_hit"                  # S4: QueryContext volume memo
+CTX_POINT_VERDICT_HIT = "ctx_point_verdict_hit"    # S4: QueryContext verdict memo
+CTX_BOUNDARY_DISTANCE_HIT = "ctx_boundary_distance_hit"  # S4: QueryContext dist memo
 
 CANONICAL_COUNTERS = (
     EXACT_FACE_DISTANCE,
@@ -89,6 +92,9 @@ CANONICAL_COUNTERS = (
     S3_FAST_PATH_HIT,
     S3_FAST_PATH_INTERNAL_ERROR,
     S3_SHADOW_MISMATCH,
+    CTX_VOLUME_HIT,
+    CTX_POINT_VERDICT_HIT,
+    CTX_BOUNDARY_DISTANCE_HIT,
 )
 
 ENV_VAR = "BREPKERNEL_PERF"
