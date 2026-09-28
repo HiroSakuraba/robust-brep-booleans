@@ -1115,6 +1115,7 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
     }
 
     t_stage = perf_counter()
+    _substage_ms = {}
     try:
         # C9: parent face ids appearing in ANY broad-phase candidate pair
         # (whatever its status). A face absent from the set cannot meet
@@ -1126,7 +1127,8 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
             a, b, sp, op, base_tol=float(base_tol), sew_tol=sew_tol,
             allow_nonmanifold=bool(allow_nonmanifold),
             candidate_face_ids_a=cand_a, candidate_face_ids_b=cand_b,
-            prepared_a=pa, prepared_b=pb, ctx=_ctx)
+            prepared_a=pa, prepared_b=pb, ctx=_ctx,
+            _timers=_substage_ms)
     except FreeformError as exc:
         report["timings_ms"]["assembly"] = (
             perf_counter() - t_stage) * 1000.0
@@ -1140,6 +1142,7 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
     report["stages"]["assembly"] = {
         "selected_faces": assembled.selected_faces,
         "region_stats": getattr(assembled, "region_stats", None),
+        "substage_ms": dict(_substage_ms),
         "shells": len(assembled.shells),
         "solids": len(assembled.solids),
         "free_edges": assembled.free_edges,
