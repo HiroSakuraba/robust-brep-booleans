@@ -152,6 +152,12 @@ class BooleanAssemblyResult:
     notes: list[str] = field(default_factory=list)
     # G12b: untouched-region classification stats
     region_stats: dict = field(default_factory=dict)
+    # T1: tolerance budget. piece_max_tolerance is the largest edge/vertex
+    # tolerance on the selected pieces before sewing (it already includes
+    # the verified section-edge tolerances); sew_tol is the sewing
+    # tolerance. The result should not exceed max of the two.
+    sew_tol: float = 0.0
+    piece_max_tolerance: float = 0.0
 
     @property
     def is_empty(self) -> bool:
@@ -260,6 +266,36 @@ def _face_points(face, tol: float, *, max_points: int = 7,
                     add_point(_p3(surf.Value(float(u), float(v))))
                     if len(candidates) >= max_points:
                         break
+
+    # T2: thin slivers. A trimmed piece can fill only a few percent of its
+    # UV box (measured: a planar sliver at 5%), so every point above misses
+    # it. Search finer cell-centred grids and keep the most spread-out
+    # interior points (greedy farthest-point). The acceptance rule does not
+    # change: min_points well-separated interior witnesses, all of which
+    # must agree downstream.
+    n = 8
+    while len(candidates) < min_points and n <= 64:
+        found = []
+        for i in range(n):
+            for j in range(n):
+                u = u0 + (u1 - u0) * (i + 0.5) / n
+                v = v0 + (v1 - v0) * (j + 0.5) / n
+                _perf_count("face_classifier_eval")
+                cl = BRepClass_FaceClassifier(
+                    face, gp_Pnt2d(float(u), float(v)), float(tol), True)
+                if cl.State() == TopAbs_IN:
+                    found.append(_p3(surf.Value(float(u), float(v))))
+        while found and len(candidates) < max_points:
+            if candidates:
+                dist = [min(float(np.linalg.norm(x - q)) for q in candidates)
+                        for x in found]
+                k = int(np.argmax(dist))
+                if dist[k] <= sep:
+                    break
+            else:
+                k = 0
+            candidates.append(found.pop(k))
+        n *= 2
 
     if len(candidates) < min_points:
         raise AssemblyError(
@@ -2763,6 +2799,22 @@ def _solids_touch(solids, tol: float) -> bool:
     return False
 
 
+def _max_subshape_tolerance(shape) -> float:
+    """Largest face, edge or vertex tolerance in `shape`."""
+    from OCP.BRep import BRep_Tool
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    mx = 0.0
+    for kind, cast in ((TopAbs_FACE, TopoDS.Face), (TopAbs_EDGE, TopoDS.Edge),
+                       (TopAbs_VERTEX, TopoDS.Vertex)):
+        ex = TopExp_Explorer(shape, kind)
+        while ex.More():
+            mx = max(mx, float(BRep_Tool.Tolerance_s(cast(ex.Current()))))
+            ex.Next()
+    return mx
+
+
 def _self_touching_edge_pairs(shape, tol: float) -> int:
     """Count distinct edge pairs that share both end vertices and coincide.
 
@@ -2770,7 +2822,14 @@ def _self_touching_edge_pairs(shape, tol: float) -> int:
     non-manifold point set stored as a manifold-looking shell (review
     correction C3: a rotated edge-touching union was accepted this way
     while the axis-aligned case refuses NonManifoldResult).
+
+    Degenerated edges (sphere and cone poles) are skipped: they are points,
+    so they cannot make a boundary touch itself along a curve. A face whose
+    boundary crosses a pole twice carries two distinct degenerated edges on
+    the same vertex, and counting them as a coincident pair refused an
+    ordinary manifold union (box union a sphere centred on its corner).
     """
+    from OCP.BRep import BRep_Tool
     from OCP.BRepAdaptor import BRepAdaptor_Curve
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
     from OCP.BRepExtrema import BRepExtrema_DistShapeShape
@@ -2784,6 +2843,8 @@ def _self_touching_edge_pairs(shape, tol: float) -> int:
     while ex.More():
         e = TopoDS.Edge(ex.Current())
         ex.Next()
+        if BRep_Tool.Degenerated_s(e):
+            continue
         bucket = unique.setdefault(hash(e), [])
         if any(e.IsSame(x) for x in bucket):
             continue
@@ -2879,6 +2940,10 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
                 for d in selected if d.selected_face is not None]
             sew_tol = max(float(base_tol),
                           2.0 * max(face_tols, default=base_tol))
+        piece_max_tol = max(
+            (_max_subshape_tolerance(d.selected_face)
+             for d in selected if d.selected_face is not None),
+            default=float(base_tol))
         if not sew_tol > 0:
             raise ValueError("sew_tol must be positive")
 
@@ -2988,4 +3053,6 @@ def assemble_boolean(model_a: BRepModel, model_b: BRepModel,
         section_payloads=section_payloads,
         notes=notes,
         region_stats=region_stats,
+        sew_tol=float(sew_tol),
+        piece_max_tolerance=float(piece_max_tol),
     )
