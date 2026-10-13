@@ -185,6 +185,9 @@ write_omnisolid_usda(out, "part.usda")
 ```
 
 A disagreement is a typed refusal (`IndependentEngineDisagreement`).
+`advisory_on_refusal=True` attaches an uncertified second opinion (OCCT's
+own Boolean and SMLib, with a triage label) to refusals; the nightly
+`refusal-queue` job tracks the suspected over-refusal rate.
 Conventions, measured accuracy, findings and limits:
 [`docs/usd_brep_backend.md`](docs/usd_brep_backend.md).
 

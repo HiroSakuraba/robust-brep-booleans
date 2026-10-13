@@ -181,26 +181,28 @@ Cost: 0.01 s (disjoint) to about 4 s per check, typically under 1 s.
 
 ## Findings about brepkernel from the second engine
 
-SMLib can answer cases brepkernel refuses. These are not served as
-certified results, but they are useful leads:
+SMLib can answer cases brepkernel refuses. Its answers are never served as
+certified results; they are leads. The first round of leads has been
+worked through (docs/REVIEW_LEDGER.md, T1-T6):
 
-* Equal-radius crossing cylinders, intersection (Steinmetz solid):
-  brepkernel refuses `PatchClassificationInconsistent`; SMLib returns
-  5.3333301 against the exact 16/3 (6e-7 off).
-* `--second-opinion` on the 11 fuzz refusals above: on 9, SMLib and plain
-  OCCT (`BRepAlgoAPI`) agree to within 2e-6 relative (kinds
-  `InsufficientPatchWitnesses` 5, `SectionCompletenessMismatch` 3,
-  `SectionToleranceTooLoose` 1), so those refusals look over-cautious.
-  On a torus-torus union (`PatchClassificationInconsistent`) the two
-  differ by 6.6%, so that refusal looks justified. One SMLib answer was
-  unreadable (vertex gap). Reproduce with
-  `smlib_crosscheck_fuzz.py --trials 150 --seed 42 --second-opinion`.
-* Box (0,0,0)-(2,2,2) union sphere at (2,2,2) r 1.2: brepkernel refuses
-  `NonManifoldResult` ("result boundary touches itself along 1 coincident
-  edge pair"). The sphere's seam lies exactly in the box face plane
-  y = 2; the true result is an ordinary manifold solid, and SMLib's
-  answer (14.33345079, exact 8 + (7/8)(4/3)pi 1.2^3 = 14.33345079)
-  confirms it. This looks like a false refusal worth a gate of its own.
+* Box union a sphere centred on its corner refused `NonManifoldResult`.
+  Cause: two distinct degenerated (pole) edges counted as a self-touching
+  edge pair. Fixed (T4); accepted with the exact volume.
+* `InsufficientPatchWitnesses` on thin slivers: the witness search missed
+  pieces filling a few percent of their UV box. Fixed (T2).
+* `SectionCompletenessMismatch`: the completeness probe paired raw
+  p-curves with the wrong faces. Fixed (T6); a safety fix as well.
+* Seed 42, 150 trials: refusal rate 4.0% -> 0.67%, suspected
+  over-refusals 3.3% -> 0%. The one refusal left is justified: OCCT's own
+  Boolean drops a torus/plane branch (0.4% volume error against SMLib)
+  and brepkernel's probe sees it.
+* Equal-radius crossing cylinders (Steinmetz solid) still refuse by
+  design; OCCT and SMLib both answer 16/3 to 1e-9, so it stays in the
+  queue for a tangency gate.
+
+Run `smlib_crosscheck_fuzz.py --second-opinion --dump-dir DIR` to grow
+the queue; `boolean_brep(advisory_on_refusal=True)` gives the same second
+opinion for a single call.
 
 ## Limits
 

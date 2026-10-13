@@ -1,4 +1,4 @@
-"""Deterministic fuzz: every accepted brepkernel result is re-checked by SMLib.
+"""Deterministic fuzz: SMLib re-checks every accept; refusals get triaged.
 
 Random rigidly placed primitives (box, cylinder, sphere, cone, torus), a
 random Boolean, brepkernel first; each accepted result goes through
@@ -7,9 +7,17 @@ brepkernel.usd.smlib_backend.cross_check. Needs usd-brep.
     python tools/review_probes/smlib_crosscheck_fuzz.py --trials 30 --seed 7 \
         --out /tmp/smlib_fuzz.json
 
+--second-opinion: every brepkernel refusal also gets OCCT's own Boolean
+and SMLib's answer (brepkernel.advisory) and a triage label:
+suspected_over_refusal (the two agree to 1e-6: a regression-queue
+candidate), justified (they differ by 1e-4 or more) or unclear. The
+METRICS line reports refusal_rate and suspected_over_refusal_rate.
+--dump-dir writes the operands of refused and non-agreeing cases as .brep
+files so each queue entry can be reproduced.
+
 Exit 1 on any "disagree" or crash. "inconclusive" (SMLib could not
 answer) is counted and listed but does not fail the run; pass
---fail-inconclusive to make it fail too.
+--fail-inconclusive to make it fail too. Refusals never fail the run.
 """
 from __future__ import annotations
 
@@ -24,23 +32,28 @@ import numpy as np
 
 
 def _second_opinion(sb, a, b, op):
-    """SMLib's volume and plain OCCT's for a case brepkernel refused."""
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
+    """SMLib's volume and plain OCCT's for a case brepkernel refused
+    (brepkernel.advisory, flattened for the ledger)."""
+    from brepkernel.advisory import second_opinions
+    summary, _shapes = second_opinions(a, b, op)
     out = {}
-    try:
-        out["smlib_volume"] = sb._volume(sb.smlib_boolean(a, b, op))
-    except Exception as exc:
-        out["smlib"] = f"{getattr(exc, 'kind', type(exc).__name__)}: {exc}"[:200]
-    try:
-        algo = {"union": BRepAlgoAPI_Fuse, "intersection": BRepAlgoAPI_Common,
-                "difference": BRepAlgoAPI_Cut}[op](a, b)
-        out["occt_bop_volume"] = sb._volume(algo.Shape()) if algo.IsDone() else None
-    except Exception as exc:
-        out["occt_bop"] = f"{type(exc).__name__}: {exc}"[:200]
-    if out.get("smlib_volume") is not None and out.get("occt_bop_volume"):
-        v, w = out["smlib_volume"], out["occt_bop_volume"]
-        out["relative_difference"] = abs(v - w) / max(abs(v), abs(w), 1e-300)
+    for name, key in (("smlib", "smlib"), ("occt", "occt_bop")):
+        rec = summary["engines"].get(name, {})
+        if "volume" in rec:
+            out[f"{key}_volume"] = rec["volume"]
+        else:
+            out[key] = rec.get("error") or rec.get("status")
+    out["relative_difference"] = summary["relative_difference"]
+    out["triage"] = summary["triage"]
     return out
+
+
+def _dump(directory, i, op, shapes):
+    import os
+    from OCP.BRepTools import BRepTools
+    os.makedirs(directory, exist_ok=True)
+    for tag, shp in shapes:
+        BRepTools.Write_s(shp, os.path.join(directory, f"trial{i:03d}_{op}_{tag}.brep"))
 
 
 def main() -> int:
@@ -53,7 +66,8 @@ def main() -> int:
                     help="on a brepkernel refusal, record SMLib's answer and plain "
                          "OCCT's (BRepAlgoAPI) volume; informational only")
     ap.add_argument("--dump-dir", default=None,
-                    help="write the operands of every non-agreeing case as .brep files")
+                    help="write the operands of every refused or non-agreeing case "
+                         "as .brep files")
     args = ap.parse_args()
 
     from brepkernel import BRepAmbiguousResult, boolean_brep
@@ -114,7 +128,11 @@ def main() -> int:
             msg = ""
             if args.second_opinion:
                 rec["second_opinion"] = _second_opinion(sb, a, b, op)
+                tally["refusal_" + rec["second_opinion"]["triage"]] += 1
                 msg = " | " + json.dumps(rec["second_opinion"])
+            if args.dump_dir:
+                _dump(args.dump_dir, i, op, (("A", a), ("B", b)))
+                rec["dumped_to"] = args.dump_dir
             records.append(rec)
             print(f"{i:03d} {rec['a']}-{rec['b']} {op}: brepkernel refused {rec['kind']}{msg}")
             continue
@@ -137,12 +155,7 @@ def main() -> int:
         rec["seconds"] = round(time.perf_counter() - t0, 3)
         tally[cc["status"]] += 1
         if args.dump_dir and cc["status"] != "agree":
-            import os
-            from OCP.BRepTools import BRepTools
-            os.makedirs(args.dump_dir, exist_ok=True)
-            for tag, shp in (("A", a), ("B", b), ("result", out)):
-                path = os.path.join(args.dump_dir, f"trial{i:03d}_{op}_{tag}.brep")
-                BRepTools.Write_s(shp, path)
+            _dump(args.dump_dir, i, op, (("A", a), ("B", b), ("result", out)))
             rec["dumped_to"] = args.dump_dir
         records.append(rec)
         line = f"{i:03d} {rec['a']}-{rec['b']} {op}: {cc['status']} ({rec['seconds']} s)"
@@ -155,9 +168,19 @@ def main() -> int:
                          f"pts={c['points']['disagreements']} solids={c['solids']}")
         print(line, flush=True)
     print("TALLY", dict(tally))
+    n = args.trials
+    metrics = {
+        "trials": n,
+        "refusal_rate": tally["brepkernel_refused"] / n if n else 0.0,
+    }
+    if args.second_opinion:
+        metrics["suspected_over_refusal_rate"] = (
+            tally["refusal_suspected_over_refusal"] / n if n else 0.0)
+    print("METRICS", json.dumps(metrics))
     if args.out:
         with open(args.out, "w") as fh:
             json.dump({"seed": args.seed, "trials": args.trials, "tally": dict(tally),
+                       "metrics": metrics,
                        "smlib_version": sb.smlib_version(), "records": records},
                       fh, indent=1, default=str)
     bad = tally["disagree"] + tally["crash"]
