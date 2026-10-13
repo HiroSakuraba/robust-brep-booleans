@@ -278,7 +278,9 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                  fast_paths=True,
                  fast_path_shadow=True,
                  evidence_dir=None,
-                 collect_perf=False):
+                 collect_perf=False,
+                 independent_engine=None,
+                 independent_engine_strict=False):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
 
     Contract (unchanged): returns (TopoDS_Shape, report) on accept;
@@ -317,6 +319,18 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     counts, and volume, and the OLD pipeline's result is served in
     every case, so with shadow on the observable behavior is exactly
     the old pipeline's while the fast path is validated against it.
+
+    independent_engine="smlib" recomputes an accepted result with NVIDIA's
+    SMLib kernel (optional dependency usd-brep, brepkernel.usd) and compares
+    the two in OCCT: solid count, volume, and deterministic point
+    membership. It is the only check here that does not run on OCCT. The
+    outcome is recorded at report["stages"]["independent_engine"] and in
+    the evidence certification block. A clear contradiction is a typed
+    refusal with kind=IndependentEngineDisagreement. When SMLib cannot
+    answer (not installed, conversion failed, SMLib refused), the result
+    is still served unless independent_engine_strict=True, in which case
+    that too refuses (kind=IndependentEngineInconclusive). Off by default:
+    it costs a second Boolean in another kernel, typically 0.1 to 2 s.
     """
     import hashlib as _hashlib
     import time as _time
@@ -341,7 +355,7 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
 
     def _params(report):
         eff_contact = report.get("broadphase_contact_tol")
-        return {
+        params = {
             "base_tol": float(base_tol),
             "contact_tol": (float(eff_contact) if eff_contact is not None
                             else 4.0 * float(base_tol)),
@@ -364,6 +378,13 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             "use_obb": bool(use_obb),
             "collect_perf": bool(collect_perf),
         }
+        # Only present when enabled, so default evidence records are
+        # byte-identical to those of a build without the option.
+        if independent_engine is not None:
+            params["independent_engine"] = independent_engine
+            params["independent_engine_strict"] = bool(
+                independent_engine_strict)
+        return params
 
     def _attach(report, result_shape):
         # Guarded: evidence emission must never alter the outcome.
@@ -380,6 +401,14 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             }
             if not probed:
                 certification["unprobed"] = True
+            ie = report.get("stages", {}).get("independent_engine") \
+                if isinstance(report, dict) else None
+            if isinstance(ie, dict):
+                certification["independent_engine"] = {
+                    "engine": ie.get("engine"),
+                    "engine_version": ie.get("engine_version"),
+                    "status": ie.get("status"),
+                }
             record = _evidence.build_record(
                 op=op,
                 input_a={"sha256": _hashlib.sha256(a_bytes).hexdigest(),
@@ -440,6 +469,10 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             with _perf.scoped(_counters):
                 out, report = _boolean_brep_impl(shapeA, shapeB, op,
                                                  **_impl_kwargs)
+        if independent_engine is not None:
+            _independent_engine_check(
+                _as_shape(shapeA), _as_shape(shapeB), op, out, report,
+                independent_engine, independent_engine_strict)
     except BRepAmbiguousResult as exc:
         _attach(exc.report, None)
         _attach_perf(exc.report)
@@ -447,6 +480,50 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     _attach(report, out)
     _attach_perf(report)
     return out, report
+
+
+def _independent_engine_check(shapeA, shapeB, op, out, report, engine,
+                              strict):
+    """Compare an accepted result with a second, non-OCCT kernel.
+
+    Records report["stages"]["independent_engine"]; raises
+    BRepAmbiguousResult on disagreement (always) or on an inconclusive
+    check (strict only). Never changes `out`.
+    """
+    from time import perf_counter
+    from .freeform import FreeformError
+    if engine != "smlib":
+        raise ValueError(f"unknown independent_engine {engine!r} "
+                         f"(supported: 'smlib')")
+    from .usd.smlib_backend import cross_check
+    t0 = perf_counter()
+    result = cross_check(shapeA, shapeB, op, out)
+    result["strict"] = bool(strict)
+    report["stages"]["independent_engine"] = result
+    report.setdefault("timings_ms", {})["independent_engine"] = (
+        (perf_counter() - t0) * 1000.0)
+    status = result.get("status")
+    if status == "agree":
+        return
+    if status == "disagree":
+        kind, why = "IndependentEngineDisagreement", "disagrees with"
+    elif strict:
+        kind, why = "IndependentEngineInconclusive", "could not check"
+    else:
+        return
+    cmp = result.get("comparison", {})
+    detail = result.get("message") or (
+        f"volume diff {cmp.get('volume', {}).get('difference', 0):.6g} "
+        f"(tol {cmp.get('volume', {}).get('tolerance', 0):.3g}), "
+        f"{cmp.get('points', {}).get('disagreements', 0)} point disagreements, "
+        f"solids {cmp.get('solids', {}).get('brepkernel')} vs "
+        f"{cmp.get('solids', {}).get('other')}")
+    exc = FreeformError(f"{engine} {why} the result: {detail}", kind)
+    report["accepted"] = False
+    report["refusal"] = {"stage": "independent_engine", "type": "FreeformError",
+                         "kind": kind, "message": str(exc)}
+    raise BRepAmbiguousResult(
+        f"B-rep result refused in independent_engine: {exc}", report, exc)
 
 
 def _operation_volume_bounds(op, va, vb, vr, volume_scale, base_tol):

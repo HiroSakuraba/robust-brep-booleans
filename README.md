@@ -161,6 +161,33 @@ PYTHONPATH=src .venv/bin/python tools/review_probes/common_cad_probes.py   # exi
 PYTHONPATH=src .venv/bin/python tools/review_probes/repro_findings.py      # exit 0 required
 ```
 
+## OpenUSD and NVIDIA usd-brep (optional second engine)
+
+`brepkernel.usd` reads and writes exact solids in NVIDIA's omniSolid
+`BrepArray` OpenUSD schema (`.usda`), the B-rep format Omniverse uses.
+This needs nothing beyond the normal install.
+
+With the optional NVIDIA [usd-brep](https://github.com/NVIDIA-Omniverse/usd-brep)
+wheel (Apache-2.0, CPython 3.12), accepted Booleans can also be re-checked
+by SMLib, a NURBS kernel that shares no code with OCCT:
+
+```bash
+.venv/bin/pip install usd-brep            # or: pip install -e .[usd]
+```
+
+```python
+from brepkernel import boolean_brep
+from brepkernel.usd import write_omnisolid_usda, read_omnisolid_usda
+
+out, report = boolean_brep(a, b, "difference", independent_engine="smlib")
+report["stages"]["independent_engine"]["status"]   # agree | disagree | inconclusive | unavailable
+write_omnisolid_usda(out, "part.usda")
+```
+
+A disagreement is a typed refusal (`IndependentEngineDisagreement`).
+Conventions, measured accuracy, findings and limits:
+[`docs/usd_brep_backend.md`](docs/usd_brep_backend.md).
+
 ## Test results (2026-09-25, merged main `10ea7d8`)
 
 - Full suite: 26/26 test files exit 0, 0 `[FAIL]` lines.
@@ -193,7 +220,13 @@ PYTHONPATH=src .venv/bin/python tools/review_probes/repro_findings.py      # exi
   errors; small shape deviations are covered by vertex-on-surface, sample
   membership, the volume identities, and the testing arbiter.
 - G8 (real-data refusal rate) is open work, owned by a separate worker.
+- The SMLib cross-check compares solid count, volume and point membership,
+  so like the OCCT cross-check it catches gross errors, not deviations
+  thinner than its band (about 1e-5 of the part size). SMLib sometimes
+  cannot answer; that is recorded as inconclusive, never as agreement.
 
 ## License
 
-MIT, see `LICENSE`.
+MIT, see `LICENSE`. The optional `usd-brep` dependency is Apache-2.0 and
+is installed from PyPI, not vendored; the `.usda` fixtures in
+`tests/data/usd` are SMLib output (see the README there).

@@ -18,6 +18,10 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8"]
 freeform = []
+# Optional second engine and USD import/export checks: NVIDIA usd-brep
+# (SMLib, Apache-2.0). Wheels are CPython 3.12. brepkernel.usd's .usda
+# writer and reader work without it.
+usd = ["usd-brep>=1.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
