@@ -3478,3 +3478,33 @@ interior witness is found. A consensus mode would need both checks, a fix
 for that skip, and a decision on how small a misclassified region it must
 detect (membership is probabilistic: a region of volume fraction f escapes
 N points with probability (1-f)^N).
+
+## G1-G2: glTF export and command line for game engines (13 Oct 2026, branch feature/dve-exact-boolean)
+
+**What was added.** `brepkernel.mesh_export` (B-rep to binary glTF) and
+`brepkernel.cli` (`import`, `boolean`, `mesh`, `primitive`; JSON report
+schema `brepkernel.cli/1`; exit 0 done, 2 refused, 1 error). No change to
+the certify-or-refuse pipeline.
+
+**Exporter checks** (`tests/test_mesh_export_cli.py`, 17 tests):
+* Box, sphere (poles), cone (apex), torus (two seams), box minus sphere
+  (cavity): watertight, outward, and the mesh volume converges to the exact
+  volume when the deflection is divided by 8 (fine error under 2e-3).
+* Hard edges: a box gives 24 vertices and 6 face ranges.
+* Frame: a 200 x 100 x 50 mm STEP box becomes 0.2 x 0.05 x 0.1 m, +Y up,
+  volume exactly 0.001 m3.
+* An open shell is refused before any file is written.
+* Placement: mirror, similarity and general affine `--b-transform` give the
+  expected volumes (mirror keeps a positive volume).
+* CLI: refusals write no output files; STEP writer statistics no longer
+  corrupt the JSON on stdout (fd 1 and 2 are captured while a command runs).
+
+**Engine check (DVE).** brepkernel GLBs load through DVE's own GLB reader
+with identical vertex counts (exact normals kept) and matching volumes. The
+DVE exact Boolean test does a certified plate-minus-peg difference with a
+rotated, non-uniformly scaled operand: certified exact volume 0.874336 in
+A's mesh frame (1.748673 m3 in the world), mesh volume 0.874766 (+0.05%: the
+meshed hole is an inscribed polygon, so it removes slightly less). The same test hits one known over-refusal: two
+crossing r = 1 cylinders, intersection, `PatchClassificationInconsistent`,
+while OCCT and SMLib both give 5.33333 (16/3, the exact Steinmetz volume);
+the advisory labels it `suspected_over_refusal`.

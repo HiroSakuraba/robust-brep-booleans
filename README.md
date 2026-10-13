@@ -191,6 +191,35 @@ own Boolean and SMLib, with a triage label) to refusals; the nightly
 Conventions, measured accuracy, findings and limits:
 [`docs/usd_brep_backend.md`](docs/usd_brep_backend.md).
 
+## Command line and glTF export (game engines)
+
+`brepkernel` (also `python -m brepkernel`) wraps the pipeline for tools that
+call it as a process. Every command writes a JSON report (schema
+`brepkernel.cli/1`) to stdout or `--report FILE`. Exit codes: 0 done,
+2 refused (no output file is written), 1 error.
+
+```bash
+brepkernel import part.step -o part.brep --mesh part.glb      # STEP mm +Z up -> meters +Y up
+brepkernel boolean plate.brep peg.brep --op difference -o hole.brep \
+    --b-transform 1,0,0,0.1,0,1,0,-0.05,0,0,1,-0.05 --mesh hole.glb --advisory
+brepkernel mesh hole.brep -o hole.glb --deflection 0.0005
+brepkernel primitive cylinder -o peg.brep --radius 0.02 --height 0.2 --axis y
+```
+
+- `import` reads STEP, BREP or omniSolid `.usda` and writes a `.brep` in
+  meters, +Y up (`--scale`, `--up` override the per-format defaults).
+- `boolean` places B with `--b-transform` (3x4 row-major; rigid, mirrored,
+  uniform scale or general affine), `--reverse` gives B minus A, `--advisory`
+  attaches uncertified second opinions to a refusal.
+- `--mesh` / `mesh` write a binary glTF through `brepkernel.mesh_export`:
+  per-face vertices (hard edges at every B-rep edge), exact surface normals,
+  a watertight check before anything is written, and the face ranges in
+  `meshes[0].extras.brepkernel.faces`. The default chord deflection is the
+  bounding box diagonal / 500.
+
+DVE uses this for exact CAD import and exact Booleans next to its mesh
+Booleans (DVE `docs/exact-cad-boolean-2026-10-13.md`).
+
 ## Test results (2026-09-25, merged main `10ea7d8`)
 
 - Full suite: 26/26 test files exit 0, 0 `[FAIL]` lines.
