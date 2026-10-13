@@ -31,6 +31,7 @@ jobs:
           cache: "pip"
           cache-dependency-path: requirements-freeform.txt
       - name: Install dependencies
+        id: install
         run: >-
           python -m pip install
           numpy==2.5.3 manifold3d==3.5.3
@@ -38,12 +39,16 @@ jobs:
       - name: G7 seam stress
         run: python tests/test_g7_seam_stress.py
       - name: Stress test
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: python tests/test_stress.py
       - name: 200-trial snapped fuzz (fail on WRONG or CRASH)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: python tools/review_probes/fuzz_brep.py --trials 200 --seed 42 --snap 0.5 --kinds box,cyl --out /tmp/nightly_snapped_fuzz.json
       - name: 200-trial generic fuzz (fail on WRONG or CRASH)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: python tools/review_probes/fuzz_brep.py --trials 200 --seed 7 --out /tmp/nightly_generic_fuzz.json
       - name: Performance budget check (fails if a pinned case exceeds its budget)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: python tools/review_probes/perf_budget.py --check
 
   refusal-queue:
