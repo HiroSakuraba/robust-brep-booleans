@@ -880,6 +880,34 @@ def _face_wires_compound(fa_face, fb_face):
     return comp
 
 
+def _pair_raw_pcurves(c3, c2first, c2second, fa, fb, t0, t1):
+    """(p-curve on fa, p-curve on fb, max 3D error) for a raw IntTools curve.
+
+    Both assignments are evaluated against the 3D curve at five interior
+    parameters; the one whose surface points stay closest wins. The error
+    of the winner is returned so the caller can refuse when neither fits.
+    """
+    from OCP.BRep import BRep_Tool
+    sa = BRep_Tool.Surface_s(fa.face)
+    sb = BRep_Tool.Surface_s(fb.face)
+    ts = [t0 + (t1 - t0) * f for f in (0.1, 0.3, 0.5, 0.7, 0.9)]
+
+    def err(ca, cb):
+        e = 0.0
+        for t in ts:
+            p = c3.Value(t)
+            ua, ub = ca.Value(t), cb.Value(t)
+            e = max(e, sa.Value(ua.X(), ua.Y()).Distance(p),
+                    sb.Value(ub.X(), ub.Y()).Distance(p))
+        return e
+
+    straight = err(c2first, c2second)
+    swapped = err(c2second, c2first)
+    if swapped < straight:
+        return c2second, c2first, swapped
+    return c2first, c2second, straight
+
+
 def _match_raw_component(ic_index, c3, c2a, c2b, fa, fb, *,
                          target, edge_ends, wires_thunk,
                          t0, t1, trim_tol, tight_tol, tol_i, scale):
@@ -1187,15 +1215,10 @@ def _raw_intersector_completeness_probe(
 
         c2first = ic.FirstCurve2d()
         c2second = ic.SecondCurve2d()
-        if raw.Face1().IsSame(fa.face):
-            c2a, c2b = c2first, c2second
-        else:
-            c2a, c2b = c2second, c2first
-        if c2a is None or c2b is None:
+        if c2first is None or c2second is None:
             raise IntersectionError(
                 f"raw intersection curve {i} lacks bilateral p-curves",
                 kind="IntersectionCompletenessProbeFailed")
-
         # G3 item 1: refuse when OCCT's reported raw tolerance exceeds the
         # section tolerance ceiling instead of widening the window.
         # ic.TangentialTolerance() is recorded below but not folded in: it
@@ -1212,6 +1235,20 @@ def _raw_intersector_completeness_probe(
         tol_i = max(16.0 * float(base_tol),
                     4.0 * max_verify_tol,
                     2.0 * curve_tol)
+        # T6: which p-curve belongs to which face is decided geometrically
+        # (after the G3 tolerance check, so that refusal keeps precedence).
+        # IntTools_FaceFace reorders faces internally for some surface
+        # pairs, and raw.Face1().IsSame(fa.face) then pairs each face with
+        # the other face's p-curve (seen: plane/cylinder, both p-curves off
+        # by 1.7). In-trim tests on the wrong UV points both invent
+        # unmatched branches and can hide a dropped one.
+        c2a, c2b, pairing_error = _pair_raw_pcurves(
+            c3, c2first, c2second, fa, fb, t0, t1)
+        if pairing_error > max(tol_ceiling, 1e-6 * scale):
+            raise IntersectionError(
+                f"raw intersection curve {i}: neither p-curve pairing lies "
+                f"on the faces (best error {pairing_error:.3g})",
+                kind="IntersectionCompletenessProbeFailed")
 
         verdict, leaf_intervals, stats = _match_raw_component(
             i, c3, c2a, c2b, fa, fb,

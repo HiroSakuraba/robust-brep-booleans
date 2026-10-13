@@ -280,7 +280,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                  evidence_dir=None,
                  collect_perf=False,
                  independent_engine=None,
-                 independent_engine_strict=False):
+                 independent_engine_strict=False,
+                 advisory_on_refusal=False):
     """Run the exact trimmed-B-rep Tier B/C pipeline.
 
     Contract (unchanged): returns (TopoDS_Shape, report) on accept;
@@ -331,6 +332,13 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
     is still served unless independent_engine_strict=True, in which case
     that too refuses (kind=IndependentEngineInconclusive). Off by default:
     it costs a second Boolean in another kernel, typically 0.1 to 2 s.
+
+    advisory_on_refusal=True: when the result is refused, the report gains
+    report["advisory"] (brepkernel.advisory.second_opinions): what OCCT's
+    own Boolean and, if installed, SMLib return, how far apart they are,
+    and a triage label. It is marked certified=False and never changes the
+    verdict; the outside shapes ride on the exception as
+    exc.advisory_shapes. Off by default.
     """
     import hashlib as _hashlib
     import time as _time
@@ -384,6 +392,8 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
             params["independent_engine"] = independent_engine
             params["independent_engine_strict"] = bool(
                 independent_engine_strict)
+        if advisory_on_refusal:
+            params["advisory_on_refusal"] = True
         return params
 
     def _attach(report, result_shape):
@@ -474,12 +484,39 @@ def boolean_brep(shapeA, shapeB, op, *, base_tol=1e-7,
                 _as_shape(shapeA), _as_shape(shapeB), op, out, report,
                 independent_engine, independent_engine_strict)
     except BRepAmbiguousResult as exc:
-        _attach(exc.report, None)
-        _attach_perf(exc.report)
-        raise
+        refused = exc
+    else:
+        refused = None
+    if refused is not None:
+        # Outside the except block on purpose: usd-brep prints import
+        # warnings with the active exception chain attached.
+        if advisory_on_refusal:
+            # Guarded: advisory output must never alter the outcome.
+            try:
+                from .advisory import second_opinions
+                summary, shapes = second_opinions(
+                    _as_shape(shapeA), _as_shape(shapeB), op)
+                refused.report["advisory"] = summary
+                refused.advisory_shapes = shapes
+            except Exception as err:
+                refused.report["advisory_error"] = (
+                    f"{type(err).__name__}: {err}")
+                refused.advisory_shapes = {}
+        _attach(refused.report, None)
+        _attach_perf(refused.report)
+        raise refused
     _attach(report, out)
     _attach_perf(report)
     return out, report
+
+
+# T1: largest allowed ratio of the result's max tolerance to the certified
+# budget (pieces' own tolerances, which carry the verified section-edge
+# tolerances, and the sewing tolerance). Measured 2026-10-12 over the CAD
+# probes and 150 fuzz trials: worst 1.050, median 1.0. 2x leaves margin for
+# sewing's vertex adjustments and still catches SameParameter inflation
+# (seen in the USD reader: 0.068 against a 2e-5 budget).
+RESULT_TOLERANCE_GROWTH_LIMIT = 2.0
 
 
 def _independent_engine_check(shapeA, shapeB, op, out, report, engine,
@@ -1381,6 +1418,17 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
     volume_bounds_ok, volume_bounds, volume_tol = _operation_volume_bounds(
         op, va, vb, vr, volume_scale, base_tol)
 
+    # T1: tolerance budget. OCCT's sewing runs SameParameter, which can
+    # widen a tolerance to hide a curve that is off its surface, and the
+    # shape still passes BRepCheck. The result may not exceed what the
+    # pipeline itself certified: the pieces' own tolerances (which carry
+    # the verified section-edge tolerances) and the sewing tolerance.
+    from .assembly import _max_subshape_tolerance
+    result_max_tol = _max_subshape_tolerance(assembled.shape)
+    certified_tol = max(float(base_tol), float(assembled.sew_tol),
+                        float(assembled.piece_max_tolerance))
+    tolerance_ratio = result_max_tol / certified_tol
+
     report["stages"]["verification"] = {
         "brep_valid": valid,
         "closed": assembled.free_edges == 0,
@@ -1400,6 +1448,9 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
         "input_volume_A": va,
         "input_volume_B": vb,
         "result_volume": vr,
+        "result_max_tolerance": result_max_tol,
+        "certified_tolerance": certified_tol,
+        "tolerance_ratio": tolerance_ratio,
     }
     report["timings_ms"]["verification"] = (
         perf_counter() - t_stage) * 1000.0
@@ -1430,6 +1481,14 @@ def _boolean_brep_impl(shapeA, shapeB, op, *, base_tol=1e-7,
             f"result volume {vr:.12g} violates {op} bounds "
             f"{volume_bounds} with tolerance {volume_tol:.6g}",
             "OperationVolumeInvariantFailed")
+        refuse("verification", exc)
+    if tolerance_ratio > RESULT_TOLERANCE_GROWTH_LIMIT:
+        exc = FreeformError(
+            f"result tolerance {result_max_tol:.3g} exceeds the certified "
+            f"budget {certified_tol:.3g} by {tolerance_ratio:.3g}x (limit "
+            f"{RESULT_TOLERANCE_GROWTH_LIMIT:g}x): a tolerance was widened "
+            f"after verification, which can hide geometry that is off its "
+            f"surface", "ResultToleranceGrowth")
         refuse("verification", exc)
 
     report["accepted"] = True

@@ -3375,3 +3375,106 @@ many64 is now 34.6% of wall -- BELOW the ~38% bar for 8-core 1.5x
 Largest remaining leaf is commit.lineage (evidence bookkeeping):
 18.2% (many64) / 14.4% (plate), serial by design -- the next
 work-avoidance target if further speedup is wanted.
+
+## T1-T6: refusal triage with a second engine (12-13 Oct 2026, branch feature/refusal-triage)
+
+Follow-up to the usd-brep merge (PR #3). Every refusal can now get an
+uncertified second opinion from OCCT's own Boolean and NVIDIA SMLib; where
+the two agree to 1e-6 the refusal is a suspected over-refusal and its cause
+was hunted down in brepkernel. Certify-or-refuse is unchanged: nothing
+from an outside engine is ever served as a certified result.
+
+**T1 result tolerance budget.** Verification records
+`result_max_tolerance`, `certified_tolerance` (max of base_tol, the sewing
+tolerance and the selected pieces' own edge/vertex tolerances, which carry
+the verified section-edge tolerances) and their ratio, and refuses
+`ResultToleranceGrowth` above `RESULT_TOLERANCE_GROWTH_LIMIT` = 2. Reason:
+OCCT's SameParameter (sewing runs it) can widen a tolerance to hide a curve
+that is off its surface and the shape still passes BRepCheck (seen in the
+USD reader: 0.068 on a 2e-5 file). Measured over the CAD probes and 150
+fuzz trials: worst ratio 1.050, median 1.0. Fires on nothing today.
+
+**T2 sliver witnesses (InsufficientPatchWitnesses).** `_face_points` now
+escalates to cell-centred 8x8 ... 64x64 grids with greedy farthest-point
+selection when the fixed sample finds fewer than min_points. Cause: a
+planar sliver filling 5% of its UV box; the fixed fractions and the 4x4
+grid found 1 interior point, a 16x16 grid finds 9. The 3-witness,
+all-must-agree rule is unchanged.
+
+**T3 advisory answers.** `boolean_brep(advisory_on_refusal=True)` adds
+`report["advisory"]` on refusal (brepkernel/advisory.py): OCCT and SMLib
+volumes, relative difference, triage label, `certified: false`; shapes on
+`exc.advisory_shapes`. Absent unless asked; never changes a verdict; runs
+outside the except block (usd-brep prints import warnings with the active
+exception chain).
+
+**T4 pole edges are not self-touch (NonManifoldResult).**
+`_self_touching_edge_pairs` skips degenerated edges. Cause: box union a
+sphere centred on its corner keeps a 7/8 sphere face that crosses the
+south pole twice, so the result has two distinct degenerated edges on one
+vertex, and the C3 check counted them as a coincident edge pair. (The USD
+backend doc first guessed the seam-on-face; that was wrong.) C3's real
+edge-touch cases still refuse (test_c3_self_touch ALL PASS, OCP 8 and 7.8).
+
+**T5 refusal queue.** `smlib_crosscheck_fuzz.py --second-opinion` labels
+each refusal suspected_over_refusal / justified / unclear, `--dump-dir`
+saves the operands, and a METRICS line reports refusal_rate and
+suspected_over_refusal_rate. New nightly job `refusal-queue` (3 seeds x
+150 trials, ledger and operands uploaded as artifacts; fails only on a
+disagreement with an accepted result or a crash).
+
+**T6 completeness-probe p-curve pairing (SectionCompletenessMismatch).**
+`_pair_raw_pcurves` decides which raw IntTools p-curve lies on which face
+by evaluating both pairings against the 3D curve; the probe refuses
+`IntersectionCompletenessProbeFailed` if neither fits. Cause:
+IntTools_FaceFace reorders faces internally for some surface pairs, so
+`raw.Face1().IsSame(fa.face)` paired each face with the other face's
+p-curve (plane/cylinder: both off by 1.7). The in-trim test then looked at
+the wrong UV points. That produced false refusals here, and in principle
+could also mark a genuinely dropped branch as out of trim (a missed
+detection), so this is a safety fix as well as an acceptance fix. The G3
+tolerance refusal keeps precedence (pairing runs after it).
+
+Evidence:
+
+* Seed 42, 150 trials, before -> after: refusal rate 4.0% -> 0.67%,
+  suspected over-refusals 3.3% -> 0%; 148 agree with SMLib, 1 inconclusive
+  (SMLib export with a vertex 120x off tolerance), 1 refusal left. That
+  one is justified: the probe sees a torus/plane branch with no Section
+  edge, and SMLib's volume (3.01443, its own mesh 3.01423) differs from
+  OCCT BRepAlgoAPI's (3.02661) by 0.4%: OCCT dropped the branch and
+  brepkernel's refusal protected against it.
+* verdict_equivalence vs main (probes + manifest fuzz + 120 generic
+  5-primitive trials seed 11; and 120 snapped box/cyl trials seed 42):
+  no accept->refuse, no accepted-volume change; 15 distinct
+  refuse->accept; 1 refusal-kind change (seed 5 trial 9, snapped
+  cyl/cyl tangent contact: SectionCompletenessMismatch ->
+  UnresolvedContact, still refused, now for the precise reason).
+* All 15 new accepts verified four ways: OCCT BRepAlgoAPI to ~1e-16,
+  SMLib within 1.2e-6 (one unreadable), winding-number membership audit
+  0 errors (300 points), every face point on an operand surface.
+* New tests fail on main and pass here (7 of them; corner-sphere
+  difference and intersection already passed on main).
+
+**Consensus-mode measurement (no mode added).** If outside results were
+ever to be certified, generic checks would have to catch wrong ones.
+25 accepted results, 10 planted error types each, plus the unmodified
+result (`tools/review_probes/planted_error_audit.py 25 300`):
+
+| planted | valid | volume bounds | membership (300 pts) | boundary-on-operands | any |
+|---|---|---|---|---|---|
+| none (false alarms) | 0 | 0 | 0 | 0 | 0/25 |
+| wrong operation | 0 | 20 | 25 | 0 | 25/25 |
+| bump 20% / 5% / 1% of size | 0 | 24 / 0 / 0 | 25 / 6 / 0 | 25 / 25 / 25 | 25 / 25 / 25 |
+| dent 20% / 5% / 1% | 2 / 0 / 1 | 9 / 0 / 1 | 25 / 4 / 1 | 25 / 24 / 25 | 25 / 24 / 25 |
+| shift 1e-2 / 1e-3 / 1e-4 of size | 0 | 0 | 17 / 1 / 0 | 25 / 25 / 25 | 25 / 25 / 25 |
+
+274 of 275 caught, 0 false alarms. The two strong checks are
+complementary: boundary-on-operands catches every local error and misses
+every wrong-operation result (its faces all lie on operand surfaces);
+membership catches every wrong-operation result and few local ones. The
+one miss (a 5% dent) shows the boundary check skips faces where no
+interior witness is found. A consensus mode would need both checks, a fix
+for that skip, and a decision on how small a misclassified region it must
+detect (membership is probabilistic: a region of volume fraction f escapes
+N points with probability (1-f)^N).

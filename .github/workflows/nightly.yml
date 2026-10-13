@@ -45,3 +45,40 @@ jobs:
         run: python tools/review_probes/fuzz_brep.py --trials 200 --seed 7 --out /tmp/nightly_generic_fuzz.json
       - name: Performance budget check (fails if a pinned case exceeds its budget)
         run: python tools/review_probes/perf_budget.py --check
+
+  refusal-queue:
+    # T5: second opinions on every refusal. Each refusal is triaged with
+    # OCCT's own Boolean and NVIDIA SMLib: suspected_over_refusal (the two
+    # agree to 1e-6), justified (they differ by 1e-4+) or unclear. The
+    # ledger and the operands of every refused case are kept as artifacts;
+    # the over-refusal rate is the number to drive down. Fails only on a
+    # disagreement with an accepted result or a crash, never on refusals.
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-freeform.txt
+      - name: Install dependencies
+        run: >-
+          python -m pip install
+          numpy==2.5.3 manifold3d==3.5.3
+          cadquery-ocp==8.0.1.0.0 usd-brep==1.0.0 -e .
+      - name: Refusal queue, seeds 7, 42, 20261012
+        run: |
+          set -e
+          mkdir -p refusal-queue
+          for seed in 7 42 20261012; do
+            python tools/review_probes/smlib_crosscheck_fuzz.py --trials 150 \
+              --seed "$seed" --second-opinion \
+              --dump-dir "refusal-queue/seed$seed" \
+              --out "refusal-queue/seed$seed.json" | tail -3
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: refusal-queue
+          path: refusal-queue/
