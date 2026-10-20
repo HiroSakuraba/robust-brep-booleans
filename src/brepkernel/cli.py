@@ -320,6 +320,57 @@ def cmd_primitive(args, report) -> int:
     return EXIT_OK
 
 
+def _mjfit_result(xml, rep, args, report) -> int:
+    report["certificate"] = rep
+    report["status"] = rep["status"]
+    if rep["status"] != "certified" or xml is None:
+        return EXIT_REFUSED
+    tmp = args.output + ".part"
+    with open(tmp, "w") as fh:
+        fh.write(xml)
+    os.replace(tmp, args.output)
+    report["output"] = {"path": os.path.abspath(args.output), "sha256": _sha256(args.output)}
+    return EXIT_OK
+
+
+def _peg_options(args) -> dict:
+    kw = {}
+    for name in ("peg_length", "handle_height", "spawn_height"):
+        v = getattr(args, name, None)
+        if v is not None:
+            kw[name] = v
+    return kw
+
+
+def cmd_mjfit_certify(args, report) -> int:
+    """Mode A: an mjfit peg config, checked against its true outlines."""
+    import yaml
+    from .mujoco_fit import certify_mjfit_config
+    overrides = {}
+    for item in args.set or []:
+        key, _, value = item.partition("=")
+        if not key or not _:
+            raise CliError(f"--set needs key=value, got {item!r}")
+        try:
+            overrides[key] = float(value)            # YAML would read 8e-5 as text
+        except ValueError:
+            overrides[key] = yaml.safe_load(value)
+    try:
+        xml, rep = certify_mjfit_config(args.config, sample_spacing=args.sample_spacing, **overrides)
+    except (FileNotFoundError, ValueError) as exc:
+        raise CliError(str(exc)) from exc
+    report["config"] = args.config
+    return _mjfit_result(xml, rep, args, report)
+
+
+def cmd_mjfit_from_cad(args, report) -> int:
+    """Mode C: an mjfit peg-in-hole model for a CAD plate, checked against it."""
+    from .mujoco_fit import mjfit_peg_from_cad
+    xml, rep = mjfit_peg_from_cad(args.input, args.clearance, max_error=args.max_error, scale=args.scale,
+                                  sample_spacing=args.sample_spacing, **_peg_options(args))
+    return _mjfit_result(xml, rep, args, report)
+
+
 # ---------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -369,6 +420,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--height", type=float, default=1.0)
     p.add_argument("--axis", choices=["x", "y", "z"], default="y")
     common(p)
+
+    p = sub.add_parser("mjfit-certify", help="mjfit peg config -> MJCF, checked against the true outlines")
+    p.add_argument("config", help="bundled mjfit config name, YAML path")
+    p.add_argument("-o", "--output", required=True, help="MJCF file (written only when certified)")
+    p.add_argument("--set", action="append", metavar="KEY=VALUE", help="override a config value (YAML)")
+    p.add_argument("--sample-spacing", type=float, default=None)
+    p.add_argument("--report", default=None)
+
+    p = sub.add_parser("mjfit-from-cad", help="CAD plate with a hole -> mjfit MJCF peg-in-hole, checked")
+    p.add_argument("input", help=".step/.stp (millimeters), .brep or .usda (meters)")
+    p.add_argument("-o", "--output", required=True, help="MJCF file (written only when certified)")
+    p.add_argument("--clearance", type=float, required=True, help="peg to hole gap, meters")
+    p.add_argument("--max-error", type=float, default=1e-4, help="polygon error for arcs, meters")
+    p.add_argument("--scale", type=float, default=None, help="override the unit scale to meters")
+    p.add_argument("--peg-length", type=float, default=None)
+    p.add_argument("--handle-height", type=float, default=None)
+    p.add_argument("--spawn-height", type=float, default=None)
+    p.add_argument("--sample-spacing", type=float, default=None)
+    p.add_argument("--report", default=None)
     return ap
 
 
@@ -397,7 +467,8 @@ def main(argv=None) -> int:
     os.dup2(log.fileno(), 2)
     try:
         code = {"import": cmd_import, "boolean": cmd_boolean, "mesh": cmd_mesh,
-                "primitive": cmd_primitive}[args.cmd](args, report)
+                "primitive": cmd_primitive, "mjfit-certify": cmd_mjfit_certify,
+                "mjfit-from-cad": cmd_mjfit_from_cad}[args.cmd](args, report)
     except CliError as exc:
         report["status"] = "error"
         report["error"] = str(exc)

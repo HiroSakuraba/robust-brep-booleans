@@ -53,6 +53,8 @@ jobs:
           for t in tests/test_*.py; do
             case "$t" in
               tests/test_g7_seam_stress.py|tests/test_stress.py) continue ;;
+              # pytest-only (module-level importorskip); runs below and in the mjfit job
+              tests/test_mujoco_fit.py) continue ;;
             esac
             case " $pytest_files " in
               *" $t "*) continue ;;
@@ -92,3 +94,24 @@ jobs:
         run: python -m pytest tests/test_usd_omnisolid.py tests/test_smlib_backend.py -q
       - name: SMLib cross-check fuzz (fail on disagree or crash)
         run: python tools/review_probes/smlib_crosscheck_fuzz.py --trials 30 --seed 7 --out /tmp/smlib_fuzz.json
+
+  mjfit:
+    # The mjfit bridge (brepkernel.mujoco_fit). The fast matrix skips its
+    # tests because mjfit, scipy and shapely are not installed there.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-freeform.txt
+      - name: Install dependencies
+        run: >-
+          python -m pip install
+          numpy==2.5.3 manifold3d==3.5.3 cadquery-ocp==8.0.1.0.0
+          mujoco==3.16.0 scipy==1.18.1 shapely==2.2.0 mapbox_earcut==2.1.0 pyyaml==6.0.3
+          -e .[test,mjfit]
+      - name: mjfit certificate and CAD tests
+        run: python -m pytest tests/test_mujoco_fit.py -q

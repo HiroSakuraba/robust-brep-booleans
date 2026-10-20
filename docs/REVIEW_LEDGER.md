@@ -3508,3 +3508,47 @@ meshed hole is an inscribed polygon, so it removes slightly less). The same test
 crossing r = 1 cylinders, intersection, `PatchClassificationInconsistent`,
 while OCCT and SMLib both give 5.33333 (16/3, the exact Steinmetz volume);
 the advisory labels it `suspected_over_refusal`.
+
+## M1: mjfit bridge, certify and CAD to MuJoCo (19 Oct 2026, branch feature/mjfit-certify)
+
+**What was added.** `brepkernel.mujoco_fit` and the CLI commands
+`mjfit-certify` and `mjfit-from-cad`, for mjfit (MIT, pinned at eee986c).
+Mode A runs `mjfit.peg` and checks it against the true outlines rebuilt
+from the same shape specs. Mode C reads a CAD plate, checks that it is an
+extrusion with one hole, polygonizes it on the material side, runs
+`mjfit.peg` and checks the result against the CAD part. The Boolean pipeline
+is not touched.
+
+**Exact checks** (Fractions on the MJCF `repr` floats): pieces are convex
+z-prisms, no overlaps (SAT), each slab's boundary loop signature (outer,
+holes) after exact shared-edge cancellation, no peg-plate overlap. Clearance
+equals the request to 1e-12 m. **Measured checks** (boundary samples at h,
+bound 2h): model vs real part per slab, model edges near real edges, grid
+check for whole-region differences, and on plate slabs a bound of the
+outlines' own polygon error.
+
+**Planted errors, all refused** (`tests/test_mujoco_fit.py`): a wedge shrunk
+by 1e-9 (PieceGap; the loop count alone missed it, because the gap joined the
+outer edge to the hole, so the check now uses the signature), grown by 1e-9
+(PieceOverlap), peg moved 1 um (ClearanceMismatch) and 0.2 mm
+(SimInterference), one top vertex moved 0.1 um (NonPrismPiece), an 8 um slit
+from the hole (BoundaryMismatch), a reference hole 0.2 mm too big
+(ShapeMismatch), a plate without the hole against a holed one (grid check).
+
+**Results.** All nine bundled peg configs certify. Measured findings, each
+matched by hand to the polygon formula: usb_c's simulated peg overlaps the
+real receptacle by 13.3 um (clearance 50 um is below the default 100 um
+polygon error); db9 and xlr3 pins are 17.6 and 19.6 um fatter than the real
+pins; inside hole corners give 0.29 x clearance extra play (rj45, star,
+usb_a); rounded_convex's Bezier peg makes the hole up to 98 um smaller than
+the true offset. From CAD: through hole, blind hole, rounded plate with a
+blind slot and a pin, and a plate tilted 30 degrees all certify; the simulated
+plate never has material outside the CAD part (7.8e-18 m); MuJoCo loads the
+models and the pegs drop into place. A chamfered hole (NotAnExtrusion) and a
+two-hole plate are refused.
+
+**Engineering notes.** OCCT's planar offset (BRepOffsetAPI_MakeOffset)
+segfaults on a plain circle face, so the ideal peg is built from offset
+boundary samples instead. A k-d tree over dense boundary samples is slow for
+far queries (47 s for 2e5 points); every query that only needs "within d" now
+caps its search radius (112 s down to 5.5 s for the circle config).
