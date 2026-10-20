@@ -273,6 +273,11 @@ def extrusion_axis(shape) -> np.ndarray:
                 break
         if ok and cap_area > best_area:
             best, best_area = c, cap_area
+    if best is not None:
+        k = int(np.argmax(np.abs(best)))
+        if abs(best[k]) > 1 - 1e-12:              # rounding from an earlier frame turn: snap
+            best = np.zeros(3)
+            best[k] = 1.0
     if best is None:
         raise Refusal("NotAnExtrusion",
                       "the part is not a straight extrusion along any axis (every face must be "
@@ -280,8 +285,12 @@ def extrusion_axis(shape) -> np.ndarray:
     return best
 
 
-def to_axis_frame(shape, axis: np.ndarray, flip: bool = False):
-    """Shape moved so `axis` is +z (or -z with flip) and its lowest point is at z = 0."""
+def to_axis_frame(shape, axis: np.ndarray, flip: bool = False, shift_to_zero: bool = True):
+    """Shape turned so `axis` is +z (or -z with flip), lowest point moved to z = 0.
+
+    Returns (shape, m) with m the 3x4 map from the input frame. Without the
+    shift, an axis-aligned part maps by a signed permutation, which is exact.
+    """
     from OCP.Bnd import Bnd_Box
     from OCP.BRepBndLib import BRepBndLib
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
@@ -294,6 +303,9 @@ def to_axis_frame(shape, axis: np.ndarray, flip: bool = False):
     t = gp_Trsf()
     t.SetTransformation(gp_Ax3(gp_Pnt(0, 0, 0), gp_Dir(*z), gp_Dir(*x)))
     out = BRepBuilderAPI_Transform(shape, t, True).Shape()
+    m = np.array([[t.Value(i, j) for j in range(1, 5)] for i in range(1, 4)])
+    if not shift_to_zero:
+        return out, m
     box = Bnd_Box()
     BRepBndLib.Add_s(out, box)
     zmin = box.CornerMin().Z()

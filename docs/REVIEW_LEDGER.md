@@ -3552,3 +3552,30 @@ segfaults on a plain circle face, so the ideal peg is built from offset
 boundary samples instead. A k-d tree over dense boundary samples is slow for
 far queries (47 s for 2e5 points); every query that only needs "within d" now
 caps its search radius (112 s down to 5.5 s for the circle config).
+
+## M2: convex collision pieces for extruded parts (19 Oct 2026, branch feature/convex-pieces)
+
+**What was added.** `brepkernel.convex_pieces` and the CLI `convex-pieces`:
+an extruded part (axis found automatically) is sectioned per slab between
+its cap levels, each loop is polygonized on the material side, each region
+is triangulated (constrained Delaunay, no added vertices) and the triangles
+are merged into convex polygons (Hertel-Mehlhorn, exact rational convexity
+tests), then extruded. Certificate per slab: exact convexity, no overlaps,
+exact boundary loop signature, pieces never outside the part (sampled,
+bound 2h), part within `max_error` of the pieces. An axis that is a
+coordinate axis up to 1e-12 is snapped, so the frame turn is a signed
+permutation and the exact checks carry over to the output coordinates.
+
+**Independent checks** (`tests/test_convex_pieces.py`, 9 tests): OCCT's
+solid classifier puts every piece vertex inside or on the part, in the
+part's own frame (through hole, two holes, L shape, a stepped part with a
+boss, a ring along Y, a plate tilted 30 degrees); total piece volume never
+exceeds the part and is within 1 percent; a chamfered hole is refused.
+
+**Engine check (DVE + Jolt 5.6).** A peg dropped onto a square-hole plate:
+with the plate as convex pieces the peg falls through the hole at 1 mm
+clearance (Jolt defaults) and at 0.1 mm and 20 um (speculative contact
+distance 0.5 mm, penetration slop 0.1 mm); with the plate as one hull it
+rests on top every time. With Jolt's default 2 cm speculative distance a
+0.1 mm peg catches on the rim, so DVE now exposes both Jolt tolerances as
+project settings.
