@@ -53,6 +53,8 @@ jobs:
           for t in tests/test_*.py; do
             case "$t" in
               tests/test_g7_seam_stress.py|tests/test_stress.py) continue ;;
+              # pytest-only (module-level importorskip); runs below and in the mjfit job
+              tests/test_mujoco_fit.py) continue ;;
             esac
             case " $pytest_files " in
               *" $t "*) continue ;;
