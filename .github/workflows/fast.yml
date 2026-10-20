@@ -49,7 +49,8 @@ jobs:
           set -e
           # pytest-style files (import pytest at module level) run under
           # pytest; the rest are self-contained scripts.
-          pytest_files=$(grep -l "^import pytest" tests/test_*.py || true)
+          # one line, space separated: the match below looks for " $t "
+          pytest_files=$(grep -l "^import pytest" tests/test_*.py | tr '\n' ' ' || true)
           for t in tests/test_*.py; do
             case "$t" in
               tests/test_g7_seam_stress.py|tests/test_stress.py) continue ;;
