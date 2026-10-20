@@ -159,12 +159,13 @@ def convex_pieces(shape, max_error: float = 1e-4, sample_spacing: float | None =
                 for j in range(i + 1, len(hulls)):
                     if exact_overlap(hulls[i], hulls[j]):
                         raise Refusal("PieceOverlap", f"pieces {i} and {j} overlap at z = {z0:g}..{z1:g}")
-            sig = loop_signature(exact_union_loops(hulls))
+            union = exact_union_loops(hulls)
+            sig = loop_signature(union)
             if tuple(sig) != tuple(want):
                 raise Refusal("PieceGap", f"pieces at z = {z0:g}..{z1:g} have {sig[0]} outer and {sig[1]} inner "
                               f"loops, the part has {want[0]} and {want[1]}")
             fl = [np.array([[float(x), float(y)] for x, y in hl]) for hl in hulls]
-            dev = deviation(PieceRegion(fl, h, 1e-12), LoopRegion(loops, h))
+            dev = deviation(PieceRegion(fl, h, 1e-12, loops=union), LoopRegion(loops, h))
             res = dev.resolution
             slab = {"z": [z0, z1], "pieces": len(hulls), "outer_loops": sig[0], "hole_loops": sig[1],
                     "deviation": dev.as_dict()}

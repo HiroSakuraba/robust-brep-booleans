@@ -21,7 +21,7 @@ from brepkernel.cli import _volume, write_shape
 from brepkernel.convex_pieces import convex_pieces, merge_convex
 from brepkernel.mujoco_fit.geom2d import exact_area, frac_points
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
-from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert, BRepBuilderAPI_Transform
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCone, BRepPrimAPI_MakeCylinder
 from OCP.gp import gp_Ax1, gp_Ax2, gp_Dir, gp_Pnt, gp_Trsf
@@ -38,6 +38,15 @@ def cyl(x, y, z, r, h, d=(0, 0, 1)):
     return BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(x, y, z), gp_Dir(*d)), r, h).Shape()
 
 
+def _elliptic_prism(a, b):
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeWire
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
+    from OCP.gp import gp_Elips, gp_Vec
+    e = BRepBuilderAPI_MakeEdge(gp_Elips(gp_Ax2(gp_Pnt(0, 0, -.001), gp_Dir(0, 0, 1)), a, b)).Edge()
+    face = BRepBuilderAPI_MakeFace(BRepBuilderAPI_MakeWire(e).Wire()).Face()
+    return BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, .012)).Shape()
+
+
 PARTS = {
     "through_hole": lambda: BRepAlgoAPI_Cut(box(-.025, -.025, 0, .025, .025, .01), cyl(0, 0, -.001, .008, .012)).Shape(),
     "two_holes": lambda: BRepAlgoAPI_Cut(BRepAlgoAPI_Cut(box(-.025, -.025, 0, .025, .025, .01),
@@ -45,6 +54,9 @@ PARTS = {
                                          cyl(.01, 0, -.001, .005, .012)).Shape(),
     "l_shape": lambda: BRepAlgoAPI_Fuse(box(0, 0, 0, .04, .01, .01), box(0, 0, 0, .01, .04, .01)).Shape(),
     "boss": lambda: BRepAlgoAPI_Fuse(box(-.02, -.02, 0, .02, .02, .005), cyl(0, 0, .005, .006, .01)).Shape(),
+    "nurbs_hole": lambda: BRepBuilderAPI_NurbsConvert(
+        BRepAlgoAPI_Cut(box(-.025, -.025, 0, .025, .025, .01), cyl(0, 0, -.001, .008, .012)).Shape(), True).Shape(),
+    "ellipse_hole": lambda: BRepAlgoAPI_Cut(box(-.025, -.025, 0, .025, .025, .01), _elliptic_prism(.012, .006)).Shape(),
     "y_axis_ring": lambda: BRepAlgoAPI_Cut(cyl(0, 0, 0, .02, .01, (0, 1, 0)), cyl(0, -.001, 0, .01, .012, (0, 1, 0))).Shape(),
 }
 

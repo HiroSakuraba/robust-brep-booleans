@@ -114,8 +114,8 @@ def certify_model(xml: str, refs: dict[str, Region | None], clearance: float, h:
             if len(zr) != 1:
                 raise _Refuse("UnrecognizedModel", f"{ROLE_TEXT[role]} pieces have different heights")
             polys = [_floats(hl) for _, hl, _, _ in items]
-            regions[role] = PieceRegion(polys, h, eps=1e-12)
             union = exact_union_loops([hl for _, hl, _, _ in items])
+            regions[role] = PieceRegion(polys, h, eps=1e-12, loops=union)
             sig = loop_signature(union)
             entry = {"pieces": len(items), "z": list(zr[0]),
                      "area_sim": float(sum(exact_area(hl) for _, hl, _, _ in items)),

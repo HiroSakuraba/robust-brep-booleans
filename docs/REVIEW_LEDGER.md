@@ -3579,3 +3579,19 @@ distance 0.5 mm, penetration slop 0.1 mm); with the plate as one hull it
 rests on top every time. With Jolt's default 2 cm speculative distance a
 0.1 mm peg catches on the rim, so DVE now exposes both Jolt tolerances as
 project settings.
+
+**Follow-up (same branch): B-spline outlines and speed.** DVE's end-to-end
+test found that an exact Boolean result (a plate drilled by a slightly
+rotated peg) has B-spline section edges, which the first version refused.
+Outline curves of any type are now polygonized on the material side
+(chords where the curve turns toward the material, tangent corners where it
+turns toward free space, refined to max_error), with B-splines and ellipses
+evaluated in vectorized form (matches OCCT to 5.6e-17 m). Planes stored as
+B-spline surfaces now count as caps. A plate converted entirely to NURBS
+certifies (105 pieces, pieces at most 2.5e-8 m outside, within the 4e-6 m
+bound). Speed: piece regions now sample only the exact union outline (not
+every piece edge, which cost pieces x samples), and membership outlines use
+line endpoints and sagitta-bounded arcs. A 1 m drilled plate went from 404 s
+to 5 s, its NURBS version from 68 s to 16 s, and the mjfit suite runs in
+half the time. Tests: 11 convex-pieces tests (adds the NURBS plate and an
+elliptical hole).

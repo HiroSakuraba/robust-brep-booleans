@@ -117,9 +117,9 @@ def _edge_curve(edge) -> Curve:
 
     def xy(u):
         p = ad.Value(u)
-        return np.array([p.X(), p.Y()])
+        return (p.X(), p.Y())
 
-    a_pt, b_pt = (xy(u1), xy(u0)) if rev else (xy(u0), xy(u1))
+    a_pt, b_pt = (np.array(xy(u1)), np.array(xy(u0))) if rev else (np.array(xy(u0)), np.array(xy(u1)))
     t = ad.GetType()
     if t == GeomAbs_Line:
         return Segment(a_pt, b_pt)
@@ -135,14 +135,75 @@ def _edge_curve(edge) -> Curve:
     def d1(u):
         p, v = gp_Pnt(), gp_Vec()
         ad.D1(u, p, v)
-        return np.array([v.X(), v.Y()])
+        return (v.X(), v.Y())
 
     from OCP.GCPnts import GCPnts_AbscissaPoint
     length = GCPnts_AbscissaPoint.Length_s(ad)
+    vec = dvec = None
+    from OCP.GeomAbs import GeomAbs_BSplineCurve, GeomAbs_Ellipse
+    if t == GeomAbs_BSplineCurve:
+        vec, dvec = _bspline_eval(ad.BSpline())
+    elif t == GeomAbs_Ellipse:
+        vec, dvec = _ellipse_eval(ad.Ellipse())
+    if vec is not None:
+        if rev:
+            return SampledCurve(lambda u: tuple(vec(np.array([u0 + u1 - u]))[0]),
+                                lambda u: tuple(-dvec(np.array([u0 + u1 - u]))[0]), u0, u1, length,
+                                kind=str(t).split(".")[-1], vec=lambda u: vec(u0 + u1 - u),
+                                dvec=lambda u: -dvec(u0 + u1 - u))
+        return SampledCurve(lambda u: tuple(vec(np.array([u]))[0]), lambda u: tuple(dvec(np.array([u]))[0]),
+                            u0, u1, length, kind=str(t).split(".")[-1], vec=vec, dvec=dvec)
     if rev:
-        return SampledCurve(lambda u: xy(u0 + u1 - u), lambda u: -d1(u0 + u1 - u), u0, u1, length,
-                            kind=str(t).split(".")[-1])
+        def back(u):
+            x, y = d1(u0 + u1 - u)
+            return (-x, -y)
+        return SampledCurve(lambda u: xy(u0 + u1 - u), back, u0, u1, length, kind=str(t).split(".")[-1])
     return SampledCurve(xy, d1, u0, u1, length, kind=str(t).split(".")[-1])
+
+
+def _bspline_eval(curve):
+    """Vectorized (rational) B-spline in xy from OCCT poles, knots and weights."""
+    from scipy.interpolate import BSpline
+    deg = curve.Degree()
+    poles = np.array([[curve.Pole(i).X(), curve.Pole(i).Y()] for i in range(1, curve.NbPoles() + 1)])
+    w = np.array([curve.Weight(i) for i in range(1, curve.NbPoles() + 1)])
+    knots = []
+    for i in range(1, curve.NbKnots() + 1):
+        knots += [curve.Knot(i)] * curve.Multiplicity(i)
+    knots = np.array(knots)
+    if curve.IsPeriodic():
+        raise Refusal("UnsupportedOutlineCurve", "a periodic B-spline outline edge")
+    num = BSpline(knots, poles * w[:, None], deg, extrapolate=False)
+    den = BSpline(knots, w, deg, extrapolate=False)
+    dnum, dden = num.derivative(), den.derivative()
+    lo, hi = knots[deg], knots[-deg - 1]
+
+    def vec(u):
+        u = np.clip(np.asarray(u, dtype=float), lo, hi)
+        return num(u) / den(u)[:, None]
+
+    def dvec(u):
+        u = np.clip(np.asarray(u, dtype=float), lo, hi)
+        d = den(u)[:, None]
+        return (dnum(u) * d - num(u) * dden(u)[:, None]) / (d * d)
+    return vec, dvec
+
+
+def _ellipse_eval(e):
+    pos = e.Position()
+    c = np.array([pos.Location().X(), pos.Location().Y()])
+    xd = np.array([pos.XDirection().X(), pos.XDirection().Y()])
+    yd = np.array([pos.YDirection().X(), pos.YDirection().Y()])
+    a, b = e.MajorRadius(), e.MinorRadius()
+
+    def vec(u):
+        u = np.asarray(u, dtype=float)[:, None]
+        return c + a * np.cos(u) * xd + b * np.sin(u) * yd
+
+    def dvec(u):
+        u = np.asarray(u, dtype=float)[:, None]
+        return -a * np.sin(u) * xd + b * np.cos(u) * yd
+    return vec, dvec
 
 
 def section_loops(shape, z: float, tol: float) -> list[list[Curve]]:
@@ -197,8 +258,15 @@ def _reversed(c: Curve) -> Curve:
         return Arc(c.center, c.radius, c.a0 + c.sweep, -c.sweep)
     if isinstance(c, QuadBezier):
         return QuadBezier(c.p2, c.p1, c.p0)
-    f, d = c.fn, c.dfn
-    return SampledCurve(lambda u: f(c.u0 + c.u1 - u), lambda u: -d(c.u0 + c.u1 - u), c.u0, c.u1, c.len, c.kind)
+    f, d, v, dv = c.fn, c.dfn, c.vec, c.dvec
+    a, b = c.u0, c.u1
+
+    def back(u):
+        x, y = d(a + b - u)
+        return (-x, -y)
+    return SampledCurve(lambda u: f(a + b - u), back, a, b, c.len, c.kind,
+                        vec=lambda u: v(a + b - np.asarray(u, dtype=float)),
+                        dvec=lambda u: -dv(a + b - np.asarray(u, dtype=float)))
 
 
 def reverse_loop(loop: list[Curve]) -> list[Curve]:
@@ -223,10 +291,41 @@ def _face_area(face) -> float:
     return g.Mass()
 
 
+def _sampled_normals(face):
+    """(normals, points) on a 5 x 5 grid inside the face's parameter box."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepLProp import BRepLProp_SLProps
+    s = BRepAdaptor_Surface(face)
+    normals, points = [], []
+    props = BRepLProp_SLProps(s, 1, 1e-9)
+    for a in np.linspace(0.1, 0.9, 5):
+        for b in np.linspace(0.1, 0.9, 5):
+            u = s.FirstUParameter() + a * (s.LastUParameter() - s.FirstUParameter())
+            v = s.FirstVParameter() + b * (s.LastVParameter() - s.FirstVParameter())
+            props.SetParameters(u, v)
+            if props.IsNormalDefined():
+                n, q = props.Normal(), props.Value()
+                normals.append([n.X(), n.Y(), n.Z()])
+                points.append([q.X(), q.Y(), q.Z()])
+    return np.array(normals), np.array(points)
+
+
+def _flat(normals, points, tol=1e-9):
+    """Normal of a face whose samples are all coplanar (a B-spline plane), else None."""
+    if len(normals) < 3:
+        return None
+    n0 = normals[0]
+    if not np.all(np.abs(normals @ n0) > 1 - tol):
+        return None
+    span = float(np.ptp(points, axis=0).max()) or 1.0
+    if float(np.abs((points - points[0]) @ n0).max()) > tol * span:
+        return None
+    return n0
+
+
 def extrusion_axis(shape) -> np.ndarray:
     """The axis the part is extruded along, or Refusal NotAnExtrusion."""
     from OCP.BRepAdaptor import BRepAdaptor_Surface
-    from OCP.BRepLProp import BRepLProp_SLProps
     from OCP.GeomAbs import GeomAbs_Cylinder, GeomAbs_Plane
 
     info = []
@@ -240,17 +339,12 @@ def extrusion_axis(shape) -> np.ndarray:
             d = s.Cylinder().Axis().Direction()
             info.append(("cyl", np.array([d.X(), d.Y(), d.Z()]), 0.0))
         else:
-            normals = []
-            props = BRepLProp_SLProps(s, 1, 1e-9)
-            for a in np.linspace(0.1, 0.9, 5):
-                for b in np.linspace(0.1, 0.9, 5):
-                    u = s.FirstUParameter() + a * (s.LastUParameter() - s.FirstUParameter())
-                    v = s.FirstVParameter() + b * (s.LastVParameter() - s.FirstVParameter())
-                    props.SetParameters(u, v)
-                    if props.IsNormalDefined():
-                        n = props.Normal()
-                        normals.append([n.X(), n.Y(), n.Z()])
-            info.append(("other", np.array(normals), 0.0))
+            normals, points = _sampled_normals(f)
+            flat = _flat(normals, points)
+            if flat is not None:                     # a plane stored as a B-spline
+                info.append(("plane", flat, _face_area(f)))
+            else:
+                info.append(("other", normals, 0.0))
     candidates = []
     for kind, d, area in info:
         if kind == "plane" and not any(abs(float(np.dot(d, c))) > 1 - 1e-12 for c in candidates):
@@ -327,6 +421,11 @@ def cap_levels(shape, tol: float) -> list[float]:
             d = s.Plane().Axis().Direction()
             if abs(d.Z()) > 1 - 1e-9:
                 zs.append(s.Plane().Location().Z())
+        else:
+            normals, points = _sampled_normals(f)
+            flat = _flat(normals, points)
+            if flat is not None and abs(flat[2]) > 1 - 1e-9:
+                zs.append(float(points[:, 2].mean()))
     zs.sort()
     out = []
     for z in zs:
@@ -364,6 +463,90 @@ def orient(loop: list[Curve], free_on_left_ccw: bool, h: float) -> list[Curve]:
     return loop
 
 
+def _polygonize_curve(c: Curve, max_error: float, h: float) -> list:
+    """Material-side polygon for any smooth curve (B-splines, ellipses, Bezier).
+
+    Free space is on the left. Where the curve turns right (toward the
+    material) its chords lie in the material; where it turns left, the
+    corners where neighboring tangents meet do. The curve is split where it
+    changes direction of turn, and each run is covered greedily with the
+    longest steps that stay within max_error of the dense samples. The
+    certificate then measures the result independently.
+    """
+    step = min(max_error / 4, h) if h > 0 else max_error / 4
+    p, t = c.sample(step)
+    p = np.vstack([p, c.end()[None]])
+    t = np.vstack([t, c.tangent_at_end()[None]])
+    n = len(p)
+    if n < 3:
+        return [p[0]]
+    turn = t[:-1, 0] * t[1:, 1] - t[:-1, 1] * t[1:, 0]      # > 0: turning left (toward free space)
+    sign = np.sign(np.where(np.abs(turn) < 1e-14, 0.0, turn))
+    # runs of constant turning sign (straight stretches join the run they touch)
+    runs, start = [], 0
+    cur = 0.0
+    for i, sg in enumerate(sign):
+        if sg == 0:
+            continue
+        if cur == 0:
+            cur = sg
+        elif sg != cur:
+            runs.append((start, i, cur))
+            start, cur = i, sg
+    runs.append((start, n - 1, cur))
+    out = []
+
+    def chord_ok(i, j):
+        a, b = p[i], p[j]
+        d = b - a
+        L = np.linalg.norm(d)
+        if L == 0:
+            return True
+        q = p[i:j + 1] - a
+        dist = np.abs(q[:, 0] * d[1] - q[:, 1] * d[0]) / L
+        return float(dist.max()) <= max_error
+
+    def corner(i, j):
+        a, b, ta, tb = p[i], p[j], t[i], t[j]
+        den = ta[0] * tb[1] - ta[1] * tb[0]
+        if abs(den) < 1e-15:
+            return None
+        s_ = ((b - a)[0] * tb[1] - (b - a)[1] * tb[0]) / den
+        return a + s_ * ta
+
+    def corner_ok(i, j):
+        x = corner(i, j)
+        if x is None:
+            return None
+        return x if float(np.linalg.norm(p[i:j + 1] - x, axis=1).min()) <= max_error else None
+
+    for a_i, b_i, sg in runs:
+        out.append(p[a_i])
+        i = a_i
+        while i < b_i:
+            # longest step from i that stays within max_error (doubling, then bisection)
+            ok = (lambda j: chord_ok(i, j)) if sg <= 0 else (lambda j: corner_ok(i, j) is not None)
+            hi = i + 1
+            while hi < b_i and ok(min(b_i, i + 2 * (hi - i))):
+                hi = min(b_i, i + 2 * (hi - i))
+            top = min(b_i, i + 2 * (hi - i))
+            while top - hi > 1:
+                mid = (hi + top) // 2
+                if ok(mid):
+                    hi = mid
+                else:
+                    top = mid
+            j = hi
+            if sg > 0:
+                x = corner_ok(i, j)
+                if x is not None:
+                    out.append(x)
+            if j < b_i:
+                out.append(p[j])
+            i = j
+    return out
+
+
 def polygonize(loop: list[Curve], max_error: float, h: float) -> np.ndarray:
     """Polygon for a loop oriented with free space on its left.
 
@@ -394,9 +577,7 @@ def polygonize(loop: list[Curve], max_error: float, h: float) -> np.ndarray:
                     a = c.a0 + sw * j / k
                     pts.append(c.center + r * np.array([math.cos(a), math.sin(a)]))
         else:
-            raise Refusal("UnsupportedOutlineCurve",
-                          f"an outline edge is a {getattr(c, 'kind', type(c).__name__)}; this version "
-                          "turns only lines and circle arcs into mjfit polygons")
+            pts.extend(_polygonize_curve(c, max_error, h))
     poly = np.array(pts)
     # drop repeated and collinear vertices (a tangent polygon starts on a flat)
     keep = []
