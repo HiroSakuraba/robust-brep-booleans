@@ -220,6 +220,27 @@ brepkernel primitive cylinder -o peg.brep --radius 0.02 --height 0.2 --axis y
 DVE uses this for exact CAD import and exact Booleans next to its mesh
 Booleans (DVE `docs/exact-cad-boolean-2026-10-13.md`).
 
+## MuJoCo collision geometry (mjfit)
+
+`brepkernel.mujoco_fit` works with [mjfit](https://github.com/younghyopark/mjfit)
+(MIT), which builds MuJoCo peg-in-hole models from convex prisms:
+
+```bash
+pip install -e .[mjfit]
+brepkernel mjfit-certify usb_c -o usb_c.xml                       # check an mjfit config
+brepkernel mjfit-from-cad plate.step --clearance 1e-4 -o plate.xml   # CAD plate -> MuJoCo
+```
+
+The certificate checks exactly (in rational arithmetic) that every piece is
+a convex prism, that no pieces overlap or leave gaps, and that the peg is
+exactly one clearance from the plate. It then measures, with a stated error
+bound, how far the model is from the true part: real circles from mjfit's
+shape specs, or the CAD plate itself. From CAD, outlines are turned into
+polygons that never make the hole smaller. On mjfit's bundled configs it
+found that the USB-C peg's corners reach 13 um into the real receptacle (the
+clearance is below the polygon error), and that circular pins are drawn
+fatter than the real pins. Details: [`docs/mjfit_bridge.md`](docs/mjfit_bridge.md).
+
 ## Test results (2026-09-25, merged main `10ea7d8`)
 
 - Full suite: 26/26 test files exit 0, 0 `[FAIL]` lines.

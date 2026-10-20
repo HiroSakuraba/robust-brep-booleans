@@ -25,6 +25,13 @@ freeform = []
 # (SMLib, Apache-2.0). Wheels are CPython 3.12. brepkernel.usd's .usda
 # writer and reader work without it.
 usd = ["usd-brep>=1.0"]
+# MuJoCo collision geometry through mjfit (MIT): certify its peg-in-hole models
+# and build them from CAD plates (brepkernel.mujoco_fit).
+mjfit = [
+    "mjfit @ git+https://github.com/younghyopark/mjfit@eee986cc087d14458337fdc195d5cf03abc6aa6d",
+    "scipy>=1.10",
+    "shapely>=2.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
