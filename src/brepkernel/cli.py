@@ -342,6 +342,29 @@ def _peg_options(args) -> dict:
     return kw
 
 
+def cmd_convex_pieces(args, report) -> int:
+    """Certified convex collision pieces for an extruded part (JSON)."""
+    from .convex_pieces import convex_pieces
+    shape, fmt = read_shape(args.input)
+    scale, up = _frame_defaults(fmt, args)
+    shape = frame_shape(shape, scale, up == "z")
+    rep = convex_pieces(shape, max_error=args.max_error, sample_spacing=args.sample_spacing)
+    report["input"] = {"path": os.path.abspath(args.input), "format": fmt, "sha256": _sha256(args.input)}
+    report["frame"] = {"scale": scale, "up": up, "target": "meters, +Y up"}
+    report["status"] = rep["status"]
+    pieces = rep.pop("pieces", None)
+    report["certificate"] = rep
+    if rep["status"] != "certified":
+        return EXIT_REFUSED
+    tmp = args.output + ".part"
+    with open(tmp, "w") as fh:
+        json.dump({"schema": rep["schema"], "units": "meters", "pieces": pieces}, fh)
+    os.replace(tmp, args.output)
+    report["output"] = {"path": os.path.abspath(args.output), "sha256": _sha256(args.output),
+                        "pieces": len(pieces)}
+    return EXIT_OK
+
+
 def cmd_mjfit_certify(args, report) -> int:
     """Mode A: an mjfit peg config, checked against its true outlines."""
     import yaml
@@ -421,6 +444,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--axis", choices=["x", "y", "z"], default="y")
     common(p)
 
+    p = sub.add_parser("convex-pieces", help="extruded part -> certified convex collision pieces (JSON)")
+    p.add_argument("input")
+    p.add_argument("-o", "--output", required=True, help="pieces JSON (written only when certified)")
+    p.add_argument("--max-error", type=float, default=1e-4, help="polygon error for arcs, meters")
+    p.add_argument("--scale", type=float, default=None)
+    p.add_argument("--up", choices=["y", "z"], default=None)
+    p.add_argument("--sample-spacing", type=float, default=None)
+    p.add_argument("--report", default=None)
+
     p = sub.add_parser("mjfit-certify", help="mjfit peg config -> MJCF, checked against the true outlines")
     p.add_argument("config", help="bundled mjfit config name, YAML path")
     p.add_argument("-o", "--output", required=True, help="MJCF file (written only when certified)")
@@ -468,6 +500,7 @@ def main(argv=None) -> int:
     try:
         code = {"import": cmd_import, "boolean": cmd_boolean, "mesh": cmd_mesh,
                 "primitive": cmd_primitive, "mjfit-certify": cmd_mjfit_certify,
+                "convex-pieces": cmd_convex_pieces,
                 "mjfit-from-cad": cmd_mjfit_from_cad}[args.cmd](args, report)
     except CliError as exc:
         report["status"] = "error"

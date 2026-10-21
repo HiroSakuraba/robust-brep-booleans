@@ -204,6 +204,7 @@ brepkernel boolean plate.brep peg.brep --op difference -o hole.brep \
     --b-transform 1,0,0,0.1,0,1,0,-0.05,0,0,1,-0.05 --mesh hole.glb --advisory
 brepkernel mesh hole.brep -o hole.glb --deflection 0.0005
 brepkernel primitive cylinder -o peg.brep --radius 0.02 --height 0.2 --axis y
+brepkernel convex-pieces plate.brep -o pieces.json --max-error 1e-4   # convex collision pieces
 ```
 
 - `import` reads STEP, BREP or omniSolid `.usda` and writes a `.brep` in
@@ -217,8 +218,16 @@ brepkernel primitive cylinder -o peg.brep --radius 0.02 --height 0.2 --axis y
   `meshes[0].extras.brepkernel.faces`. The default chord deflection is the
   bounding box diagonal / 500.
 
-DVE uses this for exact CAD import and exact Booleans next to its mesh
-Booleans (DVE `docs/exact-cad-boolean-2026-10-13.md`).
+- `convex-pieces` (needs `pip install -e .[collision]`) cuts an extruded part
+  (every face a flat cap across one axis or a wall parallel to it) into
+  convex prisms for physics engines, so holes stay holes. Arcs are
+  polygonized on the material side, so the pieces never reach outside the
+  part, and the pieces are certified like the mjfit models: exact convexity,
+  no overlaps and the right boundary topology, then the shape against the
+  part's true sections within `--max-error`. Other parts are refused.
+
+DVE uses this for exact CAD import, exact Booleans next to its mesh
+Booleans, and exact convex collision (DVE `docs/exact-cad-boolean-2026-10-13.md`).
 
 ## MuJoCo collision geometry (mjfit)
 

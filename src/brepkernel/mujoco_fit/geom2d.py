@@ -37,6 +37,14 @@ class Curve:
         """Points (start included, end excluded) and unit tangents, spacing <= h."""
         raise NotImplementedError
 
+    def outline_points(self, h: float) -> np.ndarray:
+        """Points (start included, end excluded) whose polyline is within h/10 of the curve.
+
+        Membership tests only need the outline that closely, so lines give their start
+        point and arcs a sagitta-bounded set instead of every sample.
+        """
+        return self.sample(h)[0]
+
     def start(self) -> np.ndarray:
         raise NotImplementedError
 
@@ -82,6 +90,9 @@ class Segment(Curve):
         tan = np.repeat(_unit(self.p1 - self.p0)[None], n, axis=0)
         return pts, tan
 
+    def outline_points(self, h):
+        return self.p0[None]
+
     def start(self):
         return self.p0
 
@@ -119,6 +130,12 @@ class Arc(Curve):
         sgn = 1.0 if self.sweep > 0 else -1.0
         tan = sgn * np.stack([-np.sin(a), np.cos(a)], axis=-1)
         return pts, tan
+
+    def outline_points(self, h):
+        sag = max(min(h / 10, self.radius), 1e-300)
+        half = math.acos(max(-1.0, 1 - sag / self.radius))
+        n = max(2, math.ceil(abs(self.sweep) / (2 * half)) if half > 0 else 2)
+        return self.point(self.a0 + self.sweep * np.arange(n) / n)
 
     def start(self):
         return self.point(self.a0)
@@ -183,35 +200,70 @@ class QuadBezier(Curve):
 
 
 class SampledCurve(Curve):
-    """Any curve given as a function of a parameter (used for OCCT edges)."""
+    """Any curve given as a function of a parameter (used for OCCT edges).
 
-    def __init__(self, fn, dfn, u0, u1, length, kind="curve"):
+    `fn` and `dfn` may return tuples; `vec` and `dvec`, when given, evaluate
+    whole parameter arrays at once ((n,) -> (n, 2)), which is what makes dense
+    sampling of B-splines affordable. Samples are cached per spacing, since the
+    certificate, the polygonizer and the membership outline all ask for them.
+    """
+
+    def __init__(self, fn, dfn, u0, u1, length, kind="curve", vec=None, dvec=None):
         self.fn, self.dfn, self.u0, self.u1, self.len, self.kind = fn, dfn, u0, u1, length, kind
+        self.vec = vec or (lambda u: np.array([fn(x) for x in u], dtype=float).reshape(-1, 2))
+        self.dvec = dvec or (lambda u: np.array([dfn(x) for x in u], dtype=float).reshape(-1, 2))
+        self._cache = {}
 
     def sample(self, h):
-        # uniform in arc length via a dense parameter table
-        m = max(64, math.ceil(4 * self.len / h))
-        u = np.linspace(self.u0, self.u1, m + 1)
-        pts = np.array([self.fn(x) for x in u])
-        s = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))])
-        n = max(1, math.ceil(s[-1] / h))
-        target = s[-1] * np.arange(n) / n
-        uu = np.interp(target, s, u)
-        p = np.array([self.fn(x) for x in uu])
-        t = _unit(np.array([self.dfn(x) for x in uu]))
-        return p, t
+        if h in self._cache:
+            return self._cache[h]
+        # arc-length table, then points at (nearly) uniform arc length; the spacing is
+        # checked on the real points and the table refined until it holds
+        m = min(max(64, math.ceil(self.len / (10 * h))), 20000)
+        while True:
+            u = np.linspace(self.u0, self.u1, m + 1)
+            tab = self.vec(u)
+            arc = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(tab, axis=0), axis=1))])
+            n = max(1, math.ceil(arc[-1] / h))
+            uu = np.interp(arc[-1] * np.arange(n + 1) / n, arc, u)
+            p = self.vec(uu)
+            gaps = np.linalg.norm(np.diff(p, axis=0), axis=1)
+            if gaps.max() <= h or m >= 1 << 22:
+                break
+            m *= 4
+        t = _unit(self.dvec(uu[:-1]))
+        self._cache[h] = (p[:-1], t)
+        return self._cache[h]
+
+    def outline_points(self, h):
+        # within h/10: keep the dense samples a chord-greedy pass needs
+        p, _ = self.sample(h)
+        keep, i = [0], 0
+        n = len(p)
+        while i < n - 1:
+            j = min(n - 1, i + 2)
+            while j < n - 1:
+                a, b = p[i], p[j + 1]
+                d = b - a
+                q = p[i:j + 2] - a
+                if float((np.abs(q[:, 0] * d[1] - q[:, 1] * d[0]) / (np.linalg.norm(d) or 1)).max()) > h / 10:
+                    break
+                j = min(n - 1, j + max(1, (j - i)))
+            keep.append(j)
+            i = j
+        return p[keep[:-1] if keep[-1] == n - 1 and n > 1 else keep]
 
     def start(self):
-        return np.asarray(self.fn(self.u0))
+        return np.asarray(self.fn(self.u0), dtype=float)
 
     def end(self):
-        return np.asarray(self.fn(self.u1))
+        return np.asarray(self.fn(self.u1), dtype=float)
 
     def tangent_at_start(self):
-        return _unit(np.asarray(self.dfn(self.u0)))
+        return _unit(np.asarray(self.dfn(self.u0), dtype=float))
 
     def tangent_at_end(self):
-        return _unit(np.asarray(self.dfn(self.u1)))
+        return _unit(np.asarray(self.dfn(self.u1), dtype=float))
 
 
 def polygon_loop(poly) -> list[Curve]:
@@ -294,9 +346,12 @@ class LoopRegion(Region):
         self.loops, self.h = loops, h
         self.samples = [sample_loop(lp, h) for lp in loops]
         geom = None
-        for s in self.samples:
+        for lp in loops:
             # membership only needs the outline within h/10, not every sample
-            ring = shapely.simplify(shapely.LinearRing(s.points), h / 10, preserve_topology=True)
+            pts = np.vstack([c.outline_points(h) for c in lp])
+            ring = shapely.LinearRing(pts)
+            if len(pts) > 50000:
+                ring = shapely.simplify(ring, h / 10, preserve_topology=True)
             poly = shapely.Polygon(ring)
             if not poly.is_valid:
                 poly = shapely.make_valid(poly)
@@ -397,9 +452,32 @@ class DifferenceRegion(Region):
 class PieceRegion(Region):
     """Union of convex polygons (the MuJoCo pieces of one slab)."""
 
-    def __init__(self, polys: list[np.ndarray], h: float, eps: float):
+    def __init__(self, polys: list[np.ndarray], h: float, eps: float, loops=None):
+        """`loops`: the union's exact boundary loops (exact_union_loops), when known.
+
+        With them only the true outline is sampled and membership uses one polygon;
+        without them every piece edge is sampled and shared edges are filtered out,
+        which costs pieces x samples.
+        """
         self.polys = [np.asarray(p, dtype=float) for p in polys]
         self.h, self.eps = h, eps
+        self.geom = None
+        if loops is not None:
+            import shapely
+            rings = [np.array([[float(x), float(y)] for x, y in lp]) for lp in loops]
+            geom = None
+            for r in rings:
+                poly = shapely.Polygon(r)
+                geom = poly if geom is None else shapely.symmetric_difference(geom, poly)
+            self.geom = geom
+            shapely.prepare(self.geom)
+            b = []
+            for r in rings:
+                for k in range(len(r)):
+                    q, _ = Segment(r[k], r[(k + 1) % len(r)]).sample(h)
+                    b.append(q)
+            self._b = np.vstack(b)
+            return
         pts = []
         for i, p in enumerate(self.polys):
             for k in range(len(p)):
@@ -424,6 +502,9 @@ class PieceRegion(Region):
         return count
 
     def contains(self, pts):
+        if self.geom is not None:
+            import shapely
+            return shapely.intersects_xy(self.geom, pts[:, 0], pts[:, 1])   # closed region
         return self._count(pts, closed=True) > 0
 
     def boundary(self):

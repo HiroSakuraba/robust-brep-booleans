@@ -3552,3 +3552,46 @@ segfaults on a plain circle face, so the ideal peg is built from offset
 boundary samples instead. A k-d tree over dense boundary samples is slow for
 far queries (47 s for 2e5 points); every query that only needs "within d" now
 caps its search radius (112 s down to 5.5 s for the circle config).
+
+## M2: convex collision pieces for extruded parts (19 Oct 2026, branch feature/convex-pieces)
+
+**What was added.** `brepkernel.convex_pieces` and the CLI `convex-pieces`:
+an extruded part (axis found automatically) is sectioned per slab between
+its cap levels, each loop is polygonized on the material side, each region
+is triangulated (constrained Delaunay, no added vertices) and the triangles
+are merged into convex polygons (Hertel-Mehlhorn, exact rational convexity
+tests), then extruded. Certificate per slab: exact convexity, no overlaps,
+exact boundary loop signature, pieces never outside the part (sampled,
+bound 2h), part within `max_error` of the pieces. An axis that is a
+coordinate axis up to 1e-12 is snapped, so the frame turn is a signed
+permutation and the exact checks carry over to the output coordinates.
+
+**Independent checks** (`tests/test_convex_pieces.py`, 9 tests): OCCT's
+solid classifier puts every piece vertex inside or on the part, in the
+part's own frame (through hole, two holes, L shape, a stepped part with a
+boss, a ring along Y, a plate tilted 30 degrees); total piece volume never
+exceeds the part and is within 1 percent; a chamfered hole is refused.
+
+**Engine check (DVE + Jolt 5.6).** A peg dropped onto a square-hole plate:
+with the plate as convex pieces the peg falls through the hole at 1 mm
+clearance (Jolt defaults) and at 0.1 mm and 20 um (speculative contact
+distance 0.5 mm, penetration slop 0.1 mm); with the plate as one hull it
+rests on top every time. With Jolt's default 2 cm speculative distance a
+0.1 mm peg catches on the rim, so DVE now exposes both Jolt tolerances as
+project settings.
+
+**Follow-up (same branch): B-spline outlines and speed.** DVE's end-to-end
+test found that an exact Boolean result (a plate drilled by a slightly
+rotated peg) has B-spline section edges, which the first version refused.
+Outline curves of any type are now polygonized on the material side
+(chords where the curve turns toward the material, tangent corners where it
+turns toward free space, refined to max_error), with B-splines and ellipses
+evaluated in vectorized form (matches OCCT to 5.6e-17 m). Planes stored as
+B-spline surfaces now count as caps. A plate converted entirely to NURBS
+certifies (105 pieces, pieces at most 2.5e-8 m outside, within the 4e-6 m
+bound). Speed: piece regions now sample only the exact union outline (not
+every piece edge, which cost pieces x samples), and membership outlines use
+line endpoints and sagitta-bounded arcs. A 1 m drilled plate went from 404 s
+to 5 s, its NURBS version from 68 s to 16 s, and the mjfit suite runs in
+half the time. Tests: 11 convex-pieces tests (adds the NURBS plate and an
+elliptical hole).
