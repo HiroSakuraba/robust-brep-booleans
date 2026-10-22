@@ -3595,3 +3595,71 @@ line endpoints and sagitta-bounded arcs. A 1 m drilled plate went from 404 s
 to 5 s, its NURBS version from 68 s to 16 s, and the mjfit suite runs in
 half the time. Tests: 11 convex-pieces tests (adds the NURBS plate and an
 elliptical hole).
+
+## D1: describe, query and export for DVE's Measure, snapping and STEP export (21 Oct 2026, branch feature/dve-cad-inspect-export)
+
+**Why.** DVE's Measure, exact snapping and Export Exact CAD (STEP) (DVE PRs
+#157-#160, merged 20 Oct) call `brepkernel describe`, `query` and `export`,
+which were never pushed here; DVE fell back to triangles and said "update
+brepkernel", and STEP export did not work. The contract is DVE's own code
+(`src/editor_exact_cad.cpp`, its fake brepkernel and its real-brepkernel
+tests); this implements it.
+
+**What was added.** `brepkernel.cad_inspect` (`describe_shape`,
+`query_points`), `brepkernel.step_export` (`export_parts`) and the three
+CLI commands.
+
+- `describe`: faces in mesh order (shared with `mesh_export._faces`, so a
+  face index means the same face in the glTF), surface type and defining
+  numbers; outward plane normals from the surface derivatives and the face
+  orientation; `hole` when the outward normal points toward the axis (or the
+  centre, for a spherical cavity). Corners are the ends of open, non-seam
+  edges, so a cylinder has none. Seam and degenerate edges are left out of
+  `edges`. Circles are merged across arcs; `full` only when the arcs add up
+  to the whole circumference. Adjacency is built with explorers and
+  `IsSame` (OCP 8.0 no longer exports the TopTools indexed-map typedefs).
+- `query`: `BRepExtrema_DistShapeShape` on the whole shape, then the nearest
+  of the faces at that support (face, edge or vertex). Among equally near
+  faces the one whose outward normal points most toward the point wins.
+- `export`: parts placed with the existing `place_shape`; each placed part
+  must pass `BRepCheck_Analyzer` and have `|det|` times the source volume
+  (relative 1e-6). One XCAF document, one named product per part (each
+  part copied, since XCAF merges two placements of one shape into one
+  product). Written next to the output under a temporary name, read back
+  (solids, volume relative 1e-6, names through the XCAF reader, declared
+  length unit), and only then moved over the output. Non-ASCII names are
+  rewritten as ISO 10303-21 `\X2\`/`\X4\` escapes (OCCT writes raw UTF-8).
+
+**OCCT findings (both recorded in the code).** (1) OCP 7.8 ignores
+`write.step.unit` until a STEP writer has been created, so the first metre
+export of a process was silently written in millimetres; the writer is now
+created first. (2) OCP 7.8's XCAF writer converts to millimetres whatever the
+STEP unit and only relabels for metres (a 6 mm radius came out as "6 m");
+OCP 8.0 converts correctly. Shapes are now scaled to the file's unit by
+brepkernel itself, with the document unit set so OCCT converts nothing
+(on 7.8, metres are declared as a millimetre document). The read-back check
+(volume and declared unit) would refuse any other behaviour rather than
+write a wrong file. The data-exchange settings are process-wide, so export
+restores them afterwards.
+
+**Tests** (`tests/test_cad_inspect_export.py`, 17 tests, OCP 8.0.1 and
+7.8.1, run together and one by one): the 12 mm pin (two full circles, no
+corners, exact closest point 0.004 m on the side face); a drilled plate
+(outward plane normals checked with OCCT's solid classifier, the bore is a
+hole, 8 corners, line midpoints); quarter arcs are not full circles and
+have arc-length midpoints; sphere, cone, torus and a spherical cavity; a
+stretched part has B-spline faces; corner and bore queries; the CLI
+reports; export in mm and m with Z and Y up (bounding box of the read-back
+file); failures (unreadable part, singular and malformed transforms, empty
+list, wrong extension) keep the old file and leave no temporary; names with
+an apostrophe, a backslash, CJK and an emoji round-trip and the file is
+ASCII; settings restored.
+
+**End-to-end check with DVE** (main at 5fc38b7, Release build, run with
+`DVE_REQUIRE_BREPKERNEL=1` so nothing skips; OCP 8.0.1 and 7.8.1):
+`dve_editor_cad_measure_tests` (real describe: 3 faces, 2 edges, 2 full
+12 mm circles; real query on the side and the top cap to 1e-12; Measure
+picks the top circle centre in the editor), `dve_editor_cad_step_export_tests`
+(a pin and a stretched pin in mm, Z up: volumes, `'Pin'` and `'Wide pin'` in
+the file, read-back error 1.4e-14; a failed export keeps the earlier file),
+`dve_editor_exact_cad_tests` and `dve_editor_cad_detail_tests` all pass.
