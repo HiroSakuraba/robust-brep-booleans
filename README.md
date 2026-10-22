@@ -205,6 +205,9 @@ brepkernel boolean plate.brep peg.brep --op difference -o hole.brep \
 brepkernel mesh hole.brep -o hole.glb --deflection 0.0005
 brepkernel primitive cylinder -o peg.brep --radius 0.02 --height 0.2 --axis y
 brepkernel convex-pieces plate.brep -o pieces.json --max-error 1e-4   # convex collision pieces
+brepkernel describe hole.brep                                  # faces, corners, edges, circles
+brepkernel query hole.brep --point 0.1 0.05 0 --point 0 0 0    # closest point, face, normal
+brepkernel export --parts parts.json -o scene.step --units mm --up z   # placed, named STEP
 ```
 
 - `import` reads STEP, BREP or omniSolid `.usda` and writes a `.brep` in
@@ -226,8 +229,30 @@ brepkernel convex-pieces plate.brep -o pieces.json --max-error 1e-4   # convex c
   no overlaps and the right boundary topology, then the shape against the
   part's true sections within `--max-error`. Other parts are refused.
 
+- `describe` lists the exact shape for measuring and snapping: faces in mesh
+  order (the order of the glTF face ranges) with surface type, area and
+  defining numbers (plane origin and outward normal; cylinder and cone axis,
+  radius and whether it is a hole; sphere, torus, B-spline data), the true
+  corners (no seam or pole vertices), feature edges (type, ends, arc-length
+  midpoint, length) and circles (merged across arcs, `full` only when they
+  close), plus volume and area. Coordinates are in the file's own frame.
+- `query` gives, per `--point`, the exact closest point on the boundary, its
+  distance, the face (mesh order) and the outward normal. At an edge or a
+  corner it picks the face the point is in front of.
+- `export` writes placed parts into one STEP file, one named solid each. The
+  parts list is `{"parts": [{"path", "name", "transform"}]}` with 3x4
+  row-major transforms in meters, +Y up. Moves, turns, mirrors and uniform
+  scales stay exact; a stretch is applied as a general affine map (B-spline
+  surfaces, reported `exact: false`). Each placed part must be a valid solid
+  with the expected volume, and the file is read back (solid count, volume,
+  names, declared unit) before it replaces the output; on failure no file is
+  written. `--units mm|m`, `--up z|y`; non-ASCII names are written as
+  ISO 10303-21 escapes.
+
 DVE uses this for exact CAD import, exact Booleans next to its mesh
-Booleans, and exact convex collision (DVE `docs/exact-cad-boolean-2026-10-13.md`).
+Booleans, exact convex collision, Measure, exact snapping and Export Exact
+CAD (STEP) (DVE `docs/exact-cad-boolean-2026-10-13.md`,
+`docs/editor-cad-measure-2026-10-20.md`, `docs/editor-cad-step-export-2026-10-20.md`).
 
 ## MuJoCo collision geometry (mjfit)
 

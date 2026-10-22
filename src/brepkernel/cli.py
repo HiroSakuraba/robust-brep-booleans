@@ -31,6 +31,25 @@ Commands
 
 Mesh options for import/boolean/mesh: --deflection (meters in the output
 frame; default 1/500 of the part's diagonal), --angular (radians, 0.35).
+
+  describe IN
+      The exact shape for measuring and snapping: faces in mesh order (type,
+      area, plane origin and outward normal, axis and radius, hole or not),
+      true corners, feature edges (type, ends, midpoint, length), circles
+      (centre, axis, radius, full or arc), volume and area. Report key
+      "description". Coordinates in the file's own frame.
+
+  query IN --point X Y Z [--point X Y Z ...]
+      For each point: the closest point on the boundary, the distance, the
+      face (mesh order) and the outward normal there. Report key "results",
+      one entry per point in order.
+
+  export --parts PARTS.json -o OUT.step [--units mm|m] [--up z|y]
+      Placed parts into one STEP file, one named solid each. PARTS.json is
+      {"parts": [{"path", "name", "transform": 3x4 row-major, meters, +Y up}]}.
+      Every placed part is checked, and the file is read back (same solids,
+      same volume) before it replaces OUT; on failure no file is written.
+      Report key "export".
 """
 from __future__ import annotations
 
@@ -320,6 +339,40 @@ def cmd_primitive(args, report) -> int:
     return EXIT_OK
 
 
+def cmd_describe(args, report) -> int:
+    from .cad_inspect import describe_shape
+    shape, fmt = read_shape(args.input)
+    report["input"] = {"path": os.path.abspath(args.input), "format": fmt, "sha256": _sha256(args.input)}
+    report["description"] = describe_shape(shape)
+    return EXIT_OK
+
+
+def cmd_query(args, report) -> int:
+    import math
+    from .cad_inspect import query_points
+    points = args.point or []
+    if not points:
+        raise CliError("give at least one --point X Y Z")
+    if not all(math.isfinite(c) for p in points for c in p):
+        raise CliError("--point coordinates must be finite")
+    shape, fmt = read_shape(args.input)
+    report["input"] = {"path": os.path.abspath(args.input), "format": fmt, "sha256": _sha256(args.input)}
+    report["results"] = query_points(shape, points)
+    return EXIT_OK
+
+
+def cmd_export(args, report) -> int:
+    from .step_export import StepExportError, export_parts
+    try:
+        result = export_parts(args.parts, args.output, units=args.units, up=args.up)
+    except StepExportError as exc:
+        raise CliError(str(exc)) from exc
+    result["path"] = os.path.abspath(args.output)
+    result["sha256"] = _sha256(args.output)
+    report["export"] = result
+    return EXIT_OK
+
+
 def _mjfit_result(xml, rep, args, report) -> int:
     report["certificate"] = rep
     report["status"] = rep["status"]
@@ -453,6 +506,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sample-spacing", type=float, default=None)
     p.add_argument("--report", default=None)
 
+    p = sub.add_parser("describe", help="exact faces, corners, edges and circles (measuring, snapping)")
+    p.add_argument("input")
+    p.add_argument("--report", default=None)
+
+    p = sub.add_parser("query", help="closest boundary point, face and normal for each --point")
+    p.add_argument("input")
+    p.add_argument("--point", nargs=3, type=float, action="append", metavar=("X", "Y", "Z"))
+    p.add_argument("--report", default=None)
+
+    p = sub.add_parser("export", help="placed parts -> one named STEP file, read back and checked")
+    p.add_argument("--parts", required=True, help='JSON {"parts": [{"path", "name", "transform"}]}')
+    p.add_argument("-o", "--output", required=True, help=".step or .stp (replaced only after the checks)")
+    p.add_argument("--units", choices=["mm", "m"], default="mm")
+    p.add_argument("--up", choices=["z", "y"], default="z")
+    p.add_argument("--report", default=None)
+
     p = sub.add_parser("mjfit-certify", help="mjfit peg config -> MJCF, checked against the true outlines")
     p.add_argument("config", help="bundled mjfit config name, YAML path")
     p.add_argument("-o", "--output", required=True, help="MJCF file (written only when certified)")
@@ -500,7 +569,8 @@ def main(argv=None) -> int:
     try:
         code = {"import": cmd_import, "boolean": cmd_boolean, "mesh": cmd_mesh,
                 "primitive": cmd_primitive, "mjfit-certify": cmd_mjfit_certify,
-                "convex-pieces": cmd_convex_pieces,
+                "convex-pieces": cmd_convex_pieces, "describe": cmd_describe,
+                "query": cmd_query, "export": cmd_export,
                 "mjfit-from-cad": cmd_mjfit_from_cad}[args.cmd](args, report)
     except CliError as exc:
         report["status"] = "error"
